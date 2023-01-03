@@ -45,6 +45,7 @@ func toString[S fmt.Stringer](ss ...S) []string {
 	})
 }
 
+// castSlice casts a slice of "any" values to a slice with type "to".
 func castSlice(s []any, to reflect.Type) (any, error) {
 	if to.Kind() != reflect.Slice {
 		return nil, fmt.Errorf("cannot cast %s to %s", fqn(reflect.TypeOf(s)), fqn(to))
