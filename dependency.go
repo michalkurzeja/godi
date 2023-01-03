@@ -10,8 +10,6 @@ import (
 
 const autoPos = -1
 
-var emptyDependency = Dependency{}
-
 // Val returns a dependency that will always return the same value.
 func Val(v any) Dependency {
 	return Dependency{pos: autoPos, val: v}
@@ -19,20 +17,21 @@ func Val(v any) Dependency {
 
 // Ref returns a dependency that will resolve to a service with the given type.
 // It can, optionally, be given an ID to disambiguate when there are multiple dependencies of the same type.
-// Only the first ID will be taken into account.
+// If multiple IDs are given, the dependency will resolve to a slice of values.
 func Ref[T any](id ...string) Dependency {
 	t := typeOf[T]()
 
-	theID := fqn(t)
-	if len(id) > 0 {
-		theID = id[0]
+	if len(id) == 0 {
+		return Dependency{pos: autoPos, refs: []*ref{newRef(fqn(t), t)}}
 	}
 
-	return Dependency{pos: autoPos, r: newRef(theID, t)}
+	return Dependency{pos: autoPos, refs: lo.Map(id, func(id string, _ int) *ref {
+		return newRef(id, t)
+	})}
 }
 
 func refDep(t reflect.Type) Dependency {
-	return Dependency{pos: autoPos, r: newRef(fqn(t), t)}
+	return Dependency{pos: autoPos, refs: []*ref{newRef(fqn(t), t)}}
 }
 
 // Dependency represents a service dependency which is resolved at (or slightly after) the creation time.
@@ -40,7 +39,7 @@ type Dependency struct {
 	deferredTo string
 	pos        int
 	val        any
-	r          *ref
+	refs       []*ref
 }
 
 // DeferTo returns a new Dependency which will be injected post-construction via the provided method.
@@ -56,9 +55,16 @@ func (d Dependency) Pos(pos int) Dependency {
 
 func (d Dependency) String() string {
 	if d.isRef() {
-		return fmt.Sprintf("ref(%s)", d.r.ID())
+		return strings.Join(
+			lo.Map(d.refs, func(ref *ref, _ int) string { return fmt.Sprintf("ref(%s)", ref.ID()) }),
+			", ",
+		)
 	}
 	return fmt.Sprintf("%v", d.val)
+}
+
+func (d Dependency) isCollection() bool {
+	return len(d.refs) > 1
 }
 
 func (d Dependency) hasAutoPos() bool {
@@ -69,29 +75,49 @@ func (d Dependency) isDeferred() bool {
 	return d.deferredTo != ""
 }
 func (d Dependency) isRef() bool {
-	return d.r != nil
+	return len(d.refs) > 0
 }
 
 func (d Dependency) typ() reflect.Type {
 	if d.isRef() {
-		return d.r.Type()
+		t := d.refs[0].Type()
+		if d.isCollection() {
+			return reflect.SliceOf(t)
+		}
+		return t
 	}
 	return reflect.TypeOf(d.val)
 }
 
 func (d Dependency) isEmpty() bool {
-	return d == emptyDependency
+	return d.val == nil && len(d.refs) == 0
 }
 
 func (d Dependency) resolve(c Container) (any, error) {
 	if d.isRef() {
-		node, err := c.Get(d.r.ID())
-		if err != nil {
-			return nil, err
+		// Resolve the references by getting them from the container.
+		values := make([]any, len(d.refs))
+		for i, ref := range d.refs {
+			node, err := c.Get(ref.ID())
+			if err != nil {
+				return nil, err
+			}
+
+			val, err := node.Value(c)
+			if err != nil {
+				return nil, err
+			}
+
+			values[i] = val
 		}
 
-		return node.Value(c)
+		if d.isCollection() {
+			return castSlice(values, d.typ())
+		}
+
+		return values[0], nil
 	}
+
 	return d.val, nil
 }
 

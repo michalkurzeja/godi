@@ -44,3 +44,21 @@ func toString[S fmt.Stringer](ss ...S) []string {
 		return s.String()
 	})
 }
+
+func castSlice(s []any, to reflect.Type) (any, error) {
+	if to.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("cannot cast %s to %s", fqn(reflect.TypeOf(s)), fqn(to))
+	}
+
+	vals := make([]reflect.Value, len(s))
+
+	for i, v := range s {
+		vv := reflect.ValueOf(v)
+		if !vv.Type().AssignableTo(to.Elem()) {
+			return nil, fmt.Errorf("type %s is not assignable to %s", fqn(vv.Type()), fqn(to.Elem()))
+		}
+		vals[i] = vv
+	}
+
+	return reflect.Append(reflect.New(to).Elem(), vals...).Interface(), nil
+}
