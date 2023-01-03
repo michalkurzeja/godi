@@ -288,6 +288,19 @@ func TestDI(t *testing.T) {
 			_, err = di.Get[HasServiceVariadicDependencies](c)
 			assert.NoError(t, err)
 		})
+		t.Run("given a generic service", func(t *testing.T) {
+			t.Parallel()
+
+			c := di.New()
+
+			err := di.Register(c,
+				di.SvcT[GenericSvc[string]](NewGenericSvc[string]),
+			)
+			assert.NoError(t, err)
+
+			_, err = di.Get[GenericSvc[string]](c)
+			assert.NoError(t, err)
+		})
 	})
 	t.Run("Register returns an error when", func(t *testing.T) {
 		t.Parallel()
@@ -880,4 +893,10 @@ type HasServiceVariadicDependencies struct {
 
 func NewHasServiceVariadicDependencies(param WithoutDependencies, rest ...WithoutDependencies) HasServiceVariadicDependencies {
 	return HasServiceVariadicDependencies{param: param, rest: rest}
+}
+
+type GenericSvc[T any] struct{}
+
+func NewGenericSvc[T any]() GenericSvc[T] {
+	return GenericSvc[T]{}
 }
