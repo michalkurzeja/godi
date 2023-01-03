@@ -148,12 +148,16 @@ func (s *lazyService) build(c Container) (val any, err error) {
 	for i, dep := range s.providerDeps {
 		v, err := dep.resolve(c)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("building service %s failed: %w", s.ID(), err)
 		}
 		in[i] = reflect.ValueOf(v)
 	}
 
-	outs := s.providerFn.Call(in)
+	call := s.providerFn.Call
+	if s.providerFn.Type().IsVariadic() {
+		call = s.providerFn.CallSlice
+	}
+	outs := call(in)
 
 	if s.errOut != notFound {
 		if errOut := outs[s.errOut].Interface(); errOut != nil {
@@ -175,20 +179,26 @@ func (s *lazyService) injectDeferredDependencies(c Container) error {
 	return nil
 }
 
-func (s *lazyService) providerDependencies() []Node {
-	refs := lo.Filter(s.providerDeps, func(dep Dependency, _ int) bool {
+func (s *lazyService) providerDependencies() (nodes []Node) {
+	deps := lo.Filter(s.providerDeps, func(dep Dependency, _ int) bool {
 		return dep.isRef()
 	})
-	return lo.Map(refs, func(dep Dependency, _ int) Node {
-		return dep.r
-	})
+	for _, dep := range deps {
+		for _, ref := range dep.refs {
+			nodes = append(nodes, ref)
+		}
+	}
+	return nodes
 }
 
-func (s *lazyService) deferredDependencies() []Node {
-	refs := lo.Filter(s.deferredDeps, func(defDep deferredDependency, _ int) bool {
+func (s *lazyService) deferredDependencies() (nodes []Node) {
+	deps := lo.Filter(s.deferredDeps, func(defDep deferredDependency, _ int) bool {
 		return defDep.dep.isRef()
 	})
-	return lo.Map(refs, func(defDep deferredDependency, _ int) Node {
-		return defDep.dep.r
-	})
+	for _, dep := range deps {
+		for _, ref := range dep.dep.refs {
+			nodes = append(nodes, ref)
+		}
+	}
+	return nodes
 }

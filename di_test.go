@@ -253,6 +253,41 @@ func TestDI(t *testing.T) {
 			assert.Equal(t, "foo2", got.foo2.field)
 			assert.Equal(t, "foo1", got.foo3.field)
 		})
+		t.Run("given service with variadic provider and simple dependencies", func(t *testing.T) {
+			t.Parallel()
+
+			c := di.New()
+
+			err := di.Register(c,
+				di.SvcT[HasSimpleVariadicDependencies](NewHasSimpleVariadicDependencies).With(
+					di.Val("foo"),
+					di.Val([]string{"bar", "baz"}),
+				),
+			)
+			assert.NoError(t, err)
+
+			_, err = di.Get[HasSimpleVariadicDependencies](c)
+			assert.NoError(t, err)
+		})
+		t.Run("given service with variadic provider and service dependencies", func(t *testing.T) {
+			t.Parallel()
+
+			c := di.New()
+
+			err := di.Register(c,
+				di.SvcT[WithoutDependencies](NewWithoutDependencies).ID("a"),
+				di.SvcT[WithoutDependencies](NewWithoutDependencies).ID("b"),
+				di.SvcT[WithoutDependencies](NewWithoutDependencies).ID("c"),
+				di.SvcT[HasServiceVariadicDependencies](NewHasServiceVariadicDependencies).With(
+					di.Ref[WithoutDependencies]("a"),
+					di.Ref[WithoutDependencies]("b", "c"),
+				),
+			)
+			assert.NoError(t, err)
+
+			_, err = di.Get[HasServiceVariadicDependencies](c)
+			assert.NoError(t, err)
+		})
 	})
 	t.Run("Register returns an error when", func(t *testing.T) {
 		t.Parallel()
@@ -518,7 +553,7 @@ func TestDI(t *testing.T) {
 			assert.NoError(t, err)
 
 			_, err = di.Get[Bar](c)
-			assert.EqualError(t, err, `di: building service github.com/michalkurzeja/godi_test.Foo failed: oops!`)
+			assert.EqualError(t, err, `di: building service github.com/michalkurzeja/godi_test.Bar failed: building service github.com/michalkurzeja/godi_test.Foo failed: oops!`)
 		})
 		t.Run("a deferred dependency returns an error", func(t *testing.T) {
 			t.Parallel()
@@ -688,6 +723,25 @@ func TestDI(t *testing.T) {
 			)
 			assert.EqualError(t, err, `di: invalid deferred dependency of *github.com/michalkurzeja/godi_test.CyclicD: method "NonErrOutput" must have no outputs or return an error; got bool`)
 		})
+		t.Run("given service with variadic provider and service dependencies", func(t *testing.T) {
+			t.Parallel()
+
+			c := di.New()
+
+			err := di.Register(c,
+				di.SvcT[WithoutDependencies](NewWithoutDependencies).ID("a"),
+				di.SvcT[WithoutDependencies](NewWithoutDependencies).ID("b"),
+				di.SvcT[Foo](NewFoo).ID("c").With(di.Val("foo")),
+				di.SvcT[HasServiceVariadicDependencies](NewHasServiceVariadicDependencies).With(
+					di.Ref[WithoutDependencies]("a"),
+					di.Ref[WithoutDependencies]("b", "c"),
+				),
+			)
+			assert.NoError(t, err)
+
+			_, err = di.Get[HasServiceVariadicDependencies](c)
+			assert.EqualError(t, err, `di: building service github.com/michalkurzeja/godi_test.HasServiceVariadicDependencies failed: type github.com/michalkurzeja/godi_test.Foo is not assignable to github.com/michalkurzeja/godi_test.WithoutDependencies`)
+		})
 	})
 }
 
@@ -803,3 +857,27 @@ type InterfaceWithSetterImpl struct {
 func NewInterfaceWithSetterImpl() *InterfaceWithSetterImpl { return &InterfaceWithSetterImpl{} }
 
 func (i *InterfaceWithSetterImpl) SetFoo(foo Foo) { i.foo = foo }
+
+type HasSimpleVariadicDependencies struct {
+	param string
+	rest  []string
+}
+
+func NewHasSimpleVariadicDependencies(param string, rest ...string) HasSimpleVariadicDependencies {
+	return HasSimpleVariadicDependencies{param: param, rest: rest}
+}
+
+type WithoutDependencies struct{}
+
+func NewWithoutDependencies() WithoutDependencies {
+	return WithoutDependencies{}
+}
+
+type HasServiceVariadicDependencies struct {
+	param WithoutDependencies
+	rest  []WithoutDependencies
+}
+
+func NewHasServiceVariadicDependencies(param WithoutDependencies, rest ...WithoutDependencies) HasServiceVariadicDependencies {
+	return HasServiceVariadicDependencies{param: param, rest: rest}
+}
