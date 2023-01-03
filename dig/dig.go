@@ -28,12 +28,12 @@ func Register(services ...*di.ServiceBuilder) error {
 	return di.Register(c, services...)
 }
 
-func Get[T any]() (T, error) {
-	return di.Get[T](c)
+func Get[T any](opts ...di.GetOptionsFunc) (T, error) {
+	return di.Get[T](c, opts...)
 }
 
-func MustGet[T any]() T {
-	return di.MustGet[T](c)
+func MustGet[T any](opts ...di.GetOptionsFunc) T {
+	return di.MustGet[T](c, opts...)
 }
 
 func Export(w io.Writer) error {
