@@ -7,35 +7,44 @@
 package dig
 
 import (
-	"io"
-
 	di "github.com/michalkurzeja/godi"
 )
 
-var c = di.New()
+var (
+	b = &Builder{di.New()}
+	c di.Container
+)
 
 func Container() di.Container {
-	return roContainer{c: c}
+	return c
 }
 
-func Test() *di.TestContainer {
-	tc := di.NewTestContainer()
-	c = tc
-	return tc
+func AddServices(services ...*di.DefinitionBuilder) *Builder {
+	b.Services(services...)
+	return b
 }
 
-func Register(services ...*di.ServiceBuilder) error {
-	return di.Register(c, services...)
+func AddAliases(aliases ...di.Alias) *Builder {
+	b.Aliases(aliases...)
+	return b
 }
 
-func Get[T any](opts ...di.GetOptionsFunc) (T, error) {
+func Build() error {
+	return b.Build()
+}
+
+func Get[T any](opts ...di.OptionsFunc) (T, error) {
 	return di.Get[T](c, opts...)
 }
 
-func MustGet[T any](opts ...di.GetOptionsFunc) T {
+func MustGet[T any](opts ...di.OptionsFunc) T {
 	return di.MustGet[T](c, opts...)
 }
 
-func Export(w io.Writer) error {
-	return di.Export(c, w)
+func GetByTag[T any](tag di.Tag) ([]T, error) {
+	return di.GetByTag[T](c, tag)
+}
+
+func MustGetByTag[T any](tag di.Tag) []T {
+	return di.MustGetByTag[T](c, tag)
 }

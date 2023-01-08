@@ -1,347 +1,145 @@
 package di
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"reflect"
-	"sort"
-	"sync"
-
-	"github.com/dominikbraun/graph"
-	"github.com/dominikbraun/graph/draw"
-	"github.com/hashicorp/go-multierror"
-	"github.com/samber/lo"
 )
 
-// Node represents an entry in the dependency graph.
-type Node interface {
-	ID() string
-	Type() reflect.Type
-	Value(c Container) (any, error)
-}
-
-type nodeWithDependencies interface {
-	providerDependencies() []Node
-	deferredDependencies() []Node
+// Container is a dependency injection container.
+// It holds definitions of services and is responsible for building and
+// storing instances of services.
+type Container interface {
+	Get(id ID) (any, error)
+	GetByTag(tag Tag) ([]any, error)
+	Has(id ID) bool
+	Initialised(id ID) bool
 }
 
 type container struct {
-	mx       sync.RWMutex
-	graph    graph.Graph[string, *vertex]
-	vertices []*vertex
+	definitions map[ID]*Definition
+	aliases     map[ID]Alias
 
-	compiled bool
+	instances map[ID]any
+
+	// Lookup maps:
+	private map[ID]struct{}
+	byTag   map[Tag][]ID
 }
 
-func New() Container {
-	return &container{graph: graph.New(vertexHash, graph.Directed())}
+func newContainer() *container {
+	return &container{
+		definitions: make(map[ID]*Definition),
+		aliases:     make(map[ID]Alias),
+
+		instances: make(map[ID]any),
+
+		private: make(map[ID]struct{}),
+		byTag:   make(map[Tag][]ID),
+	}
 }
 
-func (c *container) Register(node Node) error {
-	c.mx.Lock()
-	defer c.mx.Unlock()
+func (c *container) Has(id ID) bool {
+	id = c.resolveAlias(id)
 
-	if c.compiled {
-		return ErrContainerCompiled
+	_, ok := c.instances[id]
+	if ok {
+		return true
 	}
-
-	err := c.addNodeOrSwapRef(node)
-	if errors.Is(err, graph.ErrVertexAlreadyExists) {
-		return NodeAlreadyExistsError{ID: node.ID()}
-	}
-	if err != nil {
-		return err
-	}
-
-	depNode, ok := node.(nodeWithDependencies)
-	if !ok {
-		return nil
-	}
-
-	// Add dependencies. These are injected on value creation, so they must be acyclic.
-	for _, dep := range depNode.providerDependencies() {
-		err := c.addNodeNX(dep)
-		if err != nil {
-			return err
-		}
-
-		cycle, err := graph.CreatesCycle(c.graph, node.ID(), dep.ID())
-		if err != nil {
-			return err
-		}
-		if cycle {
-			return CyclicDependencyError{Nodes: [2]string{node.ID(), dep.ID()}}
-		}
-
-		err = c.addEdgeNX(node.ID(), dep.ID())
-		if err != nil {
-			return err
-		}
-	}
-
-	// Add deferredTo dependencies. These are injected after value creation, so they can form cycles.
-	for _, dep := range depNode.deferredDependencies() {
-		err := c.addNodeNX(dep)
-		if err != nil {
-			return err
-		}
-
-		err = c.addEdgeNX(node.ID(), dep.ID())
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *container) addNodeOrSwapRef(node Node) error {
-	v, err := c.graph.Vertex(node.ID())
-	if errors.Is(err, graph.ErrVertexNotFound) {
-		return c.addVertex(newVertex(node))
-	}
-	if err != nil {
-		return err
-	}
-
-	if !v.IsRef() {
-		return graph.ErrVertexAlreadyExists
-	}
-
-	v.SwapNode(node)
-	return nil
-}
-
-func (c *container) addNodeNX(node Node) error {
-	err := c.addVertex(newVertex(node))
-	if errors.Is(err, graph.ErrVertexAlreadyExists) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *container) addVertex(v *vertex) error {
-	err := c.graph.AddVertex(v)
-	if err != nil {
-		return err
-	}
-	c.vertices = append(c.vertices, v)
-	return nil
-}
-
-func (c *container) addEdgeNX(from, to string) error {
-	err := c.graph.AddEdge(from, to)
-	if errors.Is(err, graph.ErrEdgeAlreadyExists) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *container) Get(id string) (Node, error) {
-	c.mx.RLock()
-	defer c.mx.RUnlock()
-
-	if !c.compiled {
-		return nil, ErrContainerNotCompiled
-	}
-
-	v, err := c.graph.Vertex(id)
-	if errors.Is(err, graph.ErrVertexNotFound) {
-		return nil, NodeNotFoundError{ID: id}
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return v.node, nil
-}
-
-func (c *container) getImplementingVertex(ifaceNode Node) (*vertex, error) {
-	iface := ifaceNode.Type()
-	if iface.Kind() != reflect.Interface {
-		return nil, fmt.Errorf("cannot find implementation: %s must be an interface", iface)
-	}
-
-	var impls []*vertex
-	for _, v := range c.vertices {
-		if v.node != ifaceNode && v.node.Type().Implements(iface) {
-			impls = append(impls, v)
-		}
-	}
-
-	if len(impls) == 0 {
-		return nil, NoImplementationError{Typ: iface}
-	}
-	if len(impls) > 1 {
-		implNames := lo.Map(impls, func(v *vertex, _ int) string { return v.node.ID() })
-		sort.Strings(implNames)
-		return nil, AmbiguousImplementationError{Typ: iface, Impls: implNames}
-	}
-
-	return impls[0], nil
-}
-
-func (c *container) Compile() error {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	if c.compiled {
-		return ErrContainerCompiled
-	}
-
-	m, err := c.graph.PredecessorMap()
-	if err != nil {
-		return err
-	}
-
-	var refErrs error
-	for id, predecessors := range m {
-		v, err := c.graph.Vertex(id)
-		if err != nil {
-			return err
-		}
-
-		if !v.IsRef() {
-			continue
-		}
-
-		if v.node.Type().Kind() == reflect.Interface {
-			implV, err := c.getImplementingVertex(v.node)
-			if err != nil {
-				refErrs = multierror.Append(refErrs, err)
-				continue
-			}
-
-			v.SwapNode(newProxy(v.node.ID(), implV))
-			err = c.graph.AddEdge(v.node.ID(), implV.node.ID())
-			if err != nil {
-				refErrs = multierror.Append(refErrs, err)
-				continue
-			}
-
-			continue
-		}
-
-		refErrs = multierror.Append(refErrs, UnresolvedRefError{ID: id, RefNodes: lo.Keys(predecessors)})
-	}
-	if refErrs != nil {
-		return refErrs
-	}
-
-	c.compiled = true
-
-	return nil
-}
-
-// Export returns a DOT representation of the dependency graph.
-func (c *container) Export(w io.Writer) error {
-	c.mx.RLock()
-	defer c.mx.RUnlock()
-
-	if !c.compiled {
-		return ErrContainerNotCompiled
-	}
-
-	err := draw.DOT(c.graph, w)
-	if err != nil {
-		return fmt.Errorf("di: %w", err)
-	}
-
-	return nil
-}
-
-type vertex struct {
-	node Node
-}
-
-func newVertex(node Node) *vertex {
-	return &vertex{node: node}
-}
-
-func vertexHash(v *vertex) string {
-	return v.node.ID()
-}
-
-func (v *vertex) IsRef() bool {
-	_, ok := v.node.(*ref)
+	_, ok = c.definitions[id]
 	return ok
 }
 
-func (v *vertex) SwapNode(node Node) {
-	v.node = node
+func (c *container) resolveAlias(id ID) ID {
+	alias, ok := c.aliases[id]
+	if ok {
+		return alias.target
+	}
+	return id
 }
 
-// Nodes:
+func (c *container) Initialised(id ID) bool {
+	id = c.resolveAlias(id)
 
-// ref is a placeholder for a node that has not been registered yet.
-type ref struct {
-	id string
-	t  reflect.Type
+	_, ok := c.instances[id]
+	return ok
 }
 
-func newRef(id string, t reflect.Type) *ref {
-	return &ref{id: id, t: t}
+func (c *container) Get(id ID) (any, error) {
+	return c.get(id, true)
 }
 
-func (r *ref) ID() string {
-	return r.id
+func (c *container) get(id ID, filterPrivate bool) (any, error) {
+	if filterPrivate && c.isPrivate(id) {
+		return nil, fmt.Errorf("service %s is private", id)
+	}
+
+	id = c.resolveAlias(id)
+
+	svc, ok := c.instances[id]
+	if ok {
+		return svc, nil
+	}
+
+	def, ok := c.definitions[id]
+	if !ok {
+		return nil, fmt.Errorf("service %s not found", id)
+	}
+
+	svc, err := c.instantiate(def)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate service %s: %w", id, err)
+	}
+
+	return svc, nil
 }
 
-func (r *ref) Type() reflect.Type {
-	return r.t
-}
-
-func (r *ref) Value(_ Container) (any, error) {
-	return nil, fmt.Errorf("cannot instantiate node %s: cannot instantiate a reference", r.id)
-}
-
-// proxy is a pass-thru node that proxies a dependency to another node.
-// It is used to connect interfaces with their implementations.
-type proxy struct {
-	id     string
-	target *vertex
-}
-
-func newProxy(id string, target *vertex) *proxy {
-	return &proxy{id: id, target: target}
-}
-
-func (p *proxy) ID() string {
-	return p.id
-}
-
-func (p *proxy) Type() reflect.Type {
-	return p.target.node.Type()
-}
-
-func (p *proxy) Value(c Container) (any, error) {
-	node, err := c.Get(p.target.node.ID())
+func (c *container) instantiate(def *Definition) (any, error) {
+	svc, err := def.factory.call(c)
 	if err != nil {
 		return nil, err
 	}
 
-	return node.Value(c)
+	if def.cached {
+		c.instances[def.id] = svc
+	}
+
+	for _, method := range def.methodCalls {
+		err = method.call(c, svc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return svc, nil
 }
 
-func (p *proxy) providerDependencies() []Node {
-	depNode, ok := p.target.node.(nodeWithDependencies)
-	if !ok {
-		return nil
-	}
-	return depNode.providerDependencies()
+func (c *container) GetByTag(tag Tag) ([]any, error) {
+	return c.getByTag(tag, true)
 }
 
-func (p *proxy) deferredDependencies() []Node {
-	depNode, ok := p.target.node.(nodeWithDependencies)
+func (c *container) getByTag(tag Tag, filterPrivate bool) ([]any, error) {
+	ids, ok := c.byTag[tag]
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	return depNode.deferredDependencies()
+
+	svcs := make([]any, 0, len(ids))
+	for _, id := range ids {
+		if filterPrivate && c.isPrivate(id) {
+			continue
+		}
+
+		svc, err := c.get(id, filterPrivate)
+		if err != nil {
+			return nil, err
+		}
+
+		svcs = append(svcs, svc)
+	}
+
+	return svcs, nil
+}
+
+func (c *container) isPrivate(id ID) bool {
+	_, ok := c.private[c.resolveAlias(id)]
+	return ok
 }
