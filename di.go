@@ -2,79 +2,103 @@ package di
 
 import (
 	"fmt"
-	"io"
+	"reflect"
+
+	"github.com/hashicorp/go-multierror"
+	"github.com/samber/lo"
 )
 
-type Container interface {
-	Register(node Node) error
-	Compile() error
-	Get(id string) (Node, error)
-	Export(w io.Writer) error
-}
-
-func Register(c Container, services ...*ServiceBuilder) error {
-	if len(services) == 0 {
-		return fmt.Errorf("di: no services to register")
-	}
-
-	for _, builder := range services {
-		if err := builder.build(c); err != nil {
-			return fmt.Errorf("di: %w", err)
-		}
-	}
-
-	err := c.Compile()
-	if err != nil {
-		return fmt.Errorf("di: %w", err)
-	}
-
-	return nil
-}
-
-func Get[T any](c Container, opts ...GetOptionsFunc) (T, error) {
-	opt := getOptions{nodeID: FQN[T]()}
+// Get returns a service from the container and ensures its type.
+func Get[T any](c Container, opts ...OptionsFunc) (T, error) {
+	opt := getOptions{id: FQN[T]()}
 	for _, optFn := range opts {
 		optFn(&opt)
 	}
 
-	node, err := c.Get(opt.nodeID)
+	svcAny, err := c.Get(opt.id)
 	if err != nil {
-		return zero[T](), fmt.Errorf("di: %w", err)
+		return zero[T](), err
 	}
 
-	valAny, err := node.Value(c)
-	if err != nil {
-		return zero[T](), fmt.Errorf("di: %w", err)
-	}
-
-	val, ok := valAny.(T)
+	svc, ok := svcAny.(T)
 	if !ok {
-		return zero[T](), fmt.Errorf(`di: service %s is of wrong type; expected %s; got %s`, opt.nodeID, FQN[T](), fqn(node.Type()))
+		return zero[T](), fmt.Errorf(`di: service %s is of wrong type; expected %s; got %s`, opt.id, FQN[T](), fqn(reflect.TypeOf(svcAny)))
 	}
 
-	return val, nil
+	return svc, nil
 }
 
-func MustGet[T any](c Container, opts ...GetOptionsFunc) T {
-	val, err := Get[T](c, opts...)
+// GetByTag returns all services from the container that have the given tag.
+func GetByTag[T any](c Container, tag Tag) ([]T, error) {
+	svcsAny, err := c.GetByTag(tag)
+	if err != nil {
+		return nil, err
+	}
+
+	var errs *multierror.Error
+	svcs := lo.Map(svcsAny, func(svcAny any, _ int) T {
+		svc, ok := svcAny.(T)
+		if !ok {
+			errs = multierror.Append(errs, fmt.Errorf(`di: service %s is of wrong type; expected %s; got %s`, tag, FQN[T](), fqn(reflect.TypeOf(svcAny))))
+			return zero[T]()
+		}
+		return svc
+	})
+
+	if errs != nil {
+		return nil, errs
+	}
+	return svcs, nil
+}
+
+// Has returns true if the container has a service with the given ID.
+func Has[T any](c Container, opts ...OptionsFunc) bool {
+	opt := getOptions{id: FQN[T]()}
+	for _, optFn := range opts {
+		optFn(&opt)
+	}
+
+	return c.Has(opt.id)
+}
+
+// Initialised returns true if the service has been initialised, i.e. if the containes
+// currently holds the instance of that service.
+func Initialised[T any](c Container, opts ...OptionsFunc) bool {
+	opt := getOptions{id: FQN[T]()}
+	for _, optFn := range opts {
+		optFn(&opt)
+	}
+
+	return c.Initialised(opt.id)
+}
+
+// MustGet is like Get but panics if an error occurs.
+func MustGet[T any](c Container, opts ...OptionsFunc) T {
+	svc, err := Get[T](c, opts...)
 	if err != nil {
 		panic(err)
 	}
-	return val
+	return svc
 }
 
-func Export(c Container, w io.Writer) error {
-	return c.Export(w)
+// MustGetByTag is like GetByTag but panics if an error occurs.
+func MustGetByTag[T any](c Container, tag Tag) []T {
+	svcs, err := GetByTag[T](c, tag)
+	if err != nil {
+		panic(err)
+	}
+	return svcs
 }
 
 type getOptions struct {
-	nodeID string
+	id ID
 }
 
-type GetOptionsFunc func(opt *getOptions)
+type OptionsFunc func(opt *getOptions)
 
-func WithID(id string) GetOptionsFunc {
+// WithID returns an OptionsFunc that sets the ID of the service to get.
+func WithID(id ID) OptionsFunc {
 	return func(opt *getOptions) {
-		opt.nodeID = id
+		opt.id = id
 	}
 }

@@ -8,15 +8,20 @@ import (
 	"github.com/samber/lo"
 )
 
+// DefinitionBuilder is a helper for building Definition objects.
+// It offers a fluent interface that does all the heavy lifting for the user.
+// This is the recommended way of building a Definition.
 type DefinitionBuilder struct {
 	def *Definition
 	err *multierror.Error
 }
 
+// SvcT returns a DefinitionBuilder for a service of type defined by the type parameter.
 func SvcT[T any](factory any) *DefinitionBuilder {
 	return newDefinitionBuilder(NewFactoryT[T], factory)
 }
 
+// Svc returns a DefinitionBuilder for a service of type inferred from the passed factory.
 func Svc(factory any) *DefinitionBuilder {
 	return newDefinitionBuilder(NewAutoFactory, factory)
 }

@@ -1,11 +1,19 @@
 package di
 
-import "github.com/hashicorp/go-multierror"
+import (
+	"github.com/hashicorp/go-multierror"
+)
 
+// New creates a new Builder.
+// This is the recommended entrypoint to the godi library.
 func New() *Builder {
 	return &Builder{cb: NewContainerBuilder()}
 }
 
+// Builder is a helper for building a container.
+// It offers a fluent interface that incorporates other helpers to make
+// the process of setting up the container easy and convenient for the user.
+// This is the recommended way of building a container.
 type Builder struct {
 	cb  *ContainerBuilder
 	err *multierror.Error

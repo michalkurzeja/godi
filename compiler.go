@@ -16,6 +16,10 @@ const (
 	compilerPassStageNumber
 )
 
+// compilerPassConfig contains an ordered list of compiler passes.
+// It is organised into stages and priorities. This allows the user
+// to hook into the compilation process at different points
+// to process the container with custom logic.
 type compilerPassConfig [compilerPassStageNumber]map[int][]CompilerPass
 
 func newCompilerPassConfig() compilerPassConfig {
@@ -63,6 +67,9 @@ func (c compilerPassConfig) ForEach(fn func(pass CompilerPass) error) error {
 	return nil
 }
 
+// compiler is responsible for configuration of the container after all user changes are done.
+// It allows the user to hook into the compilation process using compiler passes, making
+// it possible to create services dynamically and automatically.
 type compiler struct {
 	config compilerPassConfig
 }

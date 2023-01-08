@@ -10,6 +10,8 @@ import (
 	"github.com/samber/lo"
 )
 
+// CompilerPass is a component of the compiler that can inspect
+// and modify the container.
 type CompilerPass interface {
 	Compile(builder *ContainerBuilder) error
 }
@@ -94,7 +96,7 @@ func (p InterfaceResolutionPass) findImplementation(builder *ContainerBuilder, i
 
 	if len(impls) > 1 {
 		ids := lo.Map(impls, func(def *Definition, _ int) ID { return def.ID() })
-		return nil, fmt.Errorf("multiple implementations of %s found: %s", iface, ids)
+		return nil, fmt.Errorf("multiple implementations of %s found: %s", fqn(iface), ids)
 	}
 
 	return impls[0], nil
@@ -202,6 +204,7 @@ func NewReferenceValidationPass() CompilerPassFunc {
 	}
 }
 
+// NewCycleValidationPass returns a compiler pass that validates that there are no circular references.
 func NewCycleValidationPass() CompilerPassFunc {
 	hash := func(def *Definition) ID { return def.ID() }
 
@@ -243,6 +246,7 @@ func NewCycleValidationPass() CompilerPassFunc {
 
 // Stage: PostValidation
 
+// NewEagerInitPass returns a compiler pass that initializes all services that are marked as eager.
 func NewEagerInitPass() CompilerPassFunc {
 	return func(builder *ContainerBuilder) error {
 		for _, def := range builder.GetDefinitions() {

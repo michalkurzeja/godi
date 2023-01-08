@@ -1,35 +1,38 @@
 package di
 
 import (
-	"fmt"
 	"reflect"
+	"sort"
 
-	"github.com/samber/lo"
+	"golang.org/x/exp/constraints"
 )
 
-// FQN returns the fully qualified name of a type.
-func FQN[T any]() string {
+// FQN returns the fully qualified name of the type parameter.
+func FQN[T any]() ID {
 	return fqn(typeOf[T]())
 }
 
 // fqn returns the fully qualified name of a type.
 // It's a reflection-based, internal implementation.
-func fqn(typ reflect.Type) string {
+func fqn(typ reflect.Type) ID {
+	if typ == nil {
+		return "<nil>"
+	}
 	if typ.Kind() == reflect.Ptr {
 		return "*" + fqn(typ.Elem())
 	}
 	if pkgPath := typ.PkgPath(); pkgPath != "" {
-		return pkgPath + "." + typ.Name()
+		return ID(pkgPath + "." + typ.Name())
 	}
-	return typ.String()
+	return ID(typ.String())
 }
 
-// zero returns the zero value of a type.
-func zero[T any]() (t T) {
+// zero returns the zero value of the type parameter.
+func zero[T any]() (v T) {
 	return
 }
 
-// typeOf returns a type object of the type parameter.
+// typeOf returns the reflect.Type of the type parameter.
 func typeOf[T any]() reflect.Type {
 	typ := reflect.TypeOf(zero[T]())
 	if typ == nil { // This happens when T is an interface.
@@ -38,28 +41,31 @@ func typeOf[T any]() reflect.Type {
 	return typ
 }
 
-// toString returns string representations of values.
-func toString[S fmt.Stringer](ss ...S) []string {
-	return lo.Map(ss, func(s S, _ int) string {
-		return s.String()
+// sorted returns the given slice, sorted by the given property.
+func sorted[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
+	sort.Slice(s, func(i, j int) bool {
+		return by(s[i]) < by(s[j])
 	})
+	return s
 }
 
-// castSlice casts a slice of "any" values to a slice with type "to".
-func castSlice(s []any, to reflect.Type) (any, error) {
-	if to.Kind() != reflect.Slice {
-		return nil, fmt.Errorf("cannot cast %s to %s", fqn(reflect.TypeOf(s)), fqn(to))
-	}
-
-	vals := make([]reflect.Value, len(s))
-
-	for i, v := range s {
-		vv := reflect.ValueOf(v)
-		if !vv.Type().AssignableTo(to.Elem()) {
-			return nil, fmt.Errorf("type %s is not assignable to %s", fqn(vv.Type()), fqn(to.Elem()))
+// convert returns the given value converted to the given type.
+// In the case of scalar values, it doesn't do any conversion.
+// In the case of a slice, it ensures that is element is of the requested type.
+// Used to convert []any to []T.
+func convert(v reflect.Value, to reflect.Type) (reflect.Value, bool) {
+	switch to.Kind() {
+	case reflect.Slice:
+		sl := reflect.New(to).Elem()
+		for i := 0; i < v.Len(); i++ {
+			el := v.Index(i)
+			if el.Type().Kind() == reflect.Interface {
+				el = el.Elem()
+			}
+			sl = reflect.Append(sl, el)
 		}
-		vals[i] = vv
+		return sl, true
+	default:
+		return v, true
 	}
-
-	return reflect.Append(reflect.New(to).Elem(), vals...).Interface(), nil
 }

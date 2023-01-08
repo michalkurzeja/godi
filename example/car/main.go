@@ -2,13 +2,14 @@ package main
 
 import (
 	"image/color"
+	"os"
 
 	"github.com/davecgh/go-spew/spew"
 
+	"github.com/michalkurzeja/godi"
+	"github.com/michalkurzeja/godi/dig"
 	"github.com/michalkurzeja/godi/example/car/car"
 	"github.com/michalkurzeja/godi/example/car/part"
-	"github.com/michalkurzeja/godi/v2/di"
-	"github.com/michalkurzeja/godi/v2/di/dig"
 )
 
 type config struct {
@@ -40,7 +41,7 @@ func getConfig() config {
 
 func main() {
 	conf := getConfig()
-	dig.AddServices(
+	err := dig.AddServices(
 		di.Svc(car.NewCar).
 			Public(),
 		di.Svc(part.NewBody).
@@ -60,11 +61,16 @@ func main() {
 			Args(di.Val(19)),
 		di.Svc(part.NewSummerTire),
 		di.Svc(part.NewWinterTire),
-	)
-	panicIfErr(dig.Build())
+	).Aliases(
+		di.NewAliasT[*part.Engine]("engine"),
+		di.NewAliasT[*part.Chassis]("chassis"),
+	).Build()
+	panicIfErr(err)
 
 	c := dig.MustGet[*car.Car]()
 	spew.Dump(c)
+
+	di.Print(dig.Container(), os.Stdout)
 }
 
 func panicIfErr(err error) {

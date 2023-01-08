@@ -1,24 +1,29 @@
 # godi
+
 ![ci workflow](https://github.com/michalkurzeja/godi/actions/workflows/build.yaml/badge.svg)
 
 This library is an attempt to bring to Go a DI container requires as little action as possible from the user.
 You just need to define your services and the library will handle dependencies on its own, as much as possible.
 Whenever there's any ambiguity, you'll have to resolve it yourself.
 
-This library takes inspiration from https://github.com/samber/do and an excellent
-[DI component](https://github.com/symfony/dependency-injection) of PHP Symfony framework.
+This library takes heavy inspiration an excellent [DI component](https://github.com/symfony/dependency-injection) of PHP
+Symfony framework.
 
 ## Features
 
 - [x] Service definition
 - [x] Automatic and manual dependency resolution
-- [x] Cyclic dependencies through deferred injection
-- [x] Lazy loading
+- [x] Post-construct method invocation
+- [x] Service aliases
+- [x] Lazy/Eager instantiation
+- [x] Cached/uncached services
+- [x] Public/private services
+- [x] Service tagging
 - [x] Dependency graph validation and helpful errors
-- [x] Dependency graph visualization
-- [x] Test mode (dependency overrides)
+- [x] Programmatic control and container automation through compiler passes
+- [ ] Dependency graph visualization
+- [ ] Test mode (dependency overrides)
 - [ ] Service definitions from a config file
-- [ ] Tagged services
 
 ## Installation
 
@@ -59,20 +64,20 @@ package main
 import di "github.com/michalkurzeja/godi"
 
 func main() {
-	// Create a new container.
-	c := di.New()
+	// Create a new container builder.
+	builder := di.New()
 
-	// Register services. Dependencies are resolved automatically.
-	_ = di.Register(c,
+	// Add services. Dependencies are resolved automatically.
+	c, err = builder.Services(
 		di.SvcT[Foo](NewFoo),
 		di.SvcT[Bar](NewBar),
 		// We need to manually provide the value of `Baz.param` because it's not in the container.
-		di.SvcT[Baz](NewBaz).With(
-			di.Val("my-string"),
-		),
-	)
+		di.SvcT[Baz](NewBaz).
+		    Args(di.Val("my-string")),
+	).Build()
+	_ = err // If something is wrong, we will find out here!
 
-	// We can now get the services from the container!
+	// We can now get our services from the container!
 	foo := di.MustGet[Foo](c)
 	bar := di.MustGet[Bar](c)
 	baz := di.MustGet[Baz](c)
@@ -91,10 +96,10 @@ package main
 import "github.com/michalkurzeja/godi/dig"
 
 func main() {
-	// Register services right away. The container is already there!
-	_ = dig.Register(
+	// Add services right away. The container is already there!
+	_ = dig.AddServices(
 		di.SvcT[Foo](NewFoo),
-	)
+	).Build()
 
 	foo := dig.MustGet[Foo]()
 }
@@ -111,10 +116,9 @@ package main
 import "github.com/michalkurzeja/godi/dig"
 
 func main() {
-	// Register services right away. The container is already there!
-	_ = dig.Register(
+	_ = dig.AddServices(
 		di.Svc(NewFoo),
-	)
+	).Build()
 
 	foo := dig.MustGet[Foo]()
 }

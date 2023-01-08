@@ -9,6 +9,7 @@ import (
 
 var errType = typeOf[error]()
 
+// Factory represents a function that creates a service.
 type Factory struct {
 	fn         reflect.Value
 	args       FuncArgs
@@ -16,10 +17,12 @@ type Factory struct {
 	returnsErr bool
 }
 
+// NewFactoryT returns a factory that creates a service of type defined in the type parameter.
 func NewFactoryT[T any](fn any, args ...Argument) (*Factory, error) {
 	return NewFactory(typeOf[T](), reflect.ValueOf(fn), args...)
 }
 
+// NewAutoFactory returns a factory that creates a service of type inferred from the passed function signature.
 func NewAutoFactory(fn any, args ...Argument) (*Factory, error) {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
@@ -77,12 +80,14 @@ func (fn *Factory) GetArgs() FuncArgs {
 	return fn.args
 }
 
+// Method represents a method of a service.
 type Method struct {
 	fn         reflect.Method
 	args       FuncArgs
 	returnsErr bool
 }
 
+// NewMethod returns a method of a service.
 func NewMethod(fn reflect.Method, args ...Argument) (*Method, error) {
 	fnType := fn.Type
 	if fnType.NumOut() > 1 {

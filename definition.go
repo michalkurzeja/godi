@@ -9,6 +9,8 @@ import (
 type ID string
 type Tag string
 
+// Definition describes a service. It stores all information needed to build
+// an instance of a service, and it tells the container how to handle the service.
 type Definition struct {
 	id          ID
 	factory     *Factory
