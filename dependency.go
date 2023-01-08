@@ -16,7 +16,7 @@ func Val(v any) Dependency {
 }
 
 // Ref returns a dependency that will resolve to a service with the given type.
-// It can, optionally, be given an ID to disambiguate when there are multiple dependencies of the same type.
+// It can, optionally, be given an id to disambiguate when there are multiple dependencies of the same type.
 // If multiple IDs are given, the dependency will resolve to a slice of values.
 func Ref[T any](id ...string) Dependency {
 	t := typeOf[T]()
@@ -95,7 +95,7 @@ func (d Dependency) isEmpty() bool {
 
 func (d Dependency) resolve(c Container) (any, error) {
 	if d.isRef() {
-		// Resolve the references by getting them from the container.
+		// resolve the references by getting them from the container.
 		values := make([]any, len(d.refs))
 		for i, ref := range d.refs {
 			node, err := c.Get(ref.ID())

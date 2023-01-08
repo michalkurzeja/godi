@@ -33,7 +33,7 @@ func TestDI(t *testing.T) {
 			assert.Equal(t, "foo", foo.field)
 			assert.Equal(t, foo, bar.foo)
 		})
-		t.Run("registering an iterface type", func(t *testing.T) {
+		t.Run("registering an interface type", func(t *testing.T) {
 			t.Parallel()
 
 			c := di.New()

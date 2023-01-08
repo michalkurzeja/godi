@@ -39,7 +39,7 @@ type TestContainer struct {
 	*container
 }
 
-// Override replaces a node in the container (by its ID).
+// Override replaces a node in the container (by its id).
 func (c *TestContainer) Override(node Node) error {
 	v, err := c.graph.Vertex(node.ID())
 	if errors.Is(err, graph.ErrVertexNotFound) {

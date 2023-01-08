@@ -2,14 +2,13 @@ package main
 
 import (
 	"image/color"
-	"os"
 
 	"github.com/davecgh/go-spew/spew"
 
-	di "github.com/michalkurzeja/godi"
-	"github.com/michalkurzeja/godi/dig"
 	"github.com/michalkurzeja/godi/example/car/car"
 	"github.com/michalkurzeja/godi/example/car/part"
+	"github.com/michalkurzeja/godi/v2/di"
+	"github.com/michalkurzeja/godi/v2/di/dig"
 )
 
 type config struct {
@@ -23,8 +22,8 @@ type config struct {
 	}
 }
 
-func (conf config) EngineParams() []di.Dependency {
-	return []di.Dependency{
+func (conf config) EngineParams() []*di.ArgumentBuilder {
+	return []*di.ArgumentBuilder{
 		di.Val(conf.Engine.HorsePower),
 		di.Val(conf.Engine.Displacement),
 	}
@@ -41,49 +40,31 @@ func getConfig() config {
 
 func main() {
 	conf := getConfig()
-	err := dig.Register(
-		di.Svc(car.NewCar),
-		di.Svc(part.NewBody).With(
-			di.Val(conf.Body.Doors),
-			di.Val(conf.Body.Color).DeferTo("Paint"),
-		),
-		di.Svc(part.NewChassis).With(
-			di.Ref[*part.Gearbox]("auto-gearbox"),
-		),
-		di.Svc(part.NewEngine).With(conf.EngineParams()...),
-		di.Svc(part.NewGearbox).ID("manual-gearbox").With(
-			di.Val(6),
-			di.Val(false),
-		),
-		di.Svc(part.NewGearbox).ID("auto-gearbox").With(
-			di.Val(6),
-			di.Val(true),
-		),
+	dig.AddServices(
+		di.Svc(car.NewCar).
+			Public(),
+		di.Svc(part.NewBody).
+			Args(di.Val(conf.Body.Doors)).
+			MethodCall("Paint", di.Val(conf.Body.Color)),
+		di.Svc(part.NewChassis).
+			Args(di.Ref[*part.Gearbox]("auto-gearbox")),
+		di.Svc(part.NewEngine).Args(conf.EngineParams()...),
+		di.Svc(part.NewGearbox).ID("manual-gearbox").
+			Args(di.Val(6), di.Val(false)),
+		di.Svc(part.NewGearbox).ID("auto-gearbox").
+			Args(di.Val(6), di.Val(true)),
 		di.Svc(part.NewWheelSet),
-		di.Svc(part.NewWheel).With(
-			di.Ref[part.WinterTire](),
-		),
-		di.Svc(part.NewRim).With(
-			di.Val(19),
-		),
+		di.Svc(part.NewWheel).
+			Args(di.Ref[part.WinterTire]()),
+		di.Svc(part.NewRim).
+			Args(di.Val(19)),
 		di.Svc(part.NewSummerTire),
 		di.Svc(part.NewWinterTire),
 	)
-	panicIfErr(err)
+	panicIfErr(dig.Build())
 
 	c := dig.MustGet[*car.Car]()
 	spew.Dump(c)
-
-	exportToFile(dig.Container(), "car.dot")
-}
-
-func exportToFile(c di.Container, filename string) {
-	f, err := os.Create(filename)
-	panicIfErr(err)
-	defer f.Close()
-
-	err = di.Export(c, f)
-	panicIfErr(err)
 }
 
 func panicIfErr(err error) {
