@@ -61,7 +61,7 @@ func Has[T any](c Container, opts ...OptionsFunc) bool {
 	return c.Has(opt.id)
 }
 
-// Initialised returns true if the service has been initialised, i.e. if the containes
+// Initialised returns true if the service has been initialised, i.e. if the container
 // currently holds the instance of that service.
 func Initialised[T any](c Container, opts ...OptionsFunc) bool {
 	opt := getOptions{id: FQN[T]()}

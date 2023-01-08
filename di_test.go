@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/michalkurzeja/godi"
+	di "github.com/michalkurzeja/godi"
 )
 
 func TestContainer(t *testing.T) {
@@ -464,6 +464,7 @@ func TestContainer(t *testing.T) {
 		t.Parallel()
 
 		_, err := di.New().Services(
+			//nolint:stylecheck
 			di.Svc(func() (error, *NoDepSvc) {
 				return nil, &NoDepSvc{}
 			}),

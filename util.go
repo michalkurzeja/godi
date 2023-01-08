@@ -54,18 +54,18 @@ func sorted[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
 // In the case of a slice, it ensures that is element is of the requested type.
 // Used to convert []any to []T.
 func convert(v reflect.Value, to reflect.Type) (reflect.Value, bool) {
-	switch to.Kind() {
-	case reflect.Slice:
-		sl := reflect.New(to).Elem()
-		for i := 0; i < v.Len(); i++ {
-			el := v.Index(i)
-			if el.Type().Kind() == reflect.Interface {
-				el = el.Elem()
-			}
-			sl = reflect.Append(sl, el)
-		}
-		return sl, true
-	default:
+	if to.Kind() != reflect.Slice {
 		return v, true
 	}
+
+	sl := reflect.New(to).Elem()
+	for i := 0; i < v.Len(); i++ {
+		el := v.Index(i)
+		if el.Type().Kind() == reflect.Interface {
+			el = el.Elem()
+		}
+		sl = reflect.Append(sl, el)
+	}
+
+	return sl, true
 }

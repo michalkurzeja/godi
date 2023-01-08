@@ -6,7 +6,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	"github.com/michalkurzeja/godi"
+	di "github.com/michalkurzeja/godi"
 	"github.com/michalkurzeja/godi/dig"
 	"github.com/michalkurzeja/godi/example/car/car"
 	"github.com/michalkurzeja/godi/example/car/part"
