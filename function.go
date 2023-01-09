@@ -207,7 +207,7 @@ func (fa FuncArgs) Set(i uint, arg Argument) error {
 	if uint(len(fa)) <= i {
 		return fmt.Errorf("argument index out of range: %d", i)
 	}
-	if !arg.Type().AssignableTo(fa[i].Type()) {
+	if arg != zeroArg && !arg.Type().AssignableTo(fa[i].Type()) {
 		return fmt.Errorf("argument %d must be assignable to %s, got %s", i, fqn(fa[i].Type()), fqn(arg.Type()))
 	}
 	fa[i].arg = arg
@@ -234,7 +234,7 @@ OUTER:
 		}
 
 		for i, a := range fa {
-			if a.IsEmpty() && arg.Type().AssignableTo(fa[i].Type()) {
+			if a.IsEmpty() && (arg == zeroArg || arg.Type().AssignableTo(fa[i].Type())) {
 				fa[i].arg = arg
 				arg.setIndex(uint(i))
 				continue OUTER
@@ -257,6 +257,10 @@ func (fa FuncArgs) resolve(c *container) ([]reflect.Value, error) {
 	for i, a := range fa {
 		if a.IsEmpty() {
 			return nil, fmt.Errorf("argument %d is not set", i)
+		}
+		if a.arg == zeroArg {
+			in[i] = reflect.Zero(a.Type())
+			continue
 		}
 		vAny, err := a.Argument().resolve(c)
 		if err != nil {

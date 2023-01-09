@@ -91,6 +91,27 @@ func TestContainer(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, &StrSliceDepSvc{props: []string{"foo", "bar"}}, svc)
 	})
+	t.Run("can register a service with slice factory argument and no value", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewStrSliceDepSvc).
+				Args(di.Zero()).
+				Public(),
+			di.Svc(NewSliceDepSvc).
+				Args(di.Zero()).
+				Public(),
+		).Build()
+		require.NoError(t, err)
+
+		svc1, err := di.Get[*StrSliceDepSvc](c)
+		require.NoError(t, err)
+		assert.Equal(t, &StrSliceDepSvc{}, svc1)
+
+		svc2, err := di.Get[*SliceDepSvc](c)
+		require.NoError(t, err)
+		assert.Equal(t, &SliceDepSvc{}, svc2)
+	})
 	t.Run("can register a service with method call with autowiring", func(t *testing.T) {
 		t.Parallel()
 
