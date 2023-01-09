@@ -1,10 +1,12 @@
 package di
 
+func Zero() *ArgumentBuilder {
+	return &ArgumentBuilder{arg: zeroArg}
+}
+
 // Val returns a new argument builder for a Value.
 func Val(v any) *ArgumentBuilder {
-	return &ArgumentBuilder{
-		arg: NewValue(v),
-	}
+	return &ArgumentBuilder{arg: NewValue(v)}
 }
 
 // Ref returns a new argument builder for a Reference.
@@ -14,16 +16,12 @@ func Ref[T any](id ...ID) *ArgumentBuilder {
 		refID = id[len(id)-1]
 	}
 
-	return &ArgumentBuilder{
-		arg: NewReference(refID, typeOf[T]()),
-	}
+	return &ArgumentBuilder{arg: NewReference(refID, typeOf[T]())}
 }
 
 // Tagged returns a new argument builder for a TaggedCollection.
 func Tagged[T any](tag Tag) *ArgumentBuilder {
-	return &ArgumentBuilder{
-		arg: NewTaggedCollection(tag, typeOf[T]()),
-	}
+	return &ArgumentBuilder{arg: NewTaggedCollection(tag, typeOf[T]())}
 }
 
 // ArgumentBuilder is a helper for building arguments.

@@ -5,6 +5,9 @@ import (
 	"reflect"
 )
 
+// noArg is a special argument that is used to indicate a zero value for a function argument.
+var zeroArg = NewValue(nil)
+
 // Argument represents a dependency that can be resolved by the container.
 // Service factory functions and methods calls use Argument objects.
 // Arguments can be either values, references or collections of tagged services.
@@ -53,6 +56,10 @@ func NewValue(v any) *Value {
 		baseArg: newBaseArg(reflect.TypeOf(v)),
 		v:       v,
 	}
+}
+
+func NewZero() *Value {
+	return zeroArg
 }
 
 func (v Value) String() string {
