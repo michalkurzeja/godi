@@ -24,7 +24,8 @@ func Print(c Container, w io.Writer) error {
 
 	if len(aliases) > 0 {
 		write(w, fmt.Sprintf("%s\n", strings.Repeat("=", 80)))
-		write(w, "Aliases:\n")
+		write(w, "\tAliases:\n")
+		write(w, fmt.Sprintf("%s\n", strings.Repeat("=", 80)))
 	}
 	for _, alias := range aliases {
 		write(w, fmt.Sprintf("%s -> %s\n", alias.ID(), alias.Target()))
@@ -32,10 +33,13 @@ func Print(c Container, w io.Writer) error {
 
 	if len(definitions) > 0 {
 		write(w, fmt.Sprintf("%s\n", strings.Repeat("=", 80)))
-		write(w, "Services:\n")
+		write(w, "\tServices:\n")
+		write(w, fmt.Sprintf("%s\n", strings.Repeat("=", 80)))
 	}
-	for _, def := range definitions {
-		write(w, fmt.Sprintf("%s\n", strings.Repeat("-", 80)))
+	for i, def := range definitions {
+		if i != 0 {
+			write(w, fmt.Sprintf("%s\n", strings.Repeat("-", 80)))
+		}
 		write(w, fmt.Sprintf("Name:\t\t%s\n", def))
 		write(w, fmt.Sprintf("Autowire:\t%t\n", def.IsAutowire()))
 		write(w, fmt.Sprintf("Public:\t\t%t\n", def.IsPublic()))
@@ -59,6 +63,12 @@ func Print(c Container, w io.Writer) error {
 			for _, arg := range method.GetArgs()[1:] {
 				write(w, fmt.Sprintf("\t- %s\n", arg.Argument()))
 			}
+		}
+		if len(def.GetTags()) > 0 {
+			write(w, "Tags:\n")
+		}
+		for _, tag := range def.GetTags() {
+			write(w, fmt.Sprintf(" - %s\n", tag))
 		}
 	}
 

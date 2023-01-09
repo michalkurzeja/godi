@@ -1,7 +1,7 @@
 package di
 
 func Zero() *ArgumentBuilder {
-	return &ArgumentBuilder{arg: zeroArg}
+	return &ArgumentBuilder{arg: NewZero()}
 }
 
 // Val returns a new argument builder for a Value.
