@@ -64,17 +64,18 @@ func (p InterfaceResolutionPass) checkAndResolve(builder *ContainerBuilder, arg 
 		return nil // Not an interface, nothing to resolve.
 	}
 
+	aliasID := fqn(arg.Type())
+
+	// Check if the interface is already aliased. We don't need to resolve those.
+	if _, ok := builder.GetAlias(aliasID); ok {
+		return nil
+	}
+
 	impl, err := p.findImplementation(builder, arg.Type())
 	if err != nil {
 		return err
 	}
 	if impl == nil {
-		return nil
-	}
-
-	aliasID := fqn(arg.Type())
-	// Don't override existing aliases.
-	if _, ok := builder.GetAlias(aliasID); ok {
 		return nil
 	}
 

@@ -70,10 +70,10 @@ func (fn *Factory) call(c *container) (any, error) {
 	call := lo.Ternary(fn.fn.Type().IsVariadic(), fn.fn.CallSlice, fn.fn.Call)
 	out := call(in)
 
-	if !fn.returnsErr {
-		return out[0].Interface(), nil
+	if fn.returnsErr && !out[1].IsNil() {
+		return out[0].Interface(), out[1].Interface().(error)
 	}
-	return out[0].Interface(), out[1].Interface().(error)
+	return out[0].Interface(), nil
 }
 
 func (fn *Factory) GetArgs() FuncArgs {
