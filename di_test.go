@@ -336,12 +336,12 @@ func TestContainer(t *testing.T) {
 	t.Run("can register a service with tagged dependency", func(t *testing.T) {
 		t.Parallel()
 
-		const tag = "my-tag"
+		var tag = di.NewTag("my-tag")
 		c, err := di.New().Services(
 			di.Svc(NewNoDepSvc).ID("foo").Tags(tag),
 			di.Svc(NewNoDepSvc).ID("bar").Tags(tag),
 			di.Svc(NewSliceDepSvc).
-				Args(di.Tagged[[]*NoDepSvc](tag)).
+				Args(di.Tagged[[]*NoDepSvc](tag.ID())).
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -353,12 +353,12 @@ func TestContainer(t *testing.T) {
 	t.Run("can register a variadic service with tagged dependency", func(t *testing.T) {
 		t.Parallel()
 
-		const tag = "my-tag"
+		var tag = di.NewTag("my-tag")
 		c, err := di.New().Services(
 			di.Svc(NewNoDepSvc).ID("foo").Tags(tag),
 			di.Svc(NewNoDepSvc).ID("bar").Tags(tag),
 			di.Svc(NewSliceDepSvcVariadic).
-				Args(di.Tagged[[]*NoDepSvc](tag)).
+				Args(di.Tagged[[]*NoDepSvc](tag.ID())).
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -649,7 +649,7 @@ func TestContainer(t *testing.T) {
 	t.Run("getting by tag works and returns only returns public services", func(t *testing.T) {
 		t.Parallel()
 
-		const tag = "my-tag"
+		var tag = di.NewTag("my-tag")
 		c, err := di.New().Services(
 			di.Svc(NewNoDepSvc).ID("foo").Tags(tag).Public(),
 			di.Svc(NewNoDepSvc).ID("bar").Tags(tag).Private(),
@@ -657,7 +657,7 @@ func TestContainer(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		svcs, err := di.GetByTag[*NoDepSvc](c, tag)
+		svcs, err := di.GetByTag[*NoDepSvc](c, tag.ID())
 		require.NoError(t, err)
 		assert.Equal(t, []*NoDepSvc{NewNoDepSvc(), NewNoDepSvc()}, svcs)
 	})
@@ -750,6 +750,22 @@ func TestContainer(t *testing.T) {
 		_, err = di.Get[*MethodDepSvc](c)
 		assert.ErrorIs(t, err, assert.AnError)
 	})
+	t.Run("getting by tag when different types are tagged fails", func(t *testing.T) {
+		t.Parallel()
+
+		var tag = di.NewTag("my-tag")
+
+		c, err := di.New().Services(
+			di.Svc(NewNoDepSvc).Public().
+				Tags(tag),
+			di.Svc(NewDepSvc).Args(di.Val("foo")).Public().
+				Tags(tag),
+		).Build()
+		require.NoError(t, err)
+
+		_, err = di.GetByTag[*NoDepSvc](c, tag.ID())
+		assertErrorInMultiError(t, err, `di: service tagged with my-tag is of wrong type; expected *github.com/michalkurzeja/godi_test.NoDepSvc; got *github.com/michalkurzeja/godi_test.DepSvc`)
+	})
 	t.Run("panics on MustGet error", func(t *testing.T) {
 		t.Parallel()
 
@@ -764,7 +780,7 @@ func TestContainer(t *testing.T) {
 		t.Parallel()
 
 		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Tags("foo").Public(),
+			di.Svc(NewNoDepSvc).Tags(di.NewTag("foo")).Public(),
 		).Build()
 		require.NoError(t, err)
 

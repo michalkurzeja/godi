@@ -40,7 +40,7 @@ func Print(c Container, w io.Writer) error {
 		if i != 0 {
 			write(w, fmt.Sprintf("%s\n", strings.Repeat("-", 80)))
 		}
-		write(w, fmt.Sprintf("Name:\t\t%s\n", def))
+		write(w, fmt.Sprintf("ID:\t\t%s\n", def))
 		write(w, fmt.Sprintf("Autowire:\t%t\n", def.IsAutowired()))
 		write(w, fmt.Sprintf("Public:\t\t%t\n", def.IsPublic()))
 		write(w, fmt.Sprintf("Shared:\t\t%t\n", def.IsShared()))
@@ -68,7 +68,10 @@ func Print(c Container, w io.Writer) error {
 			write(w, "Tags:\n")
 		}
 		for _, tag := range def.GetTags() {
-			write(w, fmt.Sprintf(" - %s\n", tag))
+			params := lo.Map(lo.Entries(tag.Params()), func(e lo.Entry[string, any], _ int) string {
+				return fmt.Sprintf("%s:%v", e.Key, e.Value)
+			})
+			write(w, fmt.Sprintf(" - %s %s\n", tag, params))
 		}
 	}
 

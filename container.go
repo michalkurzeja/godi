@@ -9,7 +9,7 @@ import (
 // storing instances of services.
 type Container interface {
 	Get(id ID) (any, error)
-	GetByTag(tag Tag) ([]any, error)
+	GetByTag(tag TagID) ([]any, error)
 	Has(id ID) bool
 	Initialised(id ID) bool
 }
@@ -22,7 +22,7 @@ type container struct {
 
 	// Lookup maps:
 	private map[ID]struct{}
-	byTag   map[Tag][]ID
+	byTag   map[TagID][]ID
 }
 
 func newContainer() *container {
@@ -33,7 +33,7 @@ func newContainer() *container {
 		instances: make(map[ID]any),
 
 		private: make(map[ID]struct{}),
-		byTag:   make(map[Tag][]ID),
+		byTag:   make(map[TagID][]ID),
 	}
 }
 
@@ -112,11 +112,11 @@ func (c *container) instantiate(def *Definition) (any, error) {
 	return svc, nil
 }
 
-func (c *container) GetByTag(tag Tag) ([]any, error) {
+func (c *container) GetByTag(tag TagID) ([]any, error) {
 	return c.getByTag(tag, true)
 }
 
-func (c *container) getByTag(tag Tag, filterPrivate bool) ([]any, error) {
+func (c *container) getByTag(tag TagID, filterPrivate bool) ([]any, error) {
 	ids, ok := c.byTag[tag]
 	if !ok {
 		return nil, nil

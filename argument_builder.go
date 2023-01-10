@@ -20,7 +20,7 @@ func Ref[T any](id ...ID) *ArgumentBuilder {
 }
 
 // Tagged returns a new argument builder for a TaggedCollection.
-func Tagged[T any](tag Tag) *ArgumentBuilder {
+func Tagged[T any](tag TagID) *ArgumentBuilder {
 	return &ArgumentBuilder{arg: NewTaggedCollection(tag, typeOf[T]())}
 }
 

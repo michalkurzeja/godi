@@ -46,10 +46,10 @@ func MustGet[T any](opts ...di.OptionsFunc) T {
 	return di.MustGet[T](c, opts...)
 }
 
-func GetByTag[T any](tag di.Tag) ([]T, error) {
+func GetByTag[T any](tag di.TagID) ([]T, error) {
 	return di.GetByTag[T](c, tag)
 }
 
-func MustGetByTag[T any](tag di.Tag) []T {
+func MustGetByTag[T any](tag di.TagID) []T {
 	return di.MustGetByTag[T](c, tag)
 }
