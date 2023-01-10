@@ -6,6 +6,16 @@ import (
 	"github.com/samber/lo"
 )
 
+// Defaults for Definition properties. Change them
+// to change the default configuration of services.
+// These can be overridden per Definition.
+var (
+	DefaultPublic    = false
+	DefaultLazy      = true
+	DefaultShared    = true
+	DefaultAutowired = true
+)
+
 type ID string
 type Tag string
 
@@ -30,10 +40,10 @@ func NewDefinition(id ID, factory *Factory) *Definition {
 		factory:     factory,
 		methodCalls: make(map[string]*Method),
 
-		public:    false,
-		lazy:      true,
-		shared:    true,
-		autowired: true,
+		public:    DefaultPublic,
+		lazy:      DefaultLazy,
+		shared:    DefaultShared,
+		autowired: DefaultAutowired,
 	}
 }
 
