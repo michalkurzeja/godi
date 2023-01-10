@@ -7,12 +7,12 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-// FQN returns the fully qualified id of the type parameter.
+// FQN returns the fully qualified name of the type parameter.
 func FQN[T any]() ID {
 	return fqn(typeOf[T]())
 }
 
-// fqn returns the fully qualified id of a type.
+// fqn returns the fully qualified name of a type.
 // It's a reflection-based, internal implementation.
 func fqn(typ reflect.Type) ID {
 	if typ == nil {
