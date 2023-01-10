@@ -8,29 +8,31 @@ type CompilerPassStage uint8
 
 const (
 	PreOptimisation CompilerPassStage = iota
-	optimisation
-	PostOptimisation
+	Optimisation
 	PreValidation
-	validation
+	Validation
 	PostValidation
 	compilerPassStageNumber
 )
 
 // compilerPassConfig contains an ordered list of compiler passes.
-// It is organised into stages and priorities. This allows the user
-// to hook into the compilation process at different points
-// to process the container with custom logic.
+// It is organised into stages and priorities. This makes it possible
+// to control when the pass is executed.
+// The stages are executed sequentially, and the passes within a stage
+// are executed by their priority: the higher the priority, the earlier
+// the pass will run. If two passes have the same priority, they will
+// be executed in the order they were added.
 type compilerPassConfig [compilerPassStageNumber]map[int][]CompilerPass
 
 func newCompilerPassConfig() compilerPassConfig {
 	return compilerPassConfig{
-		optimisation: {
+		Optimisation: {
 			0: {
 				NewInterfaceResolutionPass(),
 				NewAutowirePass(),
 			},
 		},
-		validation: {
+		Validation: {
 			0: {
 				NewAliasValidationPass(),
 				NewReferenceValidationPass(),
@@ -45,14 +47,14 @@ func newCompilerPassConfig() compilerPassConfig {
 	}
 }
 
-func (c compilerPassConfig) Add(stage CompilerPassStage, priority int, pass CompilerPass) {
+func (c compilerPassConfig) AddPass(stage CompilerPassStage, priority int, pass CompilerPass) {
 	c[stage][priority] = append(c[stage][priority], pass)
 }
 
 func (c compilerPassConfig) ForEach(fn func(pass CompilerPass) error) error {
 	for _, stage := range c {
-		priorities := sorted(lo.Keys(stage), func(prio int) int {
-			return prio
+		priorities := sortedDesc(lo.Keys(stage), func(priority int) int {
+			return priority
 		})
 
 		for _, priority := range priorities {
@@ -78,8 +80,8 @@ func newCompiler() *compiler {
 	return &compiler{config: newCompilerPassConfig()}
 }
 
-func (c *compiler) Add(stage CompilerPassStage, priority int, pass CompilerPass) {
-	c.config.Add(stage, priority, pass)
+func (c *compiler) AddPass(stage CompilerPassStage, priority int, pass CompilerPass) {
+	c.config.AddPass(stage, priority, pass)
 }
 
 func (c *compiler) Compile(builder *ContainerBuilder) error {

@@ -19,13 +19,18 @@ func Container() di.Container {
 	return c
 }
 
-func AddServices(services ...*di.DefinitionBuilder) *Builder {
+func Aliases(aliases ...di.Alias) *Builder {
+	b.Aliases(aliases...)
+	return b
+}
+
+func Services(services ...*di.DefinitionBuilder) *Builder {
 	b.Services(services...)
 	return b
 }
 
-func AddAliases(aliases ...di.Alias) *Builder {
-	b.Aliases(aliases...)
+func CompilerPass(stage di.CompilerPassStage, priority int, pass di.CompilerPass) *Builder {
+	b.CompilerPass(stage, priority, pass)
 	return b
 }
 

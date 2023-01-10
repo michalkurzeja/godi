@@ -25,7 +25,7 @@ func NewContainerBuilder() *ContainerBuilder {
 }
 
 func (b *ContainerBuilder) GetDefinitions() []*Definition {
-	return sorted(lo.Values(b.container.definitions), func(def *Definition) ID {
+	return sortedAsc(lo.Values(b.container.definitions), func(def *Definition) ID {
 		return def.ID()
 	})
 }
@@ -60,7 +60,7 @@ func (b *ContainerBuilder) RemoveDefinitions(ids ...ID) *ContainerBuilder {
 }
 
 func (b *ContainerBuilder) GetAliases() []Alias {
-	return sorted(lo.Values(b.container.aliases), func(a Alias) ID {
+	return sortedAsc(lo.Values(b.container.aliases), func(a Alias) ID {
 		return a.ID()
 	})
 }
@@ -84,6 +84,11 @@ func (b *ContainerBuilder) AddAliases(aliases ...Alias) *ContainerBuilder {
 
 func (b *ContainerBuilder) RemoveAliases(ids ...ID) *ContainerBuilder {
 	b.container.aliases = lo.OmitByKeys(b.container.aliases, ids)
+	return b
+}
+
+func (b *ContainerBuilder) AddCompilerPass(stage CompilerPassStage, priority int, pass CompilerPass) *ContainerBuilder {
+	b.compiler.AddPass(stage, priority, pass)
 	return b
 }
 

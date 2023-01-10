@@ -36,6 +36,11 @@ func (b *Builder) Services(services ...*DefinitionBuilder) *Builder {
 	return b
 }
 
+func (b *Builder) CompilerPass(stage CompilerPassStage, priority int, pass CompilerPass) *Builder {
+	b.cb.AddCompilerPass(stage, priority, pass)
+	return b
+}
+
 func (b *Builder) Build() (Container, error) {
 	container, err := b.cb.Build()
 	return container, multierror.Append(b.err, err).ErrorOrNil()

@@ -41,10 +41,18 @@ func typeOf[T any]() reflect.Type {
 	return typ
 }
 
-// sorted returns the given slice, sorted by the given property.
-func sorted[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
+// sortedAsc returns the given slice, sorted by the given property in ascending order.
+func sortedAsc[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
 	sort.Slice(s, func(i, j int) bool {
 		return by(s[i]) < by(s[j])
+	})
+	return s
+}
+
+// sortedDesc returns the given slice, sorted by the given property in descending order.
+func sortedDesc[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
+	sort.Slice(s, func(i, j int) bool {
+		return by(s[i]) > by(s[j])
 	})
 	return s
 }
