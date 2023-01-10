@@ -113,10 +113,10 @@ func (r Reference) resolve(c *container) (any, error) {
 // It is resolved by the container and may be empty.
 type TaggedCollection struct {
 	baseArg
-	tag Tag
+	tag TagID
 }
 
-func NewTaggedCollection(tag Tag, typ reflect.Type) *TaggedCollection {
+func NewTaggedCollection(tag TagID, typ reflect.Type) *TaggedCollection {
 	return &TaggedCollection{
 		baseArg: newBaseArg(typ),
 		tag:     tag,

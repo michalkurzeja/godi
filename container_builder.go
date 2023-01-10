@@ -48,7 +48,7 @@ func (b *ContainerBuilder) AddDefinitions(definitions ...*Definition) *Container
 			b.container.private[def.id] = struct{}{}
 		}
 		for _, tag := range def.GetTags() {
-			b.container.byTag[tag] = append(b.container.byTag[tag], def.id)
+			b.container.byTag[tag.ID()] = append(b.container.byTag[tag.ID()], def.id)
 		}
 	}
 	return b

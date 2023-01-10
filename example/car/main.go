@@ -59,8 +59,10 @@ func main() {
 			Args(di.Ref[part.WinterTire]()),
 		di.Svc(part.NewRim).
 			Args(di.Val(19)),
-		di.Svc(part.NewSummerTire),
-		di.Svc(part.NewWinterTire),
+		di.Svc(part.NewSummerTire).
+			Tags(di.NewTag("tire").AddParam("season", "summer")),
+		di.Svc(part.NewWinterTire).
+			Tags(di.NewTag("tire").AddParam("season", "winter")),
 	).Aliases(
 		di.NewAliasT[*part.Engine]("engine"),
 		di.NewAliasT[*part.Chassis]("chassis"),

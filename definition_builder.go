@@ -76,7 +76,7 @@ func (b *DefinitionBuilder) MethodCall(name string, args ...*ArgumentBuilder) *D
 	return b
 }
 
-func (b *DefinitionBuilder) Tags(tags ...Tag) *DefinitionBuilder {
+func (b *DefinitionBuilder) Tags(tags ...*Tag) *DefinitionBuilder {
 	b.def.AddTags(tags...)
 	return b
 }

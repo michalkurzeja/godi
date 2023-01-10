@@ -17,7 +17,6 @@ var (
 )
 
 type ID string
-type Tag string
 
 // Definition describes a service. It stores all information needed to build
 // an instance of a service, and it tells the container how to handle the service.
@@ -26,7 +25,7 @@ type Definition struct {
 	factory     *Factory
 	methodCalls map[string]*Method
 
-	tags []Tag
+	tags map[TagID]*Tag
 
 	public    bool
 	lazy      bool
@@ -39,6 +38,8 @@ func NewDefinition(id ID, factory *Factory) *Definition {
 		id:          id,
 		factory:     factory,
 		methodCalls: make(map[string]*Method),
+
+		tags: make(map[TagID]*Tag),
 
 		public:    DefaultPublic,
 		lazy:      DefaultLazy,
@@ -65,7 +66,9 @@ func (d *Definition) SetFactory(factory *Factory) *Definition {
 }
 
 func (d *Definition) GetMethodCalls() []*Method {
-	return lo.Values(d.methodCalls)
+	return sortedAsc(lo.Values(d.methodCalls), func(m *Method) string {
+		return m.Name()
+	})
 }
 
 func (d *Definition) SetMethodCalls(methodCalls ...*Method) *Definition {
@@ -85,22 +88,30 @@ func (d *Definition) RemoveMethodCalls(names ...string) *Definition {
 	return d
 }
 
-func (d *Definition) GetTags() []Tag {
-	return d.tags
+func (d *Definition) GetTags() []*Tag {
+	return sortedAsc(lo.Values(d.tags), func(t *Tag) TagID {
+		return t.ID()
+	})
 }
 
-func (d *Definition) SetTags(tags ...Tag) *Definition {
-	d.tags = tags
+func (d *Definition) SetTags(tags ...*Tag) *Definition {
+	d.tags = lo.SliceToMap(tags, func(t *Tag) (TagID, *Tag) {
+		return t.ID(), t
+	})
 	return d
 }
 
-func (d *Definition) AddTags(tags ...Tag) *Definition {
-	d.tags = append(d.tags, tags...)
+func (d *Definition) AddTags(tags ...*Tag) *Definition {
+	for _, tag := range tags {
+		d.tags[tag.ID()] = tag
+	}
 	return d
 }
 
-func (d *Definition) RemoveTags(tags ...Tag) *Definition {
-	d.tags = lo.Without(d.tags, tags...)
+func (d *Definition) RemoveTags(ids ...TagID) *Definition {
+	for _, id := range ids {
+		delete(d.tags, id)
+	}
 	return d
 }
 

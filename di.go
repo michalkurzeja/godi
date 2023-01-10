@@ -29,7 +29,7 @@ func Get[T any](c Container, opts ...OptionsFunc) (T, error) {
 }
 
 // GetByTag returns all services from the container that have the given tag.
-func GetByTag[T any](c Container, tag Tag) ([]T, error) {
+func GetByTag[T any](c Container, tag TagID) ([]T, error) {
 	svcsAny, err := c.GetByTag(tag)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func GetByTag[T any](c Container, tag Tag) ([]T, error) {
 	svcs := lo.Map(svcsAny, func(svcAny any, _ int) T {
 		svc, ok := svcAny.(T)
 		if !ok {
-			errs = multierror.Append(errs, fmt.Errorf(`di: service %s is of wrong type; expected %s; got %s`, tag, FQN[T](), fqn(reflect.TypeOf(svcAny))))
+			errs = multierror.Append(errs, fmt.Errorf(`di: service tagged with %s is of wrong type; expected %s; got %s`, tag, FQN[T](), fqn(reflect.TypeOf(svcAny))))
 			return zero[T]()
 		}
 		return svc
@@ -82,7 +82,7 @@ func MustGet[T any](c Container, opts ...OptionsFunc) T {
 }
 
 // MustGetByTag is like GetByTag but panics if an error occurs.
-func MustGetByTag[T any](c Container, tag Tag) []T {
+func MustGetByTag[T any](c Container, tag TagID) []T {
 	svcs, err := GetByTag[T](c, tag)
 	if err != nil {
 		panic(err)
