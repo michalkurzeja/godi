@@ -15,10 +15,10 @@ func Print(c Container, w io.Writer) error {
 	}
 
 	cc := c.(*container)
-	aliases := sorted(lo.Values(cc.aliases), func(a Alias) ID {
+	aliases := sortedAsc(lo.Values(cc.aliases), func(a Alias) ID {
 		return a.ID()
 	})
-	definitions := sorted(lo.Values(cc.definitions), func(d *Definition) ID {
+	definitions := sortedAsc(lo.Values(cc.definitions), func(d *Definition) ID {
 		return d.ID()
 	})
 

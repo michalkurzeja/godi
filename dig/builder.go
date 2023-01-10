@@ -18,6 +18,11 @@ func (b *Builder) Services(services ...*di.DefinitionBuilder) *Builder {
 	return b
 }
 
+func (b *Builder) CompilerPass(stage di.CompilerPassStage, priority int, pass di.CompilerPass) *Builder {
+	b.b.CompilerPass(stage, priority, pass)
+	return b
+}
+
 func (b *Builder) Build() (err error) {
 	c, err = b.b.Build()
 	return err

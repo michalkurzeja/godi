@@ -41,7 +41,7 @@ func getConfig() config {
 
 func main() {
 	conf := getConfig()
-	err := dig.AddServices(
+	err := dig.Services(
 		di.Svc(car.NewCar).
 			Public(),
 		di.Svc(part.NewBody).
@@ -70,7 +70,7 @@ func main() {
 	c := dig.MustGet[*car.Car]()
 	spew.Dump(c)
 
-	di.Print(dig.Container(), os.Stdout)
+	_ = di.Print(dig.Container(), os.Stdout)
 }
 
 func panicIfErr(err error) {

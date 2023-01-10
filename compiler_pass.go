@@ -22,7 +22,7 @@ func (fn CompilerPassFunc) Compile(builder *ContainerBuilder) error {
 	return fn(builder)
 }
 
-// Stage: optimisation
+// Stage: Optimisation
 
 // InterfaceResolutionPass resolves interfaces to their implementations.
 // It inspects arguments of factories and method calls of all definitions.
@@ -138,7 +138,7 @@ func NewAutowirePass() CompilerPassFunc {
 	}
 }
 
-// Stage: validation
+// Stage: Validation
 
 // NewAliasValidationPass returns a compiler pass that validates all aliases.
 // It ensures that they point to existing service definitions.
