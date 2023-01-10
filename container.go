@@ -98,7 +98,7 @@ func (c *container) instantiate(def *Definition) (any, error) {
 		return nil, err
 	}
 
-	if def.cached {
+	if def.shared {
 		c.instances[def.id] = svc
 	}
 

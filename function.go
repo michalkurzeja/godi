@@ -12,7 +12,7 @@ var errType = typeOf[error]()
 // Factory represents a function that creates a service.
 type Factory struct {
 	fn         reflect.Value
-	args       FuncArgs
+	args       FuncArgumentsList
 	creates    reflect.Type
 	returnsErr bool
 }
@@ -53,7 +53,7 @@ func NewFactory(of reflect.Type, fn reflect.Value, args ...Argument) (*Factory, 
 		return nil, fmt.Errorf("factory may only return an error as a second return value, not %s", fqn(fnType.Out(1)))
 	}
 
-	fa, err := newFuncArgs(fnType, args...)
+	fa, err := NewFuncArgumentsList(fnType, args...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid factory of %s: %w", fqn(of), err)
 	}
@@ -76,14 +76,14 @@ func (fn *Factory) call(c *container) (any, error) {
 	return out[0].Interface(), nil
 }
 
-func (fn *Factory) GetArgs() FuncArgs {
+func (fn *Factory) GetArgs() FuncArgumentsList {
 	return fn.args
 }
 
 // Method represents a method of a service.
 type Method struct {
 	fn         reflect.Method
-	args       FuncArgs
+	args       FuncArgumentsList
 	returnsErr bool
 }
 
@@ -98,7 +98,7 @@ func NewMethod(fn reflect.Method, args ...Argument) (*Method, error) {
 		return nil, fmt.Errorf("method %s may only return an error, not %s", fn.Name, fqn(fnType.Out(0)))
 	}
 
-	fa, err := newFuncArgs(fnType, args...)
+	fa, err := NewFuncArgumentsList(fnType, args...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid method %s: %w", fn.Name, err)
 	}
@@ -153,48 +153,48 @@ func (fn *Method) fixIfAttachedToInterface(target any) error {
 	return nil
 }
 
-func (fn *Method) GetArgs() FuncArgs {
+func (fn *Method) GetArgs() FuncArgumentsList {
 	return fn.args
 }
 
-type FuncArg struct {
+type FuncArgument struct {
 	typ reflect.Type
 	arg Argument
 }
 
-func NewFuncArg(typ reflect.Type, arg Argument) (*FuncArg, error) {
+func NewFuncArgument(typ reflect.Type, arg Argument) (*FuncArgument, error) {
 	if !arg.Type().AssignableTo(typ) {
 		return nil, fmt.Errorf("argument %s must be assignable to %s", fqn(arg.Type()), fqn(typ))
 	}
-	return &FuncArg{typ: typ, arg: arg}, nil
+	return &FuncArgument{typ: typ, arg: arg}, nil
 }
 
-func (a FuncArg) IsEmpty() bool {
+func (a FuncArgument) IsEmpty() bool {
 	return a.arg == nil
 }
 
-func (a FuncArg) Type() reflect.Type {
+func (a FuncArgument) Type() reflect.Type {
 	return a.typ
 }
 
-func (a FuncArg) Argument() Argument {
+func (a FuncArgument) Argument() Argument {
 	return a.arg
 }
 
-type FuncArgs []*FuncArg
+type FuncArgumentsList []*FuncArgument
 
-func newFuncArgs(fn reflect.Type, args ...Argument) (FuncArgs, error) {
-	fa := make(FuncArgs, fn.NumIn())
+func NewFuncArgumentsList(fn reflect.Type, args ...Argument) (FuncArgumentsList, error) {
+	fa := make(FuncArgumentsList, fn.NumIn())
 
 	for i := range fa {
-		fa[i] = &FuncArg{typ: fn.In(i)}
+		fa[i] = &FuncArgument{typ: fn.In(i)}
 	}
 
-	return fa, fa.SetAutomatically(args...)
+	return fa, fa.SetAuto(args...)
 }
 
-func (fa FuncArgs) ForEach(fn func(i uint, a *FuncArg) error) error {
-	for i, a := range fa {
+func (l FuncArgumentsList) ForEach(fn func(i uint, a *FuncArgument) error) error {
+	for i, a := range l {
 		err := fn(uint(i), a)
 		if err != nil {
 			return err
@@ -203,24 +203,24 @@ func (fa FuncArgs) ForEach(fn func(i uint, a *FuncArg) error) error {
 	return nil
 }
 
-func (fa FuncArgs) Set(i uint, arg Argument) error {
-	if uint(len(fa)) <= i {
+func (l FuncArgumentsList) Set(i uint, arg Argument) error {
+	if uint(len(l)) <= i {
 		return fmt.Errorf("argument index out of range: %d", i)
 	}
-	if !isZero(arg) && !arg.Type().AssignableTo(fa[i].Type()) {
-		return fmt.Errorf("argument %d must be assignable to %s, got %s", i, fqn(fa[i].Type()), fqn(arg.Type()))
+	if !isZero(arg) && !arg.Type().AssignableTo(l[i].Type()) {
+		return fmt.Errorf("argument %d must be assignable to %s, got %s", i, fqn(l[i].Type()), fqn(arg.Type()))
 	}
-	fa[i].arg = arg
+	l[i].arg = arg
 	return nil
 }
 
-func (fa FuncArgs) SetAutomatically(args ...Argument) error {
+func (l FuncArgumentsList) SetAuto(args ...Argument) error {
 	// First, pass over manually-indexed arguments.
 	for _, arg := range args {
 		if arg.index().auto {
 			continue
 		}
-		err := fa.Set(arg.index().i, arg)
+		err := l.Set(arg.index().i, arg)
 		if err != nil {
 			return err
 		}
@@ -233,9 +233,9 @@ OUTER:
 			continue
 		}
 
-		for i, a := range fa {
-			if a.IsEmpty() && (isZero(arg) || arg.Type().AssignableTo(fa[i].Type())) {
-				fa[i].arg = arg
+		for i, a := range l {
+			if a.IsEmpty() && (isZero(arg) || arg.Type().AssignableTo(l[i].Type())) {
+				l[i].arg = arg
 				arg.setIndex(uint(i))
 				continue OUTER
 			}
@@ -246,15 +246,15 @@ OUTER:
 	return nil
 }
 
-func (fa FuncArgs) Arguments() []Argument {
-	return lo.Map(fa, func(a *FuncArg, _ int) Argument {
+func (l FuncArgumentsList) Arguments() []Argument {
+	return lo.Map(l, func(a *FuncArgument, _ int) Argument {
 		return a.arg
 	})
 }
 
-func (fa FuncArgs) resolve(c *container) ([]reflect.Value, error) {
-	in := make([]reflect.Value, len(fa))
-	for i, a := range fa {
+func (l FuncArgumentsList) resolve(c *container) ([]reflect.Value, error) {
+	in := make([]reflect.Value, len(l))
+	for i, a := range l {
 		if a.IsEmpty() {
 			return nil, fmt.Errorf("argument %d is not set", i)
 		}

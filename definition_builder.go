@@ -47,7 +47,7 @@ func (b *DefinitionBuilder) ID(id ID) *DefinitionBuilder {
 
 func (b *DefinitionBuilder) Args(args ...*ArgumentBuilder) *DefinitionBuilder {
 	for _, argBuilder := range args {
-		err := b.def.factory.args.SetAutomatically(argBuilder.Build())
+		err := b.def.factory.args.SetAuto(argBuilder.Build())
 		if err != nil {
 			b.addError(err)
 		}
@@ -101,23 +101,23 @@ func (b *DefinitionBuilder) Eager() *DefinitionBuilder {
 	return b
 }
 
-func (b *DefinitionBuilder) Cached() *DefinitionBuilder {
-	b.def.SetCached(true)
+func (b *DefinitionBuilder) Shared() *DefinitionBuilder {
+	b.def.SetShared(true)
 	return b
 }
 
-func (b *DefinitionBuilder) Uncached() *DefinitionBuilder {
-	b.def.SetCached(false)
+func (b *DefinitionBuilder) NotShared() *DefinitionBuilder {
+	b.def.SetShared(false)
 	return b
 }
 
 func (b *DefinitionBuilder) Autowired() *DefinitionBuilder {
-	b.def.SetAutowire(true)
+	b.def.SetAutowired(true)
 	return b
 }
 
-func (b *DefinitionBuilder) Manual() *DefinitionBuilder {
-	b.def.SetAutowire(false)
+func (b *DefinitionBuilder) NotAutowired() *DefinitionBuilder {
+	b.def.SetAutowired(false)
 	return b
 }
 
