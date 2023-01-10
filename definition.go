@@ -18,10 +18,10 @@ type Definition struct {
 
 	tags []Tag
 
-	public   bool
-	lazy     bool
-	cached   bool
-	autowire bool
+	public    bool
+	lazy      bool
+	shared    bool
+	autowired bool
 }
 
 func NewDefinition(id ID, factory *Factory) *Definition {
@@ -30,10 +30,10 @@ func NewDefinition(id ID, factory *Factory) *Definition {
 		factory:     factory,
 		methodCalls: make(map[string]*Method),
 
-		public:   false,
-		lazy:     true,
-		cached:   true,
-		autowire: true,
+		public:    false,
+		lazy:      true,
+		shared:    true,
+		autowired: true,
 	}
 }
 
@@ -112,21 +112,21 @@ func (d *Definition) SetLazy(lazy bool) *Definition {
 	return d
 }
 
-func (d *Definition) IsCached() bool {
-	return d.cached
+func (d *Definition) IsShared() bool {
+	return d.shared
 }
 
-func (d *Definition) SetCached(cached bool) *Definition {
-	d.cached = cached
+func (d *Definition) SetShared(shared bool) *Definition {
+	d.shared = shared
 	return d
 }
 
-func (d *Definition) IsAutowire() bool {
-	return d.autowire
+func (d *Definition) IsAutowired() bool {
+	return d.autowired
 }
 
-func (d *Definition) SetAutowire(autowire bool) *Definition {
-	d.autowire = autowire
+func (d *Definition) SetAutowired(autowired bool) *Definition {
+	d.autowired = autowired
 	return d
 }
 

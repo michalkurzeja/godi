@@ -37,7 +37,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewNoDepSvc),
 			di.Svc(NewDepSvc).
 				Args(di.Ref[*NoDepSvc](), di.Val("prop")).
-				Manual().
+				NotAutowired().
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewNoDepSvc),
 			di.Svc(NewMethodDepSvc).
 				MethodCall("SetDep", di.Ref[*NoDepSvc]()).
-				Manual().
+				NotAutowired().
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewNoDepSvc),
 			di.Svc(NewIFaceDepSvc).
 				Args(di.Ref[*NoDepSvc]()).
-				Manual().
+				NotAutowired().
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -293,7 +293,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewNoDepSvc),
 			di.Svc(NewIFaceMethodDepSvc).
 				MethodCall("SetDep", di.Ref[*NoDepSvc]()).
-				Manual().
+				NotAutowired().
 				Public(),
 		).Build()
 		require.NoError(t, err)
@@ -419,7 +419,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewNoDepSvc),
 			di.Svc(NewDepSvc).
 				Args(di.Val("foo")). // Missing di.Ref[*NoDepSvc]()
-				Manual(),
+				NotAutowired(),
 		).Build()
 		assertErrorInMultiError(t, err, `argument 0 of *github.com/michalkurzeja/godi_test.DepSvc factory is not set`)
 	})
@@ -824,7 +824,7 @@ func TestContainer(t *testing.T) {
 		t.Parallel()
 
 		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public().Uncached(),
+			di.Svc(NewNoDepSvc).Public().NotShared(),
 		).Build()
 		require.NoError(t, err)
 
@@ -840,7 +840,7 @@ func TestContainer(t *testing.T) {
 		t.Parallel()
 
 		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public().Uncached(),
+			di.Svc(NewNoDepSvc).Public().NotShared(),
 		).Build()
 		require.NoError(t, err)
 

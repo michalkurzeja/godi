@@ -41,9 +41,9 @@ func Print(c Container, w io.Writer) error {
 			write(w, fmt.Sprintf("%s\n", strings.Repeat("-", 80)))
 		}
 		write(w, fmt.Sprintf("Name:\t\t%s\n", def))
-		write(w, fmt.Sprintf("Autowire:\t%t\n", def.IsAutowire()))
+		write(w, fmt.Sprintf("Autowire:\t%t\n", def.IsAutowired()))
 		write(w, fmt.Sprintf("Public:\t\t%t\n", def.IsPublic()))
-		write(w, fmt.Sprintf("Cached:\t\t%t\n", def.IsCached()))
+		write(w, fmt.Sprintf("Shared:\t\t%t\n", def.IsShared()))
 		write(w, fmt.Sprintf("Lazy:\t\t%t\n", def.IsLazy()))
 
 		if len(def.GetFactory().GetArgs()) > 0 {

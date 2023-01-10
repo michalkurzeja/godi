@@ -56,7 +56,7 @@ func (p InterfaceResolutionPass) Compile(builder *ContainerBuilder) error {
 	return nil
 }
 
-func (p InterfaceResolutionPass) checkAndResolve(builder *ContainerBuilder, arg *FuncArg) error {
+func (p InterfaceResolutionPass) checkAndResolve(builder *ContainerBuilder, arg *FuncArgument) error {
 	if !arg.IsEmpty() {
 		return nil // The argument is already set, nothing to resolve.
 	}
@@ -106,8 +106,8 @@ func (p InterfaceResolutionPass) findImplementation(builder *ContainerBuilder, i
 // NewAutowirePass returns a compiler pass that automatically wires the arguments
 // of factories and method calls based on their types.
 func NewAutowirePass() CompilerPassFunc {
-	setReferences := func(args FuncArgs) error {
-		return args.ForEach(func(i uint, arg *FuncArg) error {
+	setReferences := func(args FuncArgumentsList) error {
+		return args.ForEach(func(i uint, arg *FuncArgument) error {
 			if !arg.IsEmpty() {
 				return nil
 			}
@@ -118,7 +118,7 @@ func NewAutowirePass() CompilerPassFunc {
 
 	return func(builder *ContainerBuilder) error {
 		for _, def := range builder.GetDefinitions() {
-			if !def.IsAutowire() {
+			if !def.IsAutowired() {
 				continue
 			}
 
@@ -161,7 +161,7 @@ func NewReferenceValidationPass() CompilerPassFunc {
 	return func(builder *ContainerBuilder) error {
 		var errs *multierror.Error
 		for _, def := range builder.GetDefinitions() {
-			err := def.GetFactory().GetArgs().ForEach(func(i uint, arg *FuncArg) error {
+			err := def.GetFactory().GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
 				if arg.IsEmpty() {
 					return fmt.Errorf("argument %d of %s factory is not set", i, def)
 				}
@@ -180,7 +180,7 @@ func NewReferenceValidationPass() CompilerPassFunc {
 			errs = multierror.Append(errs, err)
 
 			for _, method := range def.GetMethodCalls() {
-				err := method.GetArgs().ForEach(func(i uint, arg *FuncArg) error {
+				err := method.GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
 					// Skip the first argument (receiver) because it's empty until the actual call.
 					if arg.IsEmpty() && i > 0 {
 						return fmt.Errorf("argument %d of %s.%s is not set", i, def, method.Name())
@@ -221,7 +221,7 @@ func NewCycleValidationPass() CompilerPassFunc {
 		}
 
 		for _, def := range builder.GetDefinitions() {
-			err := def.factory.GetArgs().ForEach(func(i uint, arg *FuncArg) error {
+			err := def.factory.GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
 				ref, ok := arg.Argument().(*Reference)
 				if !ok {
 					return nil
