@@ -79,7 +79,7 @@ func (p InterfaceResolutionPass) checkAndResolve(builder *ContainerBuilder, arg 
 		return nil
 	}
 
-	builder.AddAliases(NewAlias(impl.ID(), aliasID))
+	builder.AddAliases(NewAlias(aliasID, impl.ID()))
 	return nil
 }
 

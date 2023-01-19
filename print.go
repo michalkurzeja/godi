@@ -14,6 +14,13 @@ func Print(c Container, w io.Writer) error {
 		_, _ = io.WriteString(w, s)
 	}
 
+	resolveAlias := func(cc *container, arg Argument) Argument {
+		if ref, ok := arg.(*Reference); ok {
+			return NewReference(cc.resolveAlias(ref.ID()), arg.Type())
+		}
+		return arg
+	}
+
 	cc := c.(*container)
 	aliases := sortedAsc(lo.Values(cc.aliases), func(a Alias) ID {
 		return a.ID()
@@ -50,7 +57,7 @@ func Print(c Container, w io.Writer) error {
 			write(w, "Arguments:\n")
 		}
 		for _, arg := range def.GetFactory().GetArgs() {
-			write(w, fmt.Sprintf(" - %s\n", arg.Argument()))
+			write(w, fmt.Sprintf(" - %s\n", resolveAlias(cc, arg.Argument())))
 		}
 
 		if len(def.GetMethodCalls()) > 0 {
@@ -61,7 +68,7 @@ func Print(c Container, w io.Writer) error {
 				write(w, fmt.Sprintf(" - %s:\n", method.Name()))
 			}
 			for _, arg := range method.GetArgs()[1:] {
-				write(w, fmt.Sprintf("\t- %s\n", arg.Argument()))
+				write(w, fmt.Sprintf("\t- %s\n", resolveAlias(cc, arg.Argument())))
 			}
 		}
 		if len(def.GetTags()) > 0 {

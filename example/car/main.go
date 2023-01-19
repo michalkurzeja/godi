@@ -64,8 +64,8 @@ func main() {
 		di.Svc(part.NewWinterTire).
 			Tags(di.NewTag("tire").AddParam("season", "winter")),
 	).Aliases(
-		di.NewAliasT[*part.Engine]("engine"),
-		di.NewAliasT[*part.Chassis]("chassis"),
+		di.NewAlias("engine", di.FQN[*part.Engine]()),
+		di.NewAlias("chassis", di.FQN[*part.Chassis]()),
 	).Build()
 	panicIfErr(err)
 

@@ -1,21 +1,21 @@
 package di
 
 // NewAlias creates a new alias.
-// NewAlias("foo", "bar") aliases service "foo" as "bar".
-func NewAlias(target, aliasID ID) Alias {
+// NewAlias("foo", "bar") aliases service "bar" as "foo".
+func NewAlias(aliasID, target ID) Alias {
 	return Alias{id: aliasID, target: target}
 }
 
 // NewAliasT creates a new alias. The target ID is derived from the type parameter.
-// NewAliasT[Foo]("bar") aliases service "Foo" as "bar".
-func NewAliasT[T any](aliasID ID) Alias {
-	return NewAlias(FQN[T](), aliasID)
+// NewAliasT[Foo]("bar") aliases service "bar" as "Foo".
+func NewAliasT[A any](target ID) Alias {
+	return NewAlias(FQN[A](), target)
 }
 
 // NewAliasTT creates a new alias. The target and alias IDs are derived from the type parameters.
-// NewAliasTT[Foo, Bar]() aliases service "Foo" as "Bar".
-func NewAliasTT[T, A any]() Alias {
-	return NewAlias(FQN[T](), FQN[A]())
+// NewAliasTT[Foo, Bar]() aliases service "Bar" as "Foo".
+func NewAliasTT[A, T any]() Alias {
+	return NewAlias(FQN[A](), FQN[T]())
 }
 
 // Alias represents an additional ID for a service.
