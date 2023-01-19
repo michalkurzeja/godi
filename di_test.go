@@ -176,15 +176,15 @@ func TestContainer(t *testing.T) {
 		t.Parallel()
 
 		c, err := di.New().
-			Services(di.Svc(NewNoDepSvc).Public()).
-			Aliases(di.NewAliasT[*NoDepSvc]("bar")).
+			Services(di.Svc(NewNoDepSvc).ID("bar").Public()).
+			Aliases(di.NewAliasT[Fooer]("bar")).
 			Build()
 		require.NoError(t, err)
 
-		svc1, err := di.Get[*NoDepSvc](c)
+		svc1, err := di.Get[*NoDepSvc](c, di.WithID("bar"))
 		require.NoError(t, err)
 
-		svc2, err := di.Get[*NoDepSvc](c, di.WithID("bar"))
+		svc2, err := di.Get[Fooer](c)
 		require.NoError(t, err)
 
 		assert.Same(t, svc1, svc2)
@@ -194,7 +194,7 @@ func TestContainer(t *testing.T) {
 
 		c, err := di.New().
 			Services(di.Svc(NewNoDepSvc).ID("foo").Public()).
-			Aliases(di.NewAlias("foo", "bar")).
+			Aliases(di.NewAlias("bar", "foo")).
 			Build()
 		require.NoError(t, err)
 
@@ -229,7 +229,7 @@ func TestContainer(t *testing.T) {
 				di.Svc(NewIFaceDepSvc).
 					Public(),
 			).
-			Aliases(di.NewAliasTT[*NoDepSvc, Fooer]()).
+			Aliases(di.NewAliasTT[Fooer, *NoDepSvc]()).
 			Build()
 		require.NoError(t, err)
 
@@ -278,7 +278,7 @@ func TestContainer(t *testing.T) {
 					MethodCall("SetDep").
 					Public(),
 			).
-			Aliases(di.NewAliasTT[*NoDepSvc, Fooer]()).
+			Aliases(di.NewAliasTT[Fooer, *NoDepSvc]()).
 			Build()
 		require.NoError(t, err)
 
@@ -388,7 +388,7 @@ func TestContainer(t *testing.T) {
 			Aliases(di.NewAlias("foo", "bar")).
 			Build()
 
-		assertErrorInMultiError(t, err, `alias bar points to a non-existing service foo`)
+		assertErrorInMultiError(t, err, `alias foo points to a non-existing service bar`)
 	})
 	t.Run("registering service twice with the same ID overrides it", func(t *testing.T) {
 		t.Parallel()
@@ -686,7 +686,7 @@ func TestContainer(t *testing.T) {
 
 		c, err := di.New().
 			Services(di.Svc(NewNoDepSvc)).
-			Aliases(di.NewAliasT[*NoDepSvc]("foo")).
+			Aliases(di.NewAlias("foo", di.FQN[*NoDepSvc]())).
 			Build()
 		require.NoError(t, err)
 
