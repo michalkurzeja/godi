@@ -45,8 +45,8 @@ func (b *DefinitionBuilder) ID(id ID) *DefinitionBuilder {
 	return b
 }
 
-func (b *DefinitionBuilder) Args(args ...*ArgumentBuilder) *DefinitionBuilder {
-	for _, argBuilder := range args {
+func (b *DefinitionBuilder) Args(args ...any) *DefinitionBuilder {
+	for _, argBuilder := range b.parseArgs(args) {
 		err := b.def.factory.args.SetAuto(argBuilder.Build())
 		if err != nil {
 			b.addError(err)
@@ -55,14 +55,14 @@ func (b *DefinitionBuilder) Args(args ...*ArgumentBuilder) *DefinitionBuilder {
 	return b
 }
 
-func (b *DefinitionBuilder) MethodCall(name string, args ...*ArgumentBuilder) *DefinitionBuilder {
+func (b *DefinitionBuilder) MethodCall(name string, args ...any) *DefinitionBuilder {
 	method, ok := b.creates().MethodByName(name)
 	if !ok {
 		b.addError(fmt.Errorf("no such method: %s", name))
 		return b
 	}
 
-	methodArgs := lo.Map(args, func(builder *ArgumentBuilder, _ int) Argument {
+	methodArgs := lo.Map(b.parseArgs(args), func(builder *ArgumentBuilder, _ int) Argument {
 		return builder.Build()
 	})
 
@@ -76,8 +76,22 @@ func (b *DefinitionBuilder) MethodCall(name string, args ...*ArgumentBuilder) *D
 	return b
 }
 
-func (b *DefinitionBuilder) Tags(tags ...*Tag) *DefinitionBuilder {
-	b.def.AddTags(tags...)
+func (b *DefinitionBuilder) parseArgs(args []any) []*ArgumentBuilder {
+	return lo.Map(args, func(arg any, _ int) *ArgumentBuilder {
+		if builder, ok := arg.(*ArgumentBuilder); ok {
+			return builder
+		}
+		return Val(arg)
+	})
+}
+
+func (b *DefinitionBuilder) Tags(tags ...any) *DefinitionBuilder {
+	b.def.AddTags(lo.Map(tags, func(t any, _ int) *Tag {
+		if tag, ok := t.(*Tag); ok {
+			return tag
+		}
+		return NewTag(TagID(fmt.Sprint(t)))
+	})...)
 	return b
 }
 

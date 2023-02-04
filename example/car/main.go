@@ -23,13 +23,6 @@ type config struct {
 	}
 }
 
-func (conf config) EngineParams() []*di.ArgumentBuilder {
-	return []*di.ArgumentBuilder{
-		di.Val(conf.Engine.HorsePower),
-		di.Val(conf.Engine.Displacement),
-	}
-}
-
 func getConfig() config {
 	conf := config{}
 	conf.Body.Doors = 5
@@ -45,20 +38,20 @@ func main() {
 		di.Svc(car.NewCar).
 			Public(),
 		di.Svc(part.NewBody).
-			Args(di.Val(conf.Body.Doors)).
-			MethodCall("Paint", di.Val(conf.Body.Color)),
+			Args(conf.Body.Doors).
+			MethodCall("Paint", conf.Body.Color),
 		di.Svc(part.NewChassis).
 			Args(di.Ref[*part.Gearbox]("auto-gearbox")),
-		di.Svc(part.NewEngine).Args(conf.EngineParams()...),
+		di.Svc(part.NewEngine).Args(conf.Engine.HorsePower, conf.Engine.Displacement),
 		di.Svc(part.NewGearbox).ID("manual-gearbox").
-			Args(di.Val(6), di.Val(false)),
+			Args(6, false),
 		di.Svc(part.NewGearbox).ID("auto-gearbox").
-			Args(di.Val(6), di.Val(true)),
+			Args(6, false),
 		di.Svc(part.NewWheelSet),
 		di.Svc(part.NewWheel).
 			Args(di.Ref[part.WinterTire]()),
 		di.Svc(part.NewRim).
-			Args(di.Val(19)),
+			Args(19),
 		di.Svc(part.NewSummerTire).
 			Tags(di.NewTag("tire").AddParam("season", "summer")),
 		di.Svc(part.NewWinterTire).
