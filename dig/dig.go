@@ -11,9 +11,13 @@ import (
 )
 
 var (
-	b = &Builder{di.New()}
+	b *Builder
 	c di.Container
 )
+
+func init() {
+	Reset()
+}
 
 func Container() di.Container {
 	return c
@@ -36,6 +40,11 @@ func CompilerPass(stage di.CompilerPassStage, priority int, pass di.CompilerPass
 
 func Build() error {
 	return b.Build()
+}
+
+func Reset() {
+	b = &Builder{di.New()}
+	c = nil
 }
 
 func Get[T any](opts ...di.OptionsFunc) (T, error) {
