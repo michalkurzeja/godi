@@ -7,6 +7,8 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
+type nothing = struct{}
+
 // FQN returns the fully qualified name of the type parameter.
 func FQN[T any]() ID {
 	return fqn(typeOf[T]())

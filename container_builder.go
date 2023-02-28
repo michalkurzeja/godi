@@ -43,13 +43,6 @@ func (b *ContainerBuilder) SetDefinitions(definitions ...*Definition) *Container
 func (b *ContainerBuilder) AddDefinitions(definitions ...*Definition) *ContainerBuilder {
 	for _, def := range definitions {
 		b.container.definitions[def.id] = def
-
-		if !def.public {
-			b.container.private[def.id] = struct{}{}
-		}
-		for _, tag := range def.GetTags() {
-			b.container.byTag[tag.ID()] = append(b.container.byTag[tag.ID()], def.id)
-		}
 	}
 	return b
 }

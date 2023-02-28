@@ -85,7 +85,14 @@ func (c *compiler) AddPass(stage CompilerPassStage, priority int, pass CompilerP
 }
 
 func (c *compiler) Compile(builder *ContainerBuilder) error {
-	return c.config.ForEach(func(pass CompilerPass) error {
+	err := c.config.ForEach(func(pass CompilerPass) error {
 		return pass.Compile(builder)
 	})
+	if err != nil {
+		return err
+	}
+
+	builder.container.finalise()
+
+	return nil
 }
