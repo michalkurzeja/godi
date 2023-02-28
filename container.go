@@ -21,7 +21,7 @@ type container struct {
 	instances map[ID]any
 
 	// Lookup maps:
-	private map[ID]struct{}
+	private map[ID]nothing
 	byTag   map[TagID][]ID
 }
 
@@ -32,7 +32,7 @@ func newContainer() *container {
 
 		instances: make(map[ID]any),
 
-		private: make(map[ID]struct{}),
+		private: make(map[ID]nothing),
 		byTag:   make(map[TagID][]ID),
 	}
 }
@@ -142,4 +142,16 @@ func (c *container) getByTag(tag TagID, filterPrivate bool) ([]any, error) {
 func (c *container) isPrivate(id ID) bool {
 	_, ok := c.private[c.resolveAlias(id)]
 	return ok
+}
+
+func (c *container) finalise() {
+	for _, def := range c.definitions {
+		if !def.public {
+			c.private[def.id] = nothing{}
+		}
+
+		for _, tag := range def.GetTags() {
+			c.byTag[tag.ID()] = append(c.byTag[tag.ID()], def.id)
+		}
+	}
 }
