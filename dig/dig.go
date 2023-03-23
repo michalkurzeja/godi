@@ -7,12 +7,18 @@
 package dig
 
 import (
+	"errors"
+
+	"github.com/samber/lo"
+
 	di "github.com/michalkurzeja/godi"
 )
 
 var (
 	b *Builder
 	c di.Container
+
+	errContainerNotBuilt = errors.New("dig: container not built; call dig.Build() first")
 )
 
 func init() {
@@ -48,17 +54,29 @@ func Reset() {
 }
 
 func Get[T any](opts ...di.OptionsFunc) (T, error) {
+	if c == nil {
+		return lo.Empty[T](), errContainerNotBuilt
+	}
 	return di.Get[T](c, opts...)
 }
 
 func MustGet[T any](opts ...di.OptionsFunc) T {
+	if c == nil {
+		panic(errContainerNotBuilt)
+	}
 	return di.MustGet[T](c, opts...)
 }
 
 func GetByTag[T any](tag di.TagID) ([]T, error) {
+	if c == nil {
+		return nil, errContainerNotBuilt
+	}
 	return di.GetByTag[T](c, tag)
 }
 
 func MustGetByTag[T any](tag di.TagID) []T {
+	if c == nil {
+		panic(errContainerNotBuilt)
+	}
 	return di.MustGetByTag[T](c, tag)
 }
