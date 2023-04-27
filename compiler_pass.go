@@ -37,18 +37,18 @@ func NewInterfaceResolutionPass() CompilerPass {
 
 func (p InterfaceResolutionPass) Compile(builder *ContainerBuilder) error {
 	for _, def := range builder.GetDefinitions() {
-		for _, arg := range def.GetFactory().GetArgs() {
+		for i, arg := range def.GetFactory().GetArgs() {
 			err := p.checkAndResolve(builder, arg)
 			if err != nil {
-				return err
+				return fmt.Errorf("could not resolve argument %d of service %s: %s", i, def, err)
 			}
 		}
 
 		for _, method := range def.GetMethodCalls() {
-			for _, arg := range method.GetArgs() {
+			for i, arg := range method.GetArgs() {
 				err := p.checkAndResolve(builder, arg)
 				if err != nil {
-					return err
+					return fmt.Errorf(`could not resolve argument %d of method "%s" of service %s: %s`, i, method.Name(), def, err)
 				}
 			}
 		}
