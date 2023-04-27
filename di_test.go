@@ -598,7 +598,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewIFaceDepSvc),
 		).Build()
 
-		assertErrorInMultiError(t, err, `multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
+		assertErrorInMultiError(t, err, `could not resolve argument 0 of service *github.com/michalkurzeja/godi_test.IFaceDepSvc: multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
 	})
 	t.Run("registering an interface dependency (method) with no implementations fails", func(t *testing.T) {
 		t.Parallel()
@@ -618,7 +618,7 @@ func TestContainer(t *testing.T) {
 			di.Svc(NewIFaceMethodDepSvc).MethodCall("SetDep"),
 		).Build()
 
-		assertErrorInMultiError(t, err, `multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
+		assertErrorInMultiError(t, err, `could not resolve argument 1 of method "SetDep" of service *github.com/michalkurzeja/godi_test.IFaceMethodDepSvc: multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
 	})
 	t.Run("getting a service twice returns the same instance", func(t *testing.T) {
 		t.Parallel()
