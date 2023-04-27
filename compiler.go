@@ -26,12 +26,14 @@ type compilerPassConfig [compilerPassStageNumber]map[int][]CompilerPass
 
 func newCompilerPassConfig() compilerPassConfig {
 	return compilerPassConfig{
+		PreOptimisation: {},
 		Optimisation: {
 			0: {
 				NewInterfaceResolutionPass(),
 				NewAutowirePass(),
 			},
 		},
+		PreValidation: {},
 		Validation: {
 			0: {
 				NewAliasValidationPass(),
