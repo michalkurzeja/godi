@@ -40,7 +40,7 @@ func (p InterfaceResolutionPass) Compile(builder *ContainerBuilder) error {
 		for i, arg := range def.GetFactory().GetArgs() {
 			err := p.checkAndResolve(builder, arg)
 			if err != nil {
-				return fmt.Errorf("could not resolve argument %d of service %s: %s", i, def, err)
+				return fmt.Errorf("could not resolve argument %d of service %s: %w", i, def, err)
 			}
 		}
 
@@ -48,7 +48,7 @@ func (p InterfaceResolutionPass) Compile(builder *ContainerBuilder) error {
 			for i, arg := range method.GetArgs() {
 				err := p.checkAndResolve(builder, arg)
 				if err != nil {
-					return fmt.Errorf(`could not resolve argument %d of method "%s" of service %s: %s`, i, method.Name(), def, err)
+					return fmt.Errorf(`could not resolve argument %d of method "%s" of service %s: %w`, i, method.Name(), def, err)
 				}
 			}
 		}
