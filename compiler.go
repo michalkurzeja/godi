@@ -12,6 +12,8 @@ const (
 	PreValidation
 	Validation
 	PostValidation
+	Finalization
+	PostFinalization
 	compilerPassStageNumber
 )
 
@@ -41,7 +43,13 @@ func newCompilerPassConfig() compilerPassConfig {
 				NewCycleValidationPass(),
 			},
 		},
-		PostValidation: {
+		PostValidation: {},
+		Finalization: {
+			0: {
+				NewFinalizationPass(),
+			},
+		},
+		PostFinalization: {
 			0: {
 				NewEagerInitPass(),
 			},
@@ -93,8 +101,6 @@ func (c *compiler) Compile(builder *ContainerBuilder) error {
 	if err != nil {
 		return err
 	}
-
-	builder.container.finalise()
 
 	return nil
 }

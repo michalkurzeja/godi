@@ -143,15 +143,3 @@ func (c *container) isPrivate(id ID) bool {
 	_, ok := c.private[c.resolveAlias(id)]
 	return ok
 }
-
-func (c *container) finalise() {
-	for _, def := range c.definitions {
-		if !def.public {
-			c.private[def.id] = nothing{}
-		}
-
-		for _, tag := range def.GetTags() {
-			c.byTag[tag.ID()] = append(c.byTag[tag.ID()], def.id)
-		}
-	}
-}

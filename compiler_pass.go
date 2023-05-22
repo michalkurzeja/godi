@@ -245,7 +245,24 @@ func NewCycleValidationPass() CompilerPassFunc {
 	}
 }
 
-// Stage: PostValidation
+// Stage: Finalization
+
+func NewFinalizationPass() CompilerPassFunc {
+	return func(builder *ContainerBuilder) error {
+		for _, def := range builder.GetDefinitions() {
+			if !def.public {
+				builder.container.private[def.id] = nothing{}
+			}
+
+			for _, tag := range def.GetTags() {
+				builder.container.byTag[tag.ID()] = append(builder.container.byTag[tag.ID()], def.id)
+			}
+		}
+		return nil
+	}
+}
+
+// Stage: PostFinalization
 
 // NewEagerInitPass returns a compiler pass that initializes all services that are marked as eager.
 func NewEagerInitPass() CompilerPassFunc {
