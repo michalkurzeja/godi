@@ -9,6 +9,52 @@ import (
 
 var errType = typeOf[error]()
 
+type Function struct {
+	fn         reflect.Value
+	args       FuncArgumentsList
+	returnsErr bool
+}
+
+func NewFunction(fn any, args ...Argument) (*Function, error) {
+	fnType := reflect.TypeOf(fn)
+	if fnType.Kind() != reflect.Func {
+		return nil, fmt.Errorf("fn must be a function, got %s", fnType.Kind())
+	}
+	if fnType.NumOut() > 1 {
+		return nil, fmt.Errorf("function must return at most one value")
+	}
+	returnsErr := fnType.NumOut() == 1
+	if returnsErr && !fnType.Out(0).AssignableTo(errType) {
+		return nil, fmt.Errorf("function may only return an error, not %s", fqn(fnType.Out(0)))
+	}
+
+	fa, err := NewFuncArgumentsList(fnType, args...)
+	if err != nil {
+		return nil, fmt.Errorf("invalid function: %w", err)
+	}
+
+	return &Function{fn: reflect.ValueOf(fn), args: fa, returnsErr: returnsErr}, nil
+}
+
+func (fn *Function) call(c *container) error {
+	in, err := fn.args.resolve(c)
+	if err != nil {
+		return fmt.Errorf("failed to resolve function arguments: %w", err)
+	}
+
+	call := lo.Ternary(fn.fn.Type().IsVariadic(), fn.fn.CallSlice, fn.fn.Call)
+	out := call(in)
+
+	if fn.returnsErr {
+		return out[0].Interface().(error)
+	}
+	return nil
+}
+
+func (fn *Function) GetArgs() FuncArgumentsList {
+	return fn.args
+}
+
 // Factory represents a function that creates a service.
 type Factory struct {
 	fn         reflect.Value

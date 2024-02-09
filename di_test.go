@@ -881,6 +881,118 @@ func TestContainer(t *testing.T) {
 			b.Aliases(di.NewAlias("foo", "bar"))
 		})
 	})
+	t.Run("specific functions are called on demand", func(t *testing.T) {
+		t.Parallel()
+
+		var called bool
+
+		c, err := di.New().Functions(
+			di.Func("foo", func() { called = true }),
+		).Build()
+		require.NoError(t, err)
+		require.False(t, called)
+
+		err = c.CallFunction("foo")
+
+		require.NoError(t, err)
+		require.True(t, called)
+	})
+	t.Run("all functions are called on demand", func(t *testing.T) {
+		t.Parallel()
+
+		var called bool
+
+		c, err := di.New().Functions(
+			di.Func("foo", func() { called = true }),
+		).Build()
+		require.NoError(t, err)
+		require.False(t, called)
+
+		err = c.CallFunctions()
+
+		require.NoError(t, err)
+		require.True(t, called)
+	})
+	t.Run("functions can return errors", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Functions(
+			di.Func("foo", func() error { return assert.AnError }),
+		).Build()
+		require.NoError(t, err)
+
+		err = c.CallFunctions()
+
+		require.ErrorIs(t, err, assert.AnError)
+	})
+	t.Run("functions arguments are resolved", func(t *testing.T) {
+		t.Parallel()
+
+		var called bool
+
+		c, err := di.New().
+			Services(
+				di.Svc(NewNoDepSvc),
+			).
+			Functions(
+				di.Func("foo", func(_ *NoDepSvc) { called = true }),
+			).Build()
+		require.NoError(t, err)
+		require.False(t, called)
+
+		err = c.CallFunctions()
+
+		require.NoError(t, err)
+		require.True(t, called)
+	})
+	t.Run("function arguments that are interfaces are resolved", func(t *testing.T) {
+		t.Parallel()
+
+		var called bool
+
+		c, err := di.New().
+			Services(
+				di.Svc(NewNoDepSvc),
+			).
+			Functions(
+				di.Func("foo", func(_ Fooer) { called = true }),
+			).Build()
+		require.NoError(t, err)
+		require.False(t, called)
+
+		err = c.CallFunctions()
+
+		require.NoError(t, err)
+		require.True(t, called)
+
+	})
+	t.Run("returns error when function arguments cannot be resolved", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Functions(
+				di.Func("foo", func(_ *NoDepSvc) {}),
+			).Build()
+		require.ErrorContains(t, err, "service *github.com/michalkurzeja/godi_test.NoDepSvc is not registered but is referenced by function foo")
+	})
+	t.Run("functions cannot return non-error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Functions(
+			di.Func("foo", func() int { return 42 }),
+		).Build()
+
+		require.ErrorContains(t, err, "function may only return an error, not int")
+	})
+	t.Run("function cannot return more than 1 value", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Functions(
+			di.Func("foo", func() (int, error) { return 42, nil }),
+		).Build()
+
+		require.ErrorContains(t, err, "function must return at most one value")
+	})
 }
 
 type NoDepSvc struct {

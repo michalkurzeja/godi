@@ -25,7 +25,7 @@ func (fn CompilerPassFunc) Compile(builder *ContainerBuilder) error {
 // Stage: Optimisation
 
 // InterfaceResolutionPass resolves interfaces to their implementations.
-// It inspects arguments of factories and method calls of all definitions.
+// It inspects arguments of factories, method calls and functions of all definitions.
 // If those arguments are interfaces, it tries to find a single implementation
 // of that interface. If there is exactly one implementation, it creates an
 // alias for that implementation, which allows the container to use it for instantiation.
@@ -50,6 +50,15 @@ func (p InterfaceResolutionPass) Compile(builder *ContainerBuilder) error {
 				if err != nil {
 					return fmt.Errorf(`could not resolve argument %d of method "%s" of service %s: %w`, i, method.Name(), def, err)
 				}
+			}
+		}
+	}
+
+	for _, def := range builder.GetFunctions() {
+		for i, arg := range def.GetFunction().GetArgs() {
+			err := p.checkAndResolve(builder, arg)
+			if err != nil {
+				return fmt.Errorf("could not resolve argument %d of function %s: %w", i, def.ID(), err)
 			}
 		}
 	}
@@ -104,7 +113,7 @@ func (p InterfaceResolutionPass) findImplementation(builder *ContainerBuilder, i
 }
 
 // NewAutowirePass returns a compiler pass that automatically wires the arguments
-// of factories and method calls based on their types.
+// of factories, method calls and functions based on their types.
 func NewAutowirePass() CompilerPassFunc {
 	setReferences := func(args FuncArgumentsList) error {
 		return args.ForEach(func(i uint, arg *FuncArgument) error {
@@ -134,6 +143,17 @@ func NewAutowirePass() CompilerPassFunc {
 				}
 			}
 		}
+
+		for _, def := range builder.GetFunctions() {
+			if !def.IsAutowired() {
+				continue
+			}
+
+			err := setReferences(def.GetFunction().GetArgs())
+			if err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }
@@ -155,11 +175,12 @@ func NewAliasValidationPass() CompilerPassFunc {
 	}
 }
 
-// NewReferenceValidationPass returns a compiler pass that validates all arguments of factories and method calls
+// NewReferenceValidationPass returns a compiler pass that validates all arguments of factories, method calls and functions
 // that reference other services. It ensures that the referenced services exist.
 func NewReferenceValidationPass() CompilerPassFunc {
 	return func(builder *ContainerBuilder) error {
 		var errs *multierror.Error
+
 		for _, def := range builder.GetDefinitions() {
 			err := def.GetFactory().GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
 				if arg.IsEmpty() {
@@ -201,6 +222,27 @@ func NewReferenceValidationPass() CompilerPassFunc {
 				errs = multierror.Append(errs, err)
 			}
 		}
+
+		for _, def := range builder.GetFunctions() {
+			err := def.GetFunction().GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
+				if arg.IsEmpty() {
+					return fmt.Errorf("argument %d of function %s is not set", i, def)
+				}
+
+				ref, ok := arg.Argument().(*Reference)
+				if !ok {
+					return nil
+				}
+
+				refID := resolveAlias(builder, ref.ID())
+				if _, ok = builder.GetDefinition(refID); !ok {
+					return fmt.Errorf("service %s is not registered but is referenced by function %s", refID, def)
+				}
+				return nil
+			})
+			errs = multierror.Append(errs, err)
+		}
+
 		return errs.ErrorOrNil()
 	}
 }

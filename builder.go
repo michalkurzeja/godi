@@ -36,6 +36,18 @@ func (b *Builder) Services(services ...*DefinitionBuilder) *Builder {
 	return b
 }
 
+func (b *Builder) Functions(functions ...*FunctionDefinitionBuilder) *Builder {
+	for _, function := range functions {
+		fn, err := function.Build()
+		if err != nil {
+			b.addError(err)
+			continue
+		}
+		b.cb.AddFunctions(fn)
+	}
+	return b
+}
+
 func (b *Builder) CompilerPass(stage CompilerPassStage, priority int, pass CompilerPass) *Builder {
 	b.cb.AddCompilerPass(stage, priority, pass)
 	return b
