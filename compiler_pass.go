@@ -269,7 +269,7 @@ func NewEagerInitPass() CompilerPassFunc {
 	return func(builder *ContainerBuilder) error {
 		for _, def := range builder.GetDefinitions() {
 			if def.IsLazy() {
-				return nil
+				continue
 			}
 			_, err := builder.container.get(def.ID(), false)
 			if err != nil {
