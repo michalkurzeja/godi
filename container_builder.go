@@ -24,6 +24,28 @@ func NewContainerBuilder() *ContainerBuilder {
 	}
 }
 
+func (b *ContainerBuilder) GetFunctions() []*FunctionDefinition {
+	return sortedAsc(lo.Values(b.container.functions), func(fn *FunctionDefinition) ID {
+		return fn.ID()
+	})
+}
+
+func (b *ContainerBuilder) GetFunction(id ID) (*FunctionDefinition, bool) {
+	fn, ok := b.container.functions[id]
+	return fn, ok
+}
+
+func (b *ContainerBuilder) SetFunctions(functions ...*FunctionDefinition) {
+	b.container.functions = make(map[ID]*FunctionDefinition, len(functions))
+	b.AddFunctions(functions...)
+}
+
+func (b *ContainerBuilder) AddFunctions(functions ...*FunctionDefinition) {
+	for _, fn := range functions {
+		b.container.functions[fn.id] = fn
+	}
+}
+
 func (b *ContainerBuilder) GetDefinitions() []*Definition {
 	return sortedAsc(lo.Values(b.container.definitions), func(def *Definition) ID {
 		return def.ID()

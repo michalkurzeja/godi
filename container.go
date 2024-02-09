@@ -2,6 +2,9 @@ package di
 
 import (
 	"fmt"
+
+	"github.com/hashicorp/go-multierror"
+	"github.com/samber/lo"
 )
 
 // Container is a dependency injection container.
@@ -11,12 +14,15 @@ type Container interface {
 	Get(id ID) (any, error)
 	GetByTag(tag TagID) ([]any, error)
 	Has(id ID) bool
+	CallFunction(id ID) error
+	CallFunctions() error
 	Initialised(id ID) bool
 }
 
 type container struct {
 	definitions map[ID]*Definition
 	aliases     map[ID]Alias
+	functions   map[ID]*FunctionDefinition
 
 	instances map[ID]any
 
@@ -29,6 +35,7 @@ func newContainer() *container {
 	return &container{
 		definitions: make(map[ID]*Definition),
 		aliases:     make(map[ID]Alias),
+		functions:   make(map[ID]*FunctionDefinition),
 
 		instances: make(map[ID]any),
 
@@ -137,6 +144,33 @@ func (c *container) getByTag(tag TagID, filterPrivate bool) ([]any, error) {
 	}
 
 	return svcs, nil
+}
+
+func (c *container) CallFunction(id ID) error {
+	def, ok := c.functions[id]
+	if !ok {
+		return fmt.Errorf("function %s not found", id)
+	}
+
+	err := def.fn.call(c)
+	if err != nil {
+		return fmt.Errorf("function %s call error: %w", def, err)
+	}
+
+	return nil
+}
+
+func (c *container) CallFunctions() error {
+	var errs *multierror.Error
+
+	for _, id := range sortedAsc(lo.Keys(c.functions), func(id ID) ID { return id }) {
+		err := c.CallFunction(id)
+		if err != nil {
+			errs = multierror.Append(errs, err)
+		}
+	}
+
+	return errs.ErrorOrNil()
 }
 
 func (c *container) isPrivate(id ID) bool {
