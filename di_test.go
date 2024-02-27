@@ -964,7 +964,6 @@ func TestContainer(t *testing.T) {
 
 		require.NoError(t, err)
 		require.True(t, called)
-
 	})
 	t.Run("returns error when function arguments cannot be resolved", func(t *testing.T) {
 		t.Parallel()
