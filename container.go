@@ -16,6 +16,7 @@ type Container interface {
 	Has(id ID) bool
 	CallFunction(id ID) error
 	CallFunctions() error
+	HasFunction(id ID) bool
 	Initialised(id ID) bool
 }
 
@@ -144,6 +145,11 @@ func (c *container) getByTag(tag TagID, filterPrivate bool) ([]any, error) {
 	}
 
 	return svcs, nil
+}
+
+func (c *container) HasFunction(id ID) bool {
+	_, ok := c.functions[id]
+	return ok
 }
 
 func (c *container) CallFunction(id ID) error {
