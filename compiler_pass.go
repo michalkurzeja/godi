@@ -263,7 +263,7 @@ func NewCycleValidationPass() CompilerPassFunc {
 		}
 
 		for _, def := range builder.GetDefinitions() {
-			err := def.factory.GetArgs().ForEach(func(i uint, arg *FuncArgument) error {
+			err := def.factory.GetArgs().ForEach(func(_ uint, arg *FuncArgument) error {
 				ref, ok := arg.Argument().(*Reference)
 				if !ok {
 					return nil
