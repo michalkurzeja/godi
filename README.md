@@ -22,8 +22,6 @@ Symfony framework.
 - [x] Dependency graph validation and helpful errors
 - [x] Programmatic control and container automation through compiler passes
 - [ ] Dependency graph visualization
-- [ ] Test mode (dependency overrides)
-- [ ] Service definitions from a config file
 
 ## Installation
 
