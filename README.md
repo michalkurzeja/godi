@@ -2,11 +2,11 @@
 
 ![ci workflow](https://github.com/michalkurzeja/godi/actions/workflows/build.yaml/badge.svg)
 
-This library is an attempt to bring to Go a DI container requires as little action as possible from the user.
+This library is an attempt to bring to Go a DI container that requires as little action as possible from the user.
 You just need to define your services and the library will handle dependencies on its own, as much as possible.
-Whenever there's any ambiguity, you'll have to resolve it yourself.
+Whenever there's any ambiguity, you'll get a clear error message and will have to resolve it yourself.
 
-This library takes heavy inspiration an excellent [DI component](https://github.com/symfony/dependency-injection) of PHP
+This library takes heavy inspiration from an excellent [DI component](https://github.com/symfony/dependency-injection) of PHP
 Symfony framework.
 
 ## Features
