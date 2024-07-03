@@ -1,19 +1,24 @@
 package di
 
 // NewAlias creates a new alias.
-// NewAlias("foo", "bar") aliases service "bar" as "foo".
+//
+// If there's a service with ID bar, after declaring NewAlias("foo", "bar")
+// it can now be referenced with both "bar" and "foo" IDs.
+//
+// Additionally, if any other service already had the ID "foo", it would get overwritten by the alias:
+// retrieving "foo" from the container would get the aliased service ("bar") instead of the original one with that ID.
 func NewAlias(aliasID, target ID) Alias {
 	return Alias{id: aliasID, target: target}
 }
 
 // NewAliasT creates a new alias. The target ID is derived from the type parameter.
-// NewAliasT[Foo]("bar") aliases service "bar" as "Foo".
+// NewAliasT[Foo]("bar") aliases service "bar" as "fooPkg.Foo".
 func NewAliasT[A any](target ID) Alias {
 	return NewAlias(FQN[A](), target)
 }
 
 // NewAliasTT creates a new alias. The target and alias IDs are derived from the type parameters.
-// NewAliasTT[Foo, Bar]() aliases service "Bar" as "Foo".
+// NewAliasTT[Foo, Bar]() aliases service "barPkg.Bar" as "fooPkg.Foo".
 func NewAliasTT[A, T any]() Alias {
 	return NewAlias(FQN[A](), FQN[T]())
 }
