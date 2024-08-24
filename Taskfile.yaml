@@ -1,0 +1,34 @@
+version: '3'
+
+tasks:
+  default:
+    desc: "List all available tasks"
+    cmds: [ 'task --list' ]
+
+  tool:bingo:list:
+    desc: "List bingo binaries"
+    cmds: [ { task: bingo:run, vars: { NAME: bingo, ARGS: list } } ]
+
+  tool:bingo:get:
+    desc: "Install or update a new package using bingo"
+    requires: { vars: [ PACKAGE ] }
+    cmds: [ { task: bingo:run, vars: { NAME: bingo, ARGS: 'get {{.PACKAGE}}' } } ]
+
+  tool:mockery:
+    desc: "Generate mocks using mockery"
+    aliases: [ mockery, mocks ]
+    cmds: [ { task: bingo:run, vars: { NAME: mockery } } ]
+
+  # Internals
+
+  bingo:run:
+    desc: "Run bingo-pinned binary"
+    internal: true
+    silent: true
+    requires:
+      vars:
+        - NAME
+    cmds:
+      - |
+        source .bingo/variables.env
+        ${{.NAME | upper}} {{.ARGS}}
