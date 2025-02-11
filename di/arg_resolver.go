@@ -310,7 +310,6 @@ func (r *flexibleSliceArgResolver) ResolveIDs(scope *Scope, a *flexibleSliceArg)
 
 type compoundArgResolver struct {
 	resolver *ArgResolver
-	scope    *Scope
 }
 
 func (r *compoundArgResolver) Validate(scope *Scope, a *compoundArg) error {

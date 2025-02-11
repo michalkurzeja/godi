@@ -236,9 +236,8 @@ func Func(fn any, args ...any) *FunctionDefinitionBuilder {
 		f, err := di.NewFunc(reflect.ValueOf(fn), args...)
 		if err != nil {
 			return err
-		} else {
-			b.def.SetFunc(f)
 		}
+		b.def.SetFunc(f)
 		return nil
 	}
 	return b

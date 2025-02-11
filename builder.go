@@ -38,7 +38,6 @@ func (b *Builder) Functions(functions ...*FunctionDefinitionBuilder) *Builder {
 func (b *Builder) Bindings(bindings ...*InterfaceBindingBuilder) *Builder {
 	b.bindings = append(b.bindings, bindings...)
 	return b
-
 }
 
 func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {

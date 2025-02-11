@@ -36,7 +36,6 @@ func (a *literalArg) Type() reflect.Type {
 }
 
 type refArg struct {
-	typ reflect.Type
 	def *ServiceDefinition
 }
 
@@ -279,6 +278,7 @@ type ArgList struct {
 func NewArgList(fnType reflect.Type) *ArgList {
 	return &ArgList{
 		slots: lo.RepeatBy(fnType.NumIn(), func(i int) *Slot {
+			//nolint:gosec // G115: integer overflow conversion int -> uint - no real danger here
 			return NewSlot(fnType.In(i), uint(i), fnType.IsVariadic() && i == fnType.NumIn()-1)
 		}),
 		variadic: fnType.IsVariadic(),
