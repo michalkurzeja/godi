@@ -22,7 +22,6 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version-file: go.mod
-          cache: true
 
       - name: Verify dependencies
         run: go mod verify
@@ -48,7 +47,6 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version-file: go.mod
-          cache: true
 
       - name: Test
         run: go test ./...
