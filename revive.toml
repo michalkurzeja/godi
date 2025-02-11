@@ -24,5 +24,6 @@ warningCode = 1
 [rule.unexported-return]
 [rule.unreachable-code]
 [rule.unused-parameter]
+    Exclude=["TEST"]
 [rule.var-declaration]
 [rule.var-naming]
