@@ -42,7 +42,7 @@ func (b *ArgBuilder) Build() (di.Arg, error) {
 
 func Ref(ref *SvcReference) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
-		return di.NewRefArg(ref.def), nil
+		return di.NewRefArg(ref.def)
 	}}
 }
 

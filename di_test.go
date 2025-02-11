@@ -1132,6 +1132,27 @@ func TestGodi_Services(t *testing.T) {
 				require.ErrorContains(t, err, `could not bind argument 0 of function github.com/michalkurzeja/godi/v2_test.NewTestSvcIfaceArg: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
 			},
 		},
+		// Cycle
+		{
+			name: "returns a build error when a cycle is detected",
+			build: func(b *di.Builder, refs *Refs) {
+				var aRef, bRef, cRef di.SvcReference
+				b.Services(
+					di.Svc(Echo[string], di.Ref(&bRef)).
+						Bind(&aRef).
+						Labels("echo-a"),
+					di.Svc(Echo[string], di.Ref(&cRef)).
+						Bind(&bRef).
+						Labels("echo-b"),
+					di.Svc(Echo[string], di.Ref(&aRef)).
+						Bind(&cRef).
+						Labels("echo-c"),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "service string (echo-c) has a circular dependency on string (echo-a)")
+			},
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -1156,6 +1177,23 @@ func TestGodi_Services(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDI_Eager(t *testing.T) {
+	var (
+		eagerCounter int
+		lazyCounter  int
+	)
+
+	_, err := di.New().
+		Services(
+			di.Svc(Increment, &eagerCounter).Eager(),
+			di.Svc(Increment, &lazyCounter).Lazy(),
+		).Build()
+
+	require.NoError(t, err)
+	require.Equal(t, 1, eagerCounter)
+	require.Equal(t, 0, lazyCounter)
 }
 
 type Refs struct {

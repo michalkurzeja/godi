@@ -75,13 +75,16 @@ func (p *InterfaceBindingPass) checkAndBind(scope *Scope, parentID ID, slot *Slo
 
 	var bindTo Arg
 	if slot.IsSlice() {
-		args := lo.Map(impls, func(impl *ServiceDefinition, _ int) Arg { return NewRefArg(impl) })
+		args := lo.Map(impls, func(impl *ServiceDefinition, _ int) Arg {
+			arg, _ := NewRefArg(impl)
+			return arg
+		})
 		bindTo, _ = NewCompoundArg(iface, args...) // No error possible - we know that impls implement iface.
 	} else {
 		if len(impls) > 1 {
 			return fmt.Errorf("multiple implementations of interface %s found: %s", util.Signature(iface), impls)
 		}
-		bindTo = NewRefArg(impls[0])
+		bindTo, _ = NewRefArg(impls[0])
 	}
 
 	binding, err := NewInterfaceBinding(iface, bindTo)

@@ -40,8 +40,11 @@ type refArg struct {
 	def *ServiceDefinition
 }
 
-func NewRefArg(def *ServiceDefinition) Arg {
-	return &refArg{def: def}
+func NewRefArg(def *ServiceDefinition) (Arg, error) {
+	if def == nil {
+		return nil, fmt.Errorf("ref arg requires a non-nil service definition")
+	}
+	return &refArg{def: def}, nil
 }
 
 func (a *refArg) String() string {

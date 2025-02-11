@@ -176,9 +176,15 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 	for _, method := range b.methods {
 		args, err := buildArgs(method.args)
 		if err != nil {
-			return err
+			joinedErrs = errors.Join(joinedErrs, err)
+			continue
 		}
-		m, err := di.NewMethod(method.fn, di.NewRefArg(b.def), args...)
+		receiver, err := di.NewRefArg(b.def)
+		if err != nil {
+			joinedErrs = errors.Join(joinedErrs, err)
+			continue
+		}
+		m, err := di.NewMethod(method.fn, receiver, args...)
 		if err != nil {
 			joinedErrs = errors.Join(joinedErrs, err)
 		} else {
