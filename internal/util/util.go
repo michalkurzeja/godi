@@ -52,26 +52,6 @@ func FuncNameShort(val reflect.Value) string {
 	return split[len(split)-1]
 }
 
-func funcSignature(typ reflect.Type) string {
-	var args []string
-	for i := 0; i < typ.NumIn(); i++ {
-		args = append(args, typ.In(i).String())
-	}
-	var results []string
-	for i := 0; i < typ.NumOut(); i++ {
-		results = append(results, Signature(typ.Out(i)))
-	}
-
-	sig := "func(" + strings.Join(args, ", ") + ")"
-	if len(results) == 0 {
-		return sig
-	}
-	if len(results) == 1 {
-		return sig + " " + results[0]
-	}
-	return sig + " (" + strings.Join(results, ", ") + ")"
-}
-
 func Zero[T any]() T {
 	var v T
 	return v
@@ -81,14 +61,6 @@ func Zero[T any]() T {
 func SortedAsc[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
 	sort.Slice(s, func(i, j int) bool {
 		return by(s[i]) < by(s[j])
-	})
-	return s
-}
-
-// SortedDesc returns the given slice, sorted by the given property in descending order.
-func SortedDesc[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
-	sort.Slice(s, func(i, j int) bool {
-		return by(s[i]) > by(s[j])
 	})
 	return s
 }

@@ -1,14 +1,12 @@
 package di
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/samber/lo"
 
-	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
@@ -16,93 +14,6 @@ type Arg interface {
 	fmt.Stringer
 	Type() reflect.Type
 }
-
-type ArgResolver interface {
-	ResolveIDs(arg Arg) []ID
-	Resolve(arg Arg) (any, error)
-	Validate(arg Arg) error
-}
-
-type argResolver struct {
-	container *Container
-
-	literalArgResolver       *literalArgResolver
-	refArgResolver           *refArgResolver
-	typeArgResolver          *typeArgResolver
-	labelArgResolver         *labelArgResolver
-	flexibleSliceArgResolver *flexibleSliceArgResolver
-	compoundArgResolver      *compoundArgResolver
-}
-
-func NewArgResolver(container *Container) ArgResolver {
-	r := &argResolver{container: container}
-	r.literalArgResolver = &literalArgResolver{}
-	r.refArgResolver = &refArgResolver{container: container}
-	r.typeArgResolver = &typeArgResolver{resolver: r, container: container}
-	r.labelArgResolver = &labelArgResolver{resolver: r, container: container}
-	r.flexibleSliceArgResolver = &flexibleSliceArgResolver{resolver: r, container: container}
-	r.compoundArgResolver = &compoundArgResolver{resolver: r, container: container}
-	return r
-}
-
-func (r *argResolver) Validate(arg Arg) error {
-	switch a := arg.(type) {
-	case *literalArg:
-		return r.literalArgResolver.Validate(a)
-	case *refArg:
-		return r.refArgResolver.Validate(a)
-	case *typeArg:
-		return r.typeArgResolver.Validate(a)
-	case *labelArg:
-		return r.labelArgResolver.Validate(a)
-	case *flexibleSliceArg:
-		return r.flexibleSliceArgResolver.Validate(a)
-	case *compoundArg:
-		return r.compoundArgResolver.Validate(a)
-	default:
-		return fmt.Errorf("unsupported arg type %T", arg)
-	}
-}
-
-func (r *argResolver) Resolve(arg Arg) (any, error) {
-	switch a := arg.(type) {
-	case *literalArg:
-		return r.literalArgResolver.Resolve(a)
-	case *refArg:
-		return r.refArgResolver.Resolve(a)
-	case *typeArg:
-		return r.typeArgResolver.Resolve(a)
-	case *labelArg:
-		return r.labelArgResolver.Resolve(a)
-	case *flexibleSliceArg:
-		return r.flexibleSliceArgResolver.Resolve(a)
-	case *compoundArg:
-		return r.compoundArgResolver.Resolve(a)
-	default:
-		return reflect.Value{}, fmt.Errorf("unsupported arg type %T", arg)
-	}
-}
-
-func (r *argResolver) ResolveIDs(arg Arg) []ID {
-	switch a := arg.(type) {
-	case *literalArg:
-		return r.literalArgResolver.ResolveIDs(a)
-	case *refArg:
-		return r.refArgResolver.ResolveIDs(a)
-	case *typeArg:
-		return r.typeArgResolver.ResolveIDs(a)
-	case *labelArg:
-		return r.labelArgResolver.ResolveIDs(a)
-	case *flexibleSliceArg:
-		return r.flexibleSliceArgResolver.ResolveIDs(a)
-	case *compoundArg:
-		return r.compoundArgResolver.ResolveIDs(a)
-	default:
-		return nil
-	}
-}
-
-// literal arg
 
 type literalArg struct {
 	v any
@@ -124,23 +35,8 @@ func (a *literalArg) Type() reflect.Type {
 	return reflect.TypeOf(a.v)
 }
 
-type literalArgResolver struct{}
-
-func (r *literalArgResolver) Validate(_ *literalArg) error {
-	return nil
-}
-
-func (r *literalArgResolver) Resolve(a *literalArg) (any, error) {
-	return a.v, nil
-}
-
-func (r *literalArgResolver) ResolveIDs(_ *literalArg) []ID {
-	return nil
-}
-
-// ref arg
-
 type refArg struct {
+	typ reflect.Type
 	def *ServiceDefinition
 }
 
@@ -155,32 +51,6 @@ func (a *refArg) String() string {
 func (a *refArg) Type() reflect.Type {
 	return a.def.Type()
 }
-
-type refArgResolver struct{ container *Container }
-
-func (r *refArgResolver) Validate(a *refArg) error {
-	if !r.container.HasService(a.def.ID()) {
-		return fmt.Errorf("service %s not found", a.def.ID())
-	}
-	return nil
-}
-
-func (r *refArgResolver) Resolve(a *refArg) (any, error) {
-	v, err := r.container.GetService(a.def.ID())
-	if err != nil {
-		return nil, errorsx.Wrap(err, "failed to resolve ID arg")
-	}
-	if v == nil {
-		return nil, fmt.Errorf("service %s not found", a.def.ID())
-	}
-	return v, nil
-}
-
-func (r *refArgResolver) ResolveIDs(a *refArg) []ID {
-	return []ID{a.def.ID()}
-}
-
-// type arg
 
 type typeArg struct {
 	typ   reflect.Type
@@ -201,55 +71,6 @@ func (a *typeArg) Type() reflect.Type {
 	}
 	return a.typ
 }
-
-type typeArgResolver struct {
-	resolver  *argResolver
-	container *Container
-}
-
-func (r *typeArgResolver) Validate(a *typeArg) error {
-	if boundTo, ok := r.container.GetBindingFor(a.typ); ok {
-		return r.resolver.Validate(boundTo)
-	}
-	ids := r.container.GetServicesIDsByType(a.typ)
-	if len(ids) == 0 {
-		return fmt.Errorf("no services found for type %s", util.Signature(a.typ))
-	}
-	if !a.slice && len(ids) > 1 {
-		return fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
-	}
-	return nil
-}
-
-func (r *typeArgResolver) Resolve(a *typeArg) (any, error) {
-	if boundTo, ok := r.container.GetBindingFor(a.typ); ok {
-		return r.resolver.Resolve(boundTo)
-	}
-	vals, err := r.container.GetServicesByType(a.typ)
-	if err != nil {
-		return nil, errorsx.Wrap(err, "failed to resolve type arg")
-	}
-	if len(vals) == 0 {
-		return nil, fmt.Errorf("no services found for type %s", util.Signature(a.typ))
-	}
-	if a.slice {
-		return convertSlice(vals, a.typ)
-	}
-	if len(vals) > 1 {
-		// This should never happen under normal circumstances - the built-in compiler passes verify args.
-		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
-	}
-	return vals[0], nil
-}
-
-func (r *typeArgResolver) ResolveIDs(a *typeArg) []ID {
-	if boundTo, ok := r.container.GetBindingFor(a.typ); ok {
-		return r.resolver.ResolveIDs(boundTo)
-	}
-	return r.container.GetServicesIDsByType(a.typ)
-}
-
-// label arg
 
 type labelArg struct {
 	label Label
@@ -272,50 +93,6 @@ func (a *labelArg) Type() reflect.Type {
 	return a.typ
 }
 
-type labelArgResolver struct {
-	resolver  *argResolver
-	container *Container
-}
-
-func (r *labelArgResolver) Validate(a *labelArg) error {
-	ids := r.container.GetServicesIDsByLabel(a.label)
-	if len(ids) == 0 {
-		return fmt.Errorf("no services found with label %s", a.label)
-	}
-	if !a.slice && len(ids) > 1 {
-		return fmt.Errorf("multiple services found with label %s", a.label)
-	}
-	return nil
-}
-
-func (r *labelArgResolver) Resolve(a *labelArg) (any, error) {
-	vals, err := r.container.GetServicesByLabel(a.label)
-	if err != nil {
-		return nil, errorsx.Wrap(err, "failed to resolve type arg")
-	}
-	if len(vals) == 0 {
-		return nil, fmt.Errorf("no services found with label %s", a.label)
-	}
-	if a.slice {
-		return convertSlice(vals, a.typ)
-	}
-	if len(vals) > 1 {
-		// This should never happen under normal circumstances - the built-in compiler passes verify args.
-		return nil, fmt.Errorf("multiple services found for label %s", a.label)
-	}
-	argType := reflect.TypeOf(vals[0])
-	if argType != a.Type() {
-		return nil, fmt.Errorf("service labeled as %s should be of type %s, got %s", a.label, util.Signature(a.Type()), util.Signature(argType))
-	}
-	return vals[0], nil
-}
-
-func (r *labelArgResolver) ResolveIDs(a *labelArg) []ID {
-	return r.container.GetServicesIDsByLabel(a.label)
-}
-
-// flexible slice arg
-
 type flexibleSliceArg struct {
 	elemType   reflect.Type
 	allowEmpty bool
@@ -332,96 +109,6 @@ func (a *flexibleSliceArg) String() string {
 func (a *flexibleSliceArg) Type() reflect.Type {
 	return reflect.SliceOf(a.elemType)
 }
-
-type flexibleSliceArgResolver struct {
-	resolver  *argResolver
-	container *Container
-}
-
-func (r *flexibleSliceArgResolver) Validate(a *flexibleSliceArg) error {
-	// First try to match by the slice type.
-	if boundTo, ok := r.container.GetBindingFor(a.Type()); ok {
-		return r.resolver.Validate(boundTo)
-	}
-	ids := r.container.GetServicesIDsByType(a.Type())
-	if len(ids) > 1 {
-		return fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
-	}
-	if len(ids) == 1 {
-		return nil // Slice type matched!
-	}
-
-	// Now let's try to match by the element type.
-	elemType := a.Type().Elem()
-	if boundTo, ok := r.container.GetBindingFor(elemType); ok {
-		return r.resolver.Validate(boundTo)
-	}
-	ids = r.container.GetServicesIDsByType(elemType)
-	if len(ids) > 0 {
-		return nil // Slice element type matched!
-	}
-	if a.allowEmpty {
-		return nil
-	}
-
-	return fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
-}
-
-func (r *flexibleSliceArgResolver) Resolve(a *flexibleSliceArg) (any, error) {
-	// First try to match by the slice type.
-	if boundTo, ok := r.container.GetBindingFor(a.Type()); ok {
-		return r.resolver.Resolve(boundTo)
-	}
-	vals, err := r.container.GetServicesByType(a.Type())
-	if err != nil {
-		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg")
-	}
-	if len(vals) > 1 {
-		// This should never happen under normal circumstances - the built-in compiler passes verify args.
-		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
-	}
-	if len(vals) == 1 {
-		return vals[0], nil // Slice type matched!
-	}
-
-	// Now let's try to match by the element type.
-	elemType := a.Type().Elem()
-	if boundTo, ok := r.container.GetBindingFor(elemType); ok {
-		return r.resolver.Resolve(boundTo)
-	}
-	vals, err = r.container.GetServicesByType(elemType)
-	if err != nil {
-		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg element")
-	}
-	if len(vals) > 0 {
-		return convertSlice(vals, elemType) // Slice element type matched!
-	}
-	if a.allowEmpty {
-		return convertSlice(nil, elemType)
-	}
-
-	return nil, fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
-}
-
-func (r *flexibleSliceArgResolver) ResolveIDs(a *flexibleSliceArg) []ID {
-	// First try to match by the slice type.
-	if boundTo, ok := r.container.GetBindingFor(a.Type()); ok {
-		return r.resolver.ResolveIDs(boundTo)
-	}
-	ids := r.container.GetServicesIDsByType(a.Type())
-	if len(ids) > 0 {
-		return ids // Slice type matched!
-	}
-
-	// Now let's try to match by the element type.
-	elemType := a.Type().Elem()
-	if boundTo, ok := r.container.GetBindingFor(elemType); ok {
-		return r.resolver.ResolveIDs(boundTo)
-	}
-	return r.container.GetServicesIDsByType(elemType)
-}
-
-// compound arg
 
 type compoundArg struct {
 	args []Arg
@@ -451,52 +138,6 @@ func (c *compoundArg) String() string {
 
 func (c *compoundArg) Type() reflect.Type {
 	return c.typ
-}
-
-type compoundArgResolver struct {
-	resolver  *argResolver
-	container *Container
-}
-
-func (r *compoundArgResolver) Validate(a *compoundArg) error {
-	var joinedErr error
-	for i, arg := range a.args {
-		err := r.resolver.Validate(arg)
-		if err != nil {
-			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i))
-		}
-	}
-	return joinedErr
-}
-
-func (r *compoundArgResolver) Resolve(a *compoundArg) (any, error) {
-	vals := make([]any, len(a.args))
-	for i, arg := range a.args {
-		v, err := r.resolver.Resolve(arg)
-		if err != nil {
-			return nil, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i)
-		}
-		vals[i] = v
-	}
-	return convertSlice(vals, a.typ)
-}
-
-func (r *compoundArgResolver) ResolveIDs(a *compoundArg) []ID {
-	return lo.FlatMap(a.args, func(a Arg, _ int) []ID {
-		return r.resolver.ResolveIDs(a)
-	})
-}
-
-func convertSlice(vs []any, elemType reflect.Type) (any, error) {
-	sl := reflect.MakeSlice(reflect.SliceOf(elemType), 0, len(vs))
-	for _, v := range vs {
-		rv := reflect.ValueOf(v)
-		if !rv.Type().AssignableTo(elemType) {
-			return nil, fmt.Errorf("type %s is not assignable to %s", util.Signature(rv.Type()), util.Signature(elemType))
-		}
-		sl = reflect.Append(sl, rv)
-	}
-	return sl.Interface(), nil
 }
 
 func NewSlottedArg(arg Arg, slot uint) *SlottedArg {

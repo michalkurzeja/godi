@@ -11,12 +11,19 @@ type InterfaceBindingBuilder struct {
 	bindTo *ArgBuilder
 }
 
-func (b *InterfaceBindingBuilder) Build() (*di.InterfaceBinding, error) {
+func (b *InterfaceBindingBuilder) Build(scope *di.Scope) error {
 	arg, err := b.bindTo.Build()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return di.NewInterfaceBinding(b.typ, arg)
+	binding, err := di.NewInterfaceBinding(b.typ, arg)
+	if err != nil {
+		return err
+	}
+
+	scope.AddBindings(binding)
+
+	return nil
 }
 
 // BindArg binds the interface Iface to the given argument (bindTo).

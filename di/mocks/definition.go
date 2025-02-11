@@ -23,11 +23,11 @@ func (_m *Definition) EXPECT() *Definition_Expecter {
 }
 
 // GetLabels provides a mock function with given fields:
-func (_m *Definition) GetLabels() []di.Label {
+func (_m *Definition) Labels() []di.Label {
 	ret := _m.Called()
 
 	if len(ret) == 0 {
-		panic("no return value specified for GetLabels")
+		panic("no return value specified for Labels")
 	}
 
 	var r0 []di.Label
@@ -42,14 +42,14 @@ func (_m *Definition) GetLabels() []di.Label {
 	return r0
 }
 
-// Definition_GetLabels_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLabels'
+// Definition_GetLabels_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Labels'
 type Definition_GetLabels_Call struct {
 	*mock.Call
 }
 
 // GetLabels is a helper method to define mock.On call
 func (_e *Definition_Expecter) GetLabels() *Definition_GetLabels_Call {
-	return &Definition_GetLabels_Call{Call: _e.mock.On("GetLabels")}
+	return &Definition_GetLabels_Call{Call: _e.mock.On("Labels")}
 }
 
 func (_c *Definition_GetLabels_Call) Run(run func()) *Definition_GetLabels_Call {

@@ -17,7 +17,7 @@ func OverrideSvcArgPass(ref godi.SvcReference, slotIdx uint, arg any) *di.Compil
 		if ref.IsEmpty() {
 			return errors.New("cannot override argument: empty reference")
 		}
-		def, ok := builder.GetServiceDefinition(ref.SvcID())
+		def, ok := builder.RootScope().GetServiceDefinition(ref.SvcID())
 		if !ok {
 			return fmt.Errorf("cannot override argument of %s: service not found", ref)
 		}
@@ -25,7 +25,7 @@ func OverrideSvcArgPass(ref godi.SvcReference, slotIdx uint, arg any) *di.Compil
 		if err != nil {
 			return errorsx.Wrap(err, "cannot override argument of %s: invalid arg")
 		}
-		err = def.GetFactory().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
+		err = def.Factory().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
 		if err != nil {
 			return errorsx.Wrapf(err, "cannot override argument of %s", ref)
 		}
@@ -41,7 +41,7 @@ func OverrideFuncArgPass(ref godi.FuncReference, slotIdx uint, arg any) *di.Comp
 		if ref.IsEmpty() {
 			return errors.New("cannot override argument: empty reference")
 		}
-		def, ok := builder.GetFunctionDefinition(ref.FuncID())
+		def, ok := builder.RootScope().GetFunctionDefinition(ref.FuncID())
 		if !ok {
 			return fmt.Errorf("cannot override argument of %s: function not found", ref)
 		}
@@ -49,7 +49,7 @@ func OverrideFuncArgPass(ref godi.FuncReference, slotIdx uint, arg any) *di.Comp
 		if err != nil {
 			return errorsx.Wrap(err, "cannot override argument of %s: invalid arg")
 		}
-		err = def.GetFunc().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
+		err = def.Func().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
 		if err != nil {
 			return errorsx.Wrapf(err, "cannot override argument of %s", ref)
 		}

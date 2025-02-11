@@ -1,15 +1,11 @@
 package di
 
 import (
-	"cmp"
 	"errors"
-	"reflect"
-	"slices"
-
-	"github.com/samber/lo"
+	"iter"
 
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
-	"github.com/michalkurzeja/godi/v2/internal/util"
+	"github.com/michalkurzeja/godi/v2/internal/iterx"
 )
 
 // ContainerBuilder is a builder for Container. It provides a fluent interface to
@@ -30,91 +26,40 @@ func NewContainerBuilder() *ContainerBuilder {
 	}
 }
 
-func (b *ContainerBuilder) GetServiceDefinitions() []*ServiceDefinition {
-	return b.container.services.GetAll()
+func (b *ContainerBuilder) RootScope() *Scope {
+	return b.container.root
 }
 
-func (b *ContainerBuilder) GetServiceDefinitionsByType(typ reflect.Type) []*ServiceDefinition {
-	return b.container.services.GetByType(typ)
+func (b *ContainerBuilder) Scope(name string) (*Scope, bool) {
+	return b.container.scopes.Get(name)
 }
 
-func (b *ContainerBuilder) GetServiceDefinitionsByLabel(label Label) []*ServiceDefinition {
-	return b.container.services.GetByLabel(label)
+func (b *ContainerBuilder) Scopes() iter.Seq[*Scope] {
+	return iterx.Values(b.container.scopes.Iterator())
 }
 
-func (b *ContainerBuilder) GetServiceDefinition(id ID) (*ServiceDefinition, bool) {
-	return b.container.services.Get(id)
-}
-
-func (b *ContainerBuilder) AddServiceDefinitions(definitions ...*ServiceDefinition) *ContainerBuilder {
-	b.container.services.Add(definitions...)
-	return b
-}
-
-func (b *ContainerBuilder) RemoveServiceDefinitions(ids ...ID) *ContainerBuilder {
-	b.container.services.Remove(ids...)
-	return b
-}
-
-func (b *ContainerBuilder) ClearServiceDefinitions() *ContainerBuilder {
-	b.container.services.Clear()
-	return b
-}
-
-func (b *ContainerBuilder) GetFunctionDefinitions() []*FunctionDefinition {
-	return b.container.functions.GetAll()
-}
-
-func (b *ContainerBuilder) GetFunctionDefinitionsByType(typ reflect.Type) []*FunctionDefinition {
-	return b.container.functions.GetByType(typ)
-}
-
-func (b *ContainerBuilder) GetFunctionDefinitionsByLabel(label Label) []*FunctionDefinition {
-	return b.container.functions.GetByLabel(label)
-}
-
-func (b *ContainerBuilder) GetFunctionDefinition(id ID) (*FunctionDefinition, bool) {
-	return b.container.functions.Get(id)
-}
-
-func (b *ContainerBuilder) AddFunctionDefinitions(functions ...*FunctionDefinition) *ContainerBuilder {
-	b.container.functions.Add(functions...)
-	return b
-}
-
-func (b *ContainerBuilder) RemoveFunctionDefinitions(ids ...ID) *ContainerBuilder {
-	b.container.functions.Remove(ids...)
-	return b
-}
-
-func (b *ContainerBuilder) GetBindings() []*InterfaceBinding {
-	bindings := lo.Values(b.container.bindings)
-	slices.SortFunc(bindings, func(a, b *InterfaceBinding) int {
-		return cmp.Compare(util.Signature(a.ifaceTyp), util.Signature(b.ifaceTyp))
-	})
-	return bindings
-}
-
-func (b *ContainerBuilder) GetBinding(typ reflect.Type) (*InterfaceBinding, bool) {
-	binding, ok := b.container.bindings[typ]
-	return binding, ok
-}
-
-func (b *ContainerBuilder) SetBindings(bindings ...*InterfaceBinding) *ContainerBuilder {
-	b.container.bindings = make(map[reflect.Type]*InterfaceBinding, len(bindings))
-	return b.AddBindings(bindings...)
-}
-
-func (b *ContainerBuilder) AddBindings(bindings ...*InterfaceBinding) *ContainerBuilder {
-	for _, binding := range bindings {
-		b.container.bindings[binding.ifaceTyp] = binding
+func (b *ContainerBuilder) ServiceDefinitionsSeq() iter.Seq2[*Scope, *ServiceDefinition] {
+	return func(yield func(*Scope, *ServiceDefinition) bool) {
+		for scope := range b.Scopes() {
+			for def := range scope.ServiceDefinitionsSeq() {
+				if !yield(scope, def) {
+					return
+				}
+			}
+		}
 	}
-	return b
 }
 
-func (b *ContainerBuilder) RemoveBindings(types ...reflect.Type) *ContainerBuilder {
-	b.container.bindings = lo.OmitByKeys(b.container.bindings, types)
-	return b
+func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionDefinition] {
+	return func(yield func(*Scope, *FunctionDefinition) bool) {
+		for scope := range b.Scopes() {
+			for def := range scope.FunctionDefinitionsSeq() {
+				if !yield(scope, def) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (b *ContainerBuilder) Compiler() *Compiler {

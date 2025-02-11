@@ -20,9 +20,9 @@ func (_m *ArgResolver) EXPECT() *ArgResolver_Expecter {
 	return &ArgResolver_Expecter{mock: &_m.Mock}
 }
 
-// Resolve provides a mock function with given fields: arg
-func (_m *ArgResolver) Resolve(arg di.Arg) (interface{}, error) {
-	ret := _m.Called(arg)
+// Resolve provides a mock function with given fields: scope, arg
+func (_m *ArgResolver) Resolve(scope *di.Scope, arg di.Arg) (interface{}, error) {
+	ret := _m.Called(scope, arg)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Resolve")
@@ -30,19 +30,19 @@ func (_m *ArgResolver) Resolve(arg di.Arg) (interface{}, error) {
 
 	var r0 interface{}
 	var r1 error
-	if rf, ok := ret.Get(0).(func(di.Arg) (interface{}, error)); ok {
-		return rf(arg)
+	if rf, ok := ret.Get(0).(func(*di.Scope, di.Arg) (interface{}, error)); ok {
+		return rf(scope, arg)
 	}
-	if rf, ok := ret.Get(0).(func(di.Arg) interface{}); ok {
-		r0 = rf(arg)
+	if rf, ok := ret.Get(0).(func(*di.Scope, di.Arg) interface{}); ok {
+		r0 = rf(scope, arg)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(interface{})
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(di.Arg) error); ok {
-		r1 = rf(arg)
+	if rf, ok := ret.Get(1).(func(*di.Scope, di.Arg) error); ok {
+		r1 = rf(scope, arg)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -56,14 +56,15 @@ type ArgResolver_Resolve_Call struct {
 }
 
 // Resolve is a helper method to define mock.On call
+//   - scope *di.Scope
 //   - arg di.Arg
-func (_e *ArgResolver_Expecter) Resolve(arg interface{}) *ArgResolver_Resolve_Call {
-	return &ArgResolver_Resolve_Call{Call: _e.mock.On("Resolve", arg)}
+func (_e *ArgResolver_Expecter) Resolve(scope interface{}, arg interface{}) *ArgResolver_Resolve_Call {
+	return &ArgResolver_Resolve_Call{Call: _e.mock.On("Resolve", scope, arg)}
 }
 
-func (_c *ArgResolver_Resolve_Call) Run(run func(arg di.Arg)) *ArgResolver_Resolve_Call {
+func (_c *ArgResolver_Resolve_Call) Run(run func(scope *di.Scope, arg di.Arg)) *ArgResolver_Resolve_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(di.Arg))
+		run(args[0].(*di.Scope), args[1].(di.Arg))
 	})
 	return _c
 }
@@ -73,22 +74,22 @@ func (_c *ArgResolver_Resolve_Call) Return(_a0 interface{}, _a1 error) *ArgResol
 	return _c
 }
 
-func (_c *ArgResolver_Resolve_Call) RunAndReturn(run func(di.Arg) (interface{}, error)) *ArgResolver_Resolve_Call {
+func (_c *ArgResolver_Resolve_Call) RunAndReturn(run func(*di.Scope, di.Arg) (interface{}, error)) *ArgResolver_Resolve_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// ResolveIDs provides a mock function with given fields: arg
-func (_m *ArgResolver) ResolveIDs(arg di.Arg) []di.ID {
-	ret := _m.Called(arg)
+// ResolveIDs provides a mock function with given fields: scope, arg
+func (_m *ArgResolver) ResolveIDs(scope *di.Scope, arg di.Arg) []di.ID {
+	ret := _m.Called(scope, arg)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ResolveIDs")
 	}
 
 	var r0 []di.ID
-	if rf, ok := ret.Get(0).(func(di.Arg) []di.ID); ok {
-		r0 = rf(arg)
+	if rf, ok := ret.Get(0).(func(*di.Scope, di.Arg) []di.ID); ok {
+		r0 = rf(scope, arg)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]di.ID)
@@ -104,14 +105,15 @@ type ArgResolver_ResolveIDs_Call struct {
 }
 
 // ResolveIDs is a helper method to define mock.On call
+//   - scope *di.Scope
 //   - arg di.Arg
-func (_e *ArgResolver_Expecter) ResolveIDs(arg interface{}) *ArgResolver_ResolveIDs_Call {
-	return &ArgResolver_ResolveIDs_Call{Call: _e.mock.On("ResolveIDs", arg)}
+func (_e *ArgResolver_Expecter) ResolveIDs(scope interface{}, arg interface{}) *ArgResolver_ResolveIDs_Call {
+	return &ArgResolver_ResolveIDs_Call{Call: _e.mock.On("ResolveIDs", scope, arg)}
 }
 
-func (_c *ArgResolver_ResolveIDs_Call) Run(run func(arg di.Arg)) *ArgResolver_ResolveIDs_Call {
+func (_c *ArgResolver_ResolveIDs_Call) Run(run func(scope *di.Scope, arg di.Arg)) *ArgResolver_ResolveIDs_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(di.Arg))
+		run(args[0].(*di.Scope), args[1].(di.Arg))
 	})
 	return _c
 }
@@ -121,22 +123,22 @@ func (_c *ArgResolver_ResolveIDs_Call) Return(_a0 []di.ID) *ArgResolver_ResolveI
 	return _c
 }
 
-func (_c *ArgResolver_ResolveIDs_Call) RunAndReturn(run func(di.Arg) []di.ID) *ArgResolver_ResolveIDs_Call {
+func (_c *ArgResolver_ResolveIDs_Call) RunAndReturn(run func(*di.Scope, di.Arg) []di.ID) *ArgResolver_ResolveIDs_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// Validate provides a mock function with given fields: arg
-func (_m *ArgResolver) Validate(arg di.Arg) error {
-	ret := _m.Called(arg)
+// Validate provides a mock function with given fields: scope, arg
+func (_m *ArgResolver) Validate(scope *di.Scope, arg di.Arg) error {
+	ret := _m.Called(scope, arg)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Validate")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(di.Arg) error); ok {
-		r0 = rf(arg)
+	if rf, ok := ret.Get(0).(func(*di.Scope, di.Arg) error); ok {
+		r0 = rf(scope, arg)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -150,14 +152,15 @@ type ArgResolver_Validate_Call struct {
 }
 
 // Validate is a helper method to define mock.On call
+//   - scope *di.Scope
 //   - arg di.Arg
-func (_e *ArgResolver_Expecter) Validate(arg interface{}) *ArgResolver_Validate_Call {
-	return &ArgResolver_Validate_Call{Call: _e.mock.On("Validate", arg)}
+func (_e *ArgResolver_Expecter) Validate(scope interface{}, arg interface{}) *ArgResolver_Validate_Call {
+	return &ArgResolver_Validate_Call{Call: _e.mock.On("Validate", scope, arg)}
 }
 
-func (_c *ArgResolver_Validate_Call) Run(run func(arg di.Arg)) *ArgResolver_Validate_Call {
+func (_c *ArgResolver_Validate_Call) Run(run func(scope *di.Scope, arg di.Arg)) *ArgResolver_Validate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(di.Arg))
+		run(args[0].(*di.Scope), args[1].(di.Arg))
 	})
 	return _c
 }
@@ -167,7 +170,7 @@ func (_c *ArgResolver_Validate_Call) Return(_a0 error) *ArgResolver_Validate_Cal
 	return _c
 }
 
-func (_c *ArgResolver_Validate_Call) RunAndReturn(run func(di.Arg) error) *ArgResolver_Validate_Call {
+func (_c *ArgResolver_Validate_Call) RunAndReturn(run func(*di.Scope, di.Arg) error) *ArgResolver_Validate_Call {
 	_c.Call.Return(run)
 	return _c
 }

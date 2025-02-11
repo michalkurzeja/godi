@@ -47,8 +47,8 @@ func NewFactory(fn any, args ...Arg) (*Factory, error) {
 	return &Factory{fn: f, returnedType: fnType.Out(0), returnsErr: returnsErr}, nil
 }
 
-func (f *Factory) Execute(resolver ArgResolver) (any, error) {
-	out, err := f.fn.Execute(resolver)
+func (f *Factory) Execute(scope *Scope) (any, error) {
+	out, err := f.fn.Execute(scope)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to execute factory")
 	}
@@ -110,8 +110,8 @@ func NewMethod(fn any, receiver Arg, args ...Arg) (*Method, error) {
 	return &Method{fn: f, returnsErr: returnsErr}, nil
 }
 
-func (m *Method) Execute(resolver ArgResolver) error {
-	out, err := m.fn.Execute(resolver)
+func (m *Method) Execute(scope *Scope) error {
+	out, err := m.fn.Execute(scope)
 	if err != nil {
 		return errorsx.Wrap(err, "failed to execute method")
 	}
@@ -168,7 +168,7 @@ func NewFunc(fn reflect.Value, args ...Arg) (*Func, error) {
 	return f, nil
 }
 
-func (f *Func) Execute(resolver ArgResolver) ([]reflect.Value, error) {
+func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 	args, err := f.args.ValidateAndCollect()
 	if err != nil {
 		// This should never happen under normal circumstances - the built-in compiler passes verify args.
@@ -177,7 +177,7 @@ func (f *Func) Execute(resolver ArgResolver) ([]reflect.Value, error) {
 
 	resolvedArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		val, err := resolver.Resolve(arg)
+		val, err := ResolveArg(scope, arg)
 		if err != nil {
 			return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
 		}

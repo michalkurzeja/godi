@@ -2,6 +2,7 @@ package godi
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/michalkurzeja/godi/v2/di"
@@ -52,33 +53,29 @@ func (r FuncReference) String() string {
 	return r.def.String()
 }
 
+type funcBuilder struct {
+	fn   any
+	args []any
+}
+
 // ServiceDefinitionBuilder is a helper for building di.ServiceDefinition objects.
 // It offers a fluent interface that does all the heavy lifting for the user.
 // This is the recommended way of building a di.ServiceDefinition.
 type ServiceDefinitionBuilder struct {
-	def        *di.ServiceDefinition
-	setFactory func() error
-	addMethods []func() error
+	def      *di.ServiceDefinition
+	factory  *funcBuilder
+	methods  []*funcBuilder
+	children []*ServiceDefinitionBuilder
+
+	factoryParsed bool
 }
 
 // Svc creates a new ServiceDefinitionBuilder.
 func Svc(factory any, args ...any) *ServiceDefinitionBuilder {
-
 	b := &ServiceDefinitionBuilder{
 		def: di.NewServiceDefinition(nil),
 	}
-	b.setFactory = func() error {
-		args, err := parseArgs(args)
-		if err != nil {
-			return err
-		}
-		f, err := di.NewFactory(factory, args...)
-		if err != nil {
-			return err
-		}
-		b.def.SetFactory(f)
-		return nil
-	}
+	b.factory = &funcBuilder{fn: factory, args: args}
 	return b
 }
 
@@ -92,18 +89,7 @@ func (b *ServiceDefinitionBuilder) Bind(ref *SvcReference) *ServiceDefinitionBui
 }
 
 func (b *ServiceDefinitionBuilder) MethodCall(method any, args ...any) *ServiceDefinitionBuilder {
-	b.addMethods = append(b.addMethods, func() error {
-		args, err := parseArgs(args)
-		if err != nil {
-			return err
-		}
-		m, err := di.NewMethod(method, di.NewRefArg(b.def), args...)
-		if err != nil {
-			return err
-		}
-		b.def.AddMethodCalls(m)
-		return nil
-	})
+	b.methods = append(b.methods, &funcBuilder{fn: method, args: args})
 	return b
 }
 
@@ -142,32 +128,93 @@ func (b *ServiceDefinitionBuilder) NotAutowired() *ServiceDefinitionBuilder {
 	return b
 }
 
-func (b *ServiceDefinitionBuilder) Build() (def *di.ServiceDefinition, joinedErrs error) {
-	err := b.setFactory()
+func (b *ServiceDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *ServiceDefinitionBuilder {
+	b.children = append(b.children, services...)
+	return b
+}
+
+// ParseFactory parses the factory function WITHOUT the arguments to determine the service type.
+// This method MUST be called prior to Build.
+func (b *ServiceDefinitionBuilder) ParseFactory() (joinedErrs error) {
+	f, err := di.NewFactory(b.factory.fn)
 	if err != nil {
-		joinedErrs = errors.Join(joinedErrs, err)
+		joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "failed to build factory"))
+	} else {
+		b.def.SetFactory(f)
 	}
 
-	for _, getMethod := range b.addMethods {
-		err := getMethod()
+	for _, child := range b.children {
+		err := child.ParseFactory()
 		if err != nil {
-			joinedErrs = errors.Join(joinedErrs, err)
+			joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 		}
 	}
 
 	if joinedErrs != nil {
-		return nil, errorsx.Wrapf(joinedErrs, "invalid definition of %s", b.def)
+		return errorsx.Wrapf(joinedErrs, "invalid definition of %s", b.def)
 	}
 
-	return b.def, nil
+	b.factoryParsed = true
+
+	return nil
+}
+
+func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
+	if !b.factoryParsed {
+		return fmt.Errorf("failed to build service definition: factory of %s is not parsed", b.def)
+	}
+
+	args, err := buildArgs(b.factory.args)
+	if err != nil {
+		joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "failed to build factory args"))
+	}
+	err = b.def.Factory().AddArgs(args...)
+	if err != nil {
+		joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "failed to add factory args"))
+	}
+
+	for _, method := range b.methods {
+		args, err := buildArgs(method.args)
+		if err != nil {
+			return err
+		}
+		m, err := di.NewMethod(method.fn, di.NewRefArg(b.def), args...)
+		if err != nil {
+			joinedErrs = errors.Join(joinedErrs, err)
+		} else {
+			b.def.AddMethodCalls(m)
+		}
+	}
+
+	if len(b.children) > 0 {
+		childScope := scope.NewChild(b.def.String())
+
+		for _, child := range b.children {
+			err := child.Build(childScope)
+			if err != nil {
+				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
+			}
+		}
+		b.def.SetChildScope(childScope)
+	}
+
+	if joinedErrs != nil {
+		return errorsx.Wrapf(joinedErrs, "invalid definition of %s", b.def)
+	}
+
+	scope.AddServiceDefinitions(b.def)
+	b.def.SetScope(scope)
+
+	return nil
 }
 
 // FunctionDefinitionBuilder is a helper for building di.FunctionDefinition objects.
 // It offers a fluent interface that does all the heavy lifting for the user.
 // This is the recommended way of building a di.FunctionDefinition.
 type FunctionDefinitionBuilder struct {
-	def     *di.FunctionDefinition
-	setFunc func() error
+	def      *di.FunctionDefinition
+	setFunc  func() error
+	children []*ServiceDefinitionBuilder
 }
 
 // Func creates a new FunctionDefinitionBuilder.
@@ -176,15 +223,16 @@ func Func(fn any, args ...any) *FunctionDefinitionBuilder {
 		def: di.NewFunctionDefinition(nil),
 	}
 	b.setFunc = func() error {
-		args, err := parseArgs(args)
+		args, err := buildArgs(args)
 		if err != nil {
 			return err
 		}
 		f, err := di.NewFunc(reflect.ValueOf(fn), args...)
 		if err != nil {
 			return err
+		} else {
+			b.def.SetFunc(f)
 		}
-		b.def.SetFunc(f)
 		return nil
 	}
 	return b
@@ -220,20 +268,41 @@ func (b *FunctionDefinitionBuilder) NotAutowired() *FunctionDefinitionBuilder {
 	return b
 }
 
-func (b *FunctionDefinitionBuilder) Build() (def *di.FunctionDefinition, joinedErrs error) {
+func (b *FunctionDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *FunctionDefinitionBuilder {
+	b.children = append(b.children, services...)
+	return b
+}
+
+func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 	err := b.setFunc()
 	if err != nil {
 		joinedErrs = errors.Join(joinedErrs, err)
 	}
 
-	if joinedErrs != nil {
-		return nil, errorsx.Wrapf(joinedErrs, "invalid definition of %s", b.def)
+	if len(b.children) > 0 {
+		childScope := scope.NewChild(b.def.String())
+
+		for _, child := range b.children {
+			err := child.Build(childScope)
+			if err != nil {
+				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
+			}
+		}
+
+		b.def.SetChildScope(childScope)
 	}
 
-	return b.def, nil
+	if joinedErrs != nil {
+		return errorsx.Wrapf(joinedErrs, "invalid definition of %s", b.def)
+	}
+
+	scope.AddFunctionDefinitions(b.def)
+	b.def.SetScope(scope)
+
+	return nil
 }
 
-func parseArgs(args []any) ([]di.Arg, error) {
+func buildArgs(args []any) ([]di.Arg, error) {
 	parsedArgs := make([]di.Arg, 0, len(args))
 	for _, arg := range args {
 		parsed, err := Arg(arg).Build()

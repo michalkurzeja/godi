@@ -50,30 +50,31 @@ func (b *Builder) Build() (Container, error) {
 	var joinedErr error
 
 	for _, builder := range b.services {
-		def, err := builder.Build()
-		if err != nil {
+		if err := builder.ParseFactory(); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}
-		b.cb.AddServiceDefinitions(def)
+	}
+
+	for _, builder := range b.services {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			continue
+		}
 	}
 
 	for _, builder := range b.functions {
-		def, err := builder.Build()
-		if err != nil {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}
-		b.cb.AddFunctionDefinitions(def)
 	}
 
 	for _, builder := range b.bindings {
-		binding, err := builder.Build()
-		if err != nil {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}
-		b.cb.AddBindings(binding)
 	}
 
 	for _, pass := range b.passes {

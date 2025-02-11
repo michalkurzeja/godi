@@ -42,6 +42,9 @@ type ServiceDefinition struct {
 	factory     *Factory
 	methodCalls map[string]*Method
 
+	scope      *Scope
+	childScope *Scope
+
 	// Properties
 	lazy      bool
 	shared    bool
@@ -69,7 +72,35 @@ func (d *ServiceDefinition) Type() reflect.Type {
 	return d.factory.Creates()
 }
 
-func (d *ServiceDefinition) GetFactory() *Factory {
+func (d *ServiceDefinition) Scope() *Scope {
+	return d.scope
+}
+
+func (d *ServiceDefinition) SetScope(scope *Scope) *ServiceDefinition {
+	d.scope = scope
+	return d
+}
+
+func (d *ServiceDefinition) ChildScope() *Scope {
+	return d.childScope
+}
+
+func (d *ServiceDefinition) SetChildScope(scope *Scope) *ServiceDefinition {
+	d.childScope = scope
+	return d
+}
+
+// EffectiveScope returns the scope in which all the dependencies should be resolved.
+// For most services this is the scope where that service is defined.
+// But if a service has a child-scope, then the dependencies should be resolved with that scope included.
+func (d *ServiceDefinition) EffectiveScope() *Scope {
+	if d.childScope != nil {
+		return d.childScope
+	}
+	return d.scope
+}
+
+func (d *ServiceDefinition) Factory() *Factory {
 	return d.factory
 }
 
@@ -78,7 +109,7 @@ func (d *ServiceDefinition) SetFactory(factory *Factory) *ServiceDefinition {
 	return d
 }
 
-func (d *ServiceDefinition) GetMethodCalls() []*Method {
+func (d *ServiceDefinition) MethodCalls() []*Method {
 	return util.SortedAsc(lo.Values(d.methodCalls), func(m *Method) string {
 		return m.Name()
 	})
@@ -101,7 +132,7 @@ func (d *ServiceDefinition) RemoveMethodCalls(names ...string) *ServiceDefinitio
 	return d
 }
 
-func (d *ServiceDefinition) GetLabels() []Label {
+func (d *ServiceDefinition) Labels() []Label {
 	return d.labels
 }
 
@@ -176,6 +207,9 @@ type FunctionDefinition struct {
 	function *Func
 	labels   []Label
 
+	scope      *Scope
+	childScope *Scope
+
 	// Properties
 	lazy      bool
 	autowired bool
@@ -199,7 +233,35 @@ func (d *FunctionDefinition) Type() reflect.Type {
 	return d.function.Type()
 }
 
-func (d *FunctionDefinition) GetFunc() *Func {
+func (d *FunctionDefinition) Scope() *Scope {
+	return d.scope
+}
+
+func (d *FunctionDefinition) SetScope(scope *Scope) *FunctionDefinition {
+	d.scope = scope
+	return d
+}
+
+func (d *FunctionDefinition) ChildScope() *Scope {
+	return d.childScope
+}
+
+func (d *FunctionDefinition) SetChildScope(scope *Scope) *FunctionDefinition {
+	d.childScope = scope
+	return d
+}
+
+// EffectiveScope returns the scope in which all the dependencies should be resolved.
+// For most services this is the scope where that service is defined.
+// But if a service has a child-scope, then the dependencies should be resolved with that scope includes.
+func (d *FunctionDefinition) EffectiveScope() *Scope {
+	if d.childScope != nil {
+		return d.childScope
+	}
+	return d.scope
+}
+
+func (d *FunctionDefinition) Func() *Func {
 	return d.function
 }
 
@@ -208,7 +270,7 @@ func (d *FunctionDefinition) SetFunc(fn *Func) *FunctionDefinition {
 	return d
 }
 
-func (d *FunctionDefinition) GetLabels() []Label {
+func (d *FunctionDefinition) Labels() []Label {
 	return d.labels
 }
 
