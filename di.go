@@ -1,104 +1,168 @@
-package di
+package godi
 
 import (
 	"fmt"
+	"io"
 	"reflect"
 
-	"github.com/hashicorp/go-multierror"
-	"github.com/samber/lo"
+	"github.com/michalkurzeja/godi/v2/di"
+	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// Get returns a service from the container and ensures its type.
-func Get[T any](c Container, opts ...OptionsFunc) (T, error) {
-	opt := getOptions{id: FQN[T]()}
-	for _, optFn := range opts {
-		optFn(&opt)
-	}
-
-	svcAny, err := c.Get(opt.id)
-	if err != nil {
-		return zero[T](), err
-	}
-
-	svc, ok := svcAny.(T)
-	if !ok {
-		return zero[T](), fmt.Errorf(`di: service %s is of wrong type; expected %s; got %s`, opt.id, FQN[T](), fqn(reflect.TypeOf(svcAny)))
-	}
-
-	return svc, nil
+type Container interface {
+	HasService(id di.ID) bool
+	GetService(id di.ID) (any, error)
+	GetServices(ids ...di.ID) (svcs []any, err error)
+	GetServicesIDsByType(typ reflect.Type) []ID
+	GetServicesByType(typ reflect.Type) ([]any, error)
+	GetServicesIDsByLabel(label Label) []ID
+	GetServicesByLabel(label di.Label) ([]any, error)
+	HasFunction(id di.ID) bool
+	ExecuteFunction(id di.ID) ([]any, error)
+	ExecuteFunctions(ids ...di.ID) (results [][]any, err error)
+	GetFunctionsIDsByType(typ reflect.Type) []ID
+	ExecuteFunctionsByType(typ reflect.Type) ([][]any, error)
+	GetFunctionsIDsByLabel(label Label) []ID
+	ExecuteFunctionsByLabel(label di.Label) ([][]any, error)
+	Print(w io.Writer)
 }
 
-// GetByTag returns all services from the container that have the given tag.
-func GetByTag[T any](c Container, tag TagID) ([]T, error) {
-	svcsAny, err := c.GetByTag(tag)
+// SvcByRef returns a service from the container by its reference.
+func SvcByRef[T any](c Container, ref SvcReference) (T, error) {
+	if ref.IsEmpty() {
+		return util.Zero[T](), fmt.Errorf("service not found: empty reference")
+	}
+	svc, err := c.GetService(ref.SvcID())
+	if err != nil {
+		return util.Zero[T](), err
+	}
+	if svc == nil {
+		return util.Zero[T](), fmt.Errorf("service %s not found", ref)
+	}
+	return castTo[T](svc)
+}
+
+// SvcByType returns a service from the container by its type.
+func SvcByType[T any](c Container) (T, error) {
+	typ := reflect.TypeFor[T]()
+
+	svcs, err := c.GetServicesByType(typ)
+	if err != nil {
+		return util.Zero[T](), err
+	}
+
+	if len(svcs) == 0 {
+		return util.Zero[T](), fmt.Errorf("service of type %s not found", util.Signature(typ))
+	}
+	if len(svcs) > 1 {
+		return util.Zero[T](), fmt.Errorf("found multiple services of type %s", util.Signature(typ))
+	}
+
+	return castTo[T](svcs[0])
+}
+
+// SvcsByType returns all services from the container by their type.
+func SvcsByType[T any](c Container) ([]T, error) {
+	typ := reflect.TypeFor[T]()
+
+	svcs, err := c.GetServicesByType(typ)
 	if err != nil {
 		return nil, err
 	}
 
-	var errs *multierror.Error
-	svcs := lo.Map(svcsAny, func(svcAny any, _ int) T {
+	return castSliceTo[T](svcs)
+}
+
+// SvcByLabel returns a service from the container by its label.
+func SvcByLabel[T any](c Container, label Label) (T, error) {
+	svcs, err := c.GetServicesByLabel(label)
+	if err != nil {
+		return util.Zero[T](), err
+	}
+
+	if len(svcs) == 0 {
+		return util.Zero[T](), fmt.Errorf("service with label %s not found", label)
+	}
+	if len(svcs) > 1 {
+		return util.Zero[T](), fmt.Errorf("found multiple services with label %s", label)
+	}
+
+	return castTo[T](svcs[0])
+}
+
+// SvcsByLabel returns all services from the container by their label.
+func SvcsByLabel[T any](c Container, label Label) ([]T, error) {
+	ids, err := c.GetServicesByLabel(label)
+	if err != nil {
+		return nil, err
+	}
+
+	return castSliceTo[T](ids)
+}
+
+// ExecByRef executes a function by its reference.
+func ExecByRef(c Container, ref FuncReference) ([]any, error) {
+	if ref.IsEmpty() {
+		return nil, fmt.Errorf("function not found: empty reference")
+	}
+	return c.ExecuteFunction(ref.FuncID())
+}
+
+// ExecByType executes a function by its type.
+func ExecByType[T any](c Container) ([]any, error) {
+	typ := reflect.TypeFor[T]()
+
+	ids := c.GetFunctionsIDsByType(typ)
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("function of type %s not found", util.Signature(typ))
+	}
+	if len(ids) > 1 {
+		return nil, fmt.Errorf("found multiple functions of type %s", util.Signature(typ))
+	}
+
+	return c.ExecuteFunction(ids[0])
+}
+
+// ExecAllByType executes all function by their type.
+func ExecAllByType[T any](c Container) ([][]any, error) {
+	return c.ExecuteFunctionsByType(reflect.TypeFor[T]())
+}
+
+// ExecByLabel executes a function by its label.
+func ExecByLabel(c Container, label Label) ([]any, error) {
+	ids := c.GetFunctionsIDsByLabel(label)
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("function with label %s not found", label)
+	}
+	if len(ids) > 1 {
+		return nil, fmt.Errorf("found multiple functions with label %s", label)
+	}
+
+	return c.ExecuteFunction(ids[0])
+}
+
+// ExecAllByLabel executes all function by their type.
+func ExecAllByLabel(c Container, label Label) ([][]any, error) {
+	return c.ExecuteFunctionsByLabel(label)
+}
+
+func castSliceTo[T any](svcsAny []any) ([]T, error) {
+	svcs := make([]T, 0, len(svcsAny))
+	for _, svcAny := range svcsAny {
 		svc, ok := svcAny.(T)
 		if !ok {
-			errs = multierror.Append(errs, fmt.Errorf(`di: service tagged with %s is of wrong type; expected %s; got %s`, tag, FQN[T](), fqn(reflect.TypeOf(svcAny))))
-			return zero[T]()
+			return nil, fmt.Errorf(`di: service is of wrong type; expected %s; got %s`, util.Signature(reflect.TypeFor[T]()), util.Signature(reflect.TypeOf(svcAny)))
 		}
-		return svc
-	})
-
-	if errs != nil {
-		return nil, errs
+		svcs = append(svcs, svc)
 	}
 	return svcs, nil
 }
 
-// Has returns true if the container has a service with the given ID.
-func Has[T any](c Container, opts ...OptionsFunc) bool {
-	opt := getOptions{id: FQN[T]()}
-	for _, optFn := range opts {
-		optFn(&opt)
+func castTo[T any](svcAny any) (T, error) {
+	svc, ok := svcAny.(T)
+	if !ok {
+		return util.Zero[T](), fmt.Errorf(`di: service is of wrong type; expected %s; got %s`, util.Signature(reflect.TypeFor[T]()), util.Signature(reflect.TypeOf(svcAny)))
 	}
 
-	return c.Has(opt.id)
-}
-
-// Initialised returns true if the service has been initialised, i.e. if the container
-// currently holds the instance of that service.
-func Initialised[T any](c Container, opts ...OptionsFunc) bool {
-	opt := getOptions{id: FQN[T]()}
-	for _, optFn := range opts {
-		optFn(&opt)
-	}
-
-	return c.Initialised(opt.id)
-}
-
-// MustGet is like Get but panics if an error occurs.
-func MustGet[T any](c Container, opts ...OptionsFunc) T {
-	svc, err := Get[T](c, opts...)
-	if err != nil {
-		panic(err)
-	}
-	return svc
-}
-
-// MustGetByTag is like GetByTag but panics if an error occurs.
-func MustGetByTag[T any](c Container, tag TagID) []T {
-	svcs, err := GetByTag[T](c, tag)
-	if err != nil {
-		panic(err)
-	}
-	return svcs
-}
-
-type getOptions struct {
-	id ID
-}
-
-type OptionsFunc func(opt *getOptions)
-
-// WithID returns an OptionsFunc that sets the ID of the service to get.
-func WithID(id ID) OptionsFunc {
-	return func(opt *getOptions) {
-		opt.id = id
-	}
+	return svc, nil
 }

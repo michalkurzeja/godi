@@ -1,13 +1,15 @@
-package di
+package godi
 
 import (
-	"github.com/hashicorp/go-multierror"
+	"errors"
+
+	"github.com/michalkurzeja/godi/v2/di"
 )
 
 // New creates a new Builder.
 // This is the recommended entrypoint to the godi library.
 func New() *Builder {
-	return &Builder{cb: NewContainerBuilder()}
+	return &Builder{cb: di.NewContainerBuilder()}
 }
 
 // Builder is a helper for building a container.
@@ -15,49 +17,69 @@ func New() *Builder {
 // the process of setting up the container easy and convenient for the user.
 // This is the recommended way of building a container.
 type Builder struct {
-	cb  *ContainerBuilder
-	err *multierror.Error
+	cb *di.ContainerBuilder
+
+	services  []*ServiceDefinitionBuilder
+	functions []*FunctionDefinitionBuilder
+	bindings  []*InterfaceBindingBuilder
+	passes    []*di.CompilerPass
 }
 
-func (b *Builder) Aliases(aliases ...Alias) *Builder {
-	b.cb.AddAliases(aliases...)
-	return b
-}
-
-func (b *Builder) Services(services ...*DefinitionBuilder) *Builder {
-	for _, builder := range services {
-		def, err := builder.Build()
-		if err != nil {
-			b.addError(err)
-			continue
-		}
-		b.cb.AddDefinitions(def)
-	}
+func (b *Builder) Services(services ...*ServiceDefinitionBuilder) *Builder {
+	b.services = append(b.services, services...)
 	return b
 }
 
 func (b *Builder) Functions(functions ...*FunctionDefinitionBuilder) *Builder {
-	for _, function := range functions {
-		fn, err := function.Build()
-		if err != nil {
-			b.addError(err)
-			continue
-		}
-		b.cb.AddFunctions(fn)
-	}
+	b.functions = append(b.functions, functions...)
 	return b
 }
 
-func (b *Builder) CompilerPass(stage CompilerPassStage, priority int, pass CompilerPass) *Builder {
-	b.cb.AddCompilerPass(stage, priority, pass)
+func (b *Builder) Bindings(bindings ...*InterfaceBindingBuilder) *Builder {
+	b.bindings = append(b.bindings, bindings...)
+	return b
+}
+
+func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {
+	b.passes = append(b.passes, passes...)
 	return b
 }
 
 func (b *Builder) Build() (Container, error) {
-	container, err := b.cb.Build()
-	return container, multierror.Append(b.err, err).ErrorOrNil()
-}
+	var joinedErr error
 
-func (b *Builder) addError(err error) {
-	b.err = multierror.Append(b.err, err)
+	for _, builder := range b.services {
+		if err := builder.ParseFactory(); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.services {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.functions {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.bindings {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			joinedErr = errors.Join(joinedErr, err)
+			continue
+		}
+	}
+
+	for _, pass := range b.passes {
+		b.cb.Compiler().AddPass(pass)
+	}
+
+	container, err := b.cb.Build()
+	return container, errors.Join(joinedErr, err)
 }

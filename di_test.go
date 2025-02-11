@@ -1,1178 +1,1648 @@
-package di_test
+package godi_test
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	di "github.com/michalkurzeja/godi"
+	di "github.com/michalkurzeja/godi/v2"
 )
 
-func TestContainer(t *testing.T) {
-	t.Run("can register simple services with autowiring", func(t *testing.T) {
-		t.Parallel()
+const constMethodArg = "const-method-arg"
 
-		c, err := di.New().Services(
-			di.SvcT[*NoDepSvc](NewNoDepSvc),
-			di.SvcT[*DepSvc](NewDepSvc).
-				Args(di.Val("prop")).
-				Autowired().
-				Lazy().
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		bar, err := di.Get[*DepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &DepSvc{dep: NewNoDepSvc(), prop: "prop"}, bar)
-	})
-	t.Run("can register simple services without autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(di.Ref[*NoDepSvc](), di.Val("prop")).
-				NotAutowired().
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		bar, err := di.Get[*DepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &DepSvc{dep: NewNoDepSvc(), prop: "prop"}, bar)
-	})
-	t.Run("can register the same service twice with different IDs", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("foo").Public(),
-			di.Svc(NewNoDepSvc).ID("bar").Public(),
-		).Build()
-		require.NoError(t, err)
-
-		foo, err := di.Get[*NoDepSvc](c, di.WithID("foo"))
-		require.NoError(t, err)
-
-		bar, err := di.Get[*NoDepSvc](c, di.WithID("bar"))
-		require.NoError(t, err)
-
-		assert.NotSame(t, foo, bar)
-	})
-	t.Run("can register a service with slice factory argument", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewStrSliceDepSvc).
-				Args(di.Val([]string{"foo", "bar"})).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*StrSliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &StrSliceDepSvc{props: []string{"foo", "bar"}}, svc)
-	})
-	t.Run("can register a service with variadic factory argument", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewStrSliceDepSvcVariadic).
-				Args(di.Val([]string{"foo", "bar"})).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*StrSliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &StrSliceDepSvc{props: []string{"foo", "bar"}}, svc)
-	})
-	t.Run("can register a service with scalar argument and zero value", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewStrDepSvc).
-				Args(di.Zero()).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc1, err := di.Get[*StrDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &StrDepSvc{}, svc1)
-	})
-	t.Run("can register a service with slice factory argument and zero value", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewStrSliceDepSvc).
-				Args(di.Zero()).
-				Public(),
-			di.Svc(NewSliceDepSvc).
-				Args(di.Zero()).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc1, err := di.Get[*StrSliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &StrSliceDepSvc{}, svc1)
-
-		svc2, err := di.Get[*SliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &SliceDepSvc{}, svc2)
-	})
-	t.Run("can register a service with method call with autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDep").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*MethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &MethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with method call without autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDep", di.Ref[*NoDepSvc]()).
-				NotAutowired().
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*MethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &MethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with method call that can return error", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDepE").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*MethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &MethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can alias a service by type", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().
-			Services(di.Svc(NewNoDepSvc).ID("bar").Public()).
-			Aliases(di.NewAliasT[Fooer]("bar")).
-			Build()
-		require.NoError(t, err)
-
-		svc1, err := di.Get[*NoDepSvc](c, di.WithID("bar"))
-		require.NoError(t, err)
-
-		svc2, err := di.Get[Fooer](c)
-		require.NoError(t, err)
-
-		assert.Same(t, svc1, svc2)
-	})
-	t.Run("can alias a service by id", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().
-			Services(di.Svc(NewNoDepSvc).ID("foo").Public()).
-			Aliases(di.NewAlias("bar", "foo")).
-			Build()
-		require.NoError(t, err)
-
-		svc1, err := di.Get[*NoDepSvc](c, di.WithID("foo"))
-		require.NoError(t, err)
-
-		svc2, err := di.Get[*NoDepSvc](c, di.WithID("bar"))
-		require.NoError(t, err)
-
-		assert.Same(t, svc1, svc2)
-	})
-	t.Run("can register a service with interface dependency with autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewIFaceDepSvc).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with interface dependency with autowiring and manual alias", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().
-			Services(
-				di.Svc(NewNoDepSvc),
-				di.Svc(NewIFaceDepSvc).
-					Public(),
-			).
-			Aliases(di.NewAliasTT[Fooer, *NoDepSvc]()).
-			Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with interface dependency without autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewIFaceDepSvc).
-				Args(di.Ref[*NoDepSvc]()).
-				NotAutowired().
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with interface method argument with autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewIFaceMethodDepSvc).
-				MethodCall("SetDep").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceMethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceMethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with interface method argument with autowiring and manual alias", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().
-			Services(
-				di.Svc(NewNoDepSvc),
-				di.Svc(NewIFaceMethodDepSvc).
-					MethodCall("SetDep").
-					Public(),
-			).
-			Aliases(di.NewAliasTT[Fooer, *NoDepSvc]()).
-			Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceMethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceMethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a service with interface method argument without autowiring", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewIFaceMethodDepSvc).
-				MethodCall("SetDep", di.Ref[*NoDepSvc]()).
-				NotAutowired().
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*IFaceMethodDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &IFaceMethodDepSvc{dep: NewNoDepSvc()}, svc)
-	})
-	t.Run("can register a circular dependency with method calls", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewCircularMethodASvc).MethodCall("SetDep").Public(),
-			di.Svc(NewCircularMethodBSvc).MethodCall("SetDep").Public(),
-			di.Svc(NewCircularMethodCSvc).MethodCall("SetDep").Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svcA, err := di.Get[*CircularMethodASvc](c)
-		require.NoError(t, err)
-		svcB, err := di.Get[*CircularMethodBSvc](c)
-		require.NoError(t, err)
-		svcC, err := di.Get[*CircularMethodCSvc](c)
-		require.NoError(t, err)
-
-		assert.Equal(t, &CircularMethodASvc{dep: svcB}, svcA)
-		assert.Equal(t, &CircularMethodBSvc{dep: svcC}, svcB)
-		assert.Equal(t, &CircularMethodCSvc{dep: svcA}, svcC)
-	})
-	t.Run("can register an eager service", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Eager().Public(),
-		).Build()
-		require.NoError(t, err)
-
-		assert.True(t, di.Initialised[*NoDepSvc](c))
-	})
-	t.Run("can register a service with tagged dependency", func(t *testing.T) {
-		t.Parallel()
-
-		var tag = di.NewTag("my-tag")
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("foo").Tags(tag),
-			di.Svc(NewNoDepSvc).ID("bar").Tags(tag),
-			di.Svc(NewSliceDepSvc).
-				Args(di.Tagged[[]*NoDepSvc](tag.ID())).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*SliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &SliceDepSvc{deps: []*NoDepSvc{NewNoDepSvc(), NewNoDepSvc()}}, svc)
-	})
-	t.Run("can register a variadic service with tagged dependency", func(t *testing.T) {
-		t.Parallel()
-
-		var tag = di.NewTag("my-tag")
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("foo").Tags(tag),
-			di.Svc(NewNoDepSvc).ID("bar").Tags(tag),
-			di.Svc(NewSliceDepSvcVariadic).
-				Args(di.Tagged[[]*NoDepSvc](tag.ID())).
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*SliceDepSvc](c)
-		require.NoError(t, err)
-		assert.Equal(t, &SliceDepSvc{deps: []*NoDepSvc{NewNoDepSvc(), NewNoDepSvc()}}, svc)
-	})
-	t.Run("can register a service with interface type and add a method call", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.SvcT[Fooer](NewNoDepSvc).
-				MethodCall("Foo").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[Fooer](c)
-		require.NoError(t, err)
-		assert.Equal(t, &NoDepSvc{foo: "foo"}, svc)
-	})
-	t.Run("registering an alias of non-existent service fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().
-			Aliases(di.NewAlias("foo", "bar")).
-			Build()
-
-		assertErrorInMultiError(t, err, `alias foo points to a non-existing service bar`)
-	})
-	t.Run("registering service twice with the same ID overrides it", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewStrDepSvc).Args(di.Val("foo")).Public(),
-			di.Svc(NewStrDepSvc).Args(di.Val("bar")).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svc, err := di.Get[*StrDepSvc](c)
-		require.NoError(t, err)
-
-		assert.Equal(t, "bar", svc.prop)
-	})
-	t.Run("registering a service with invalid references fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewDepSvc).Args(di.Val("foo")).Public(),
-		).Build()
-		assertErrorInMultiError(t, err, `service *github.com/michalkurzeja/godi_test.NoDepSvc is not registered but is referenced by factory of: *github.com/michalkurzeja/godi_test.DepSvc`)
-	})
-	t.Run("registering a manual service without arguments fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(di.Val("foo")). // Missing di.Ref[*NoDepSvc]()
-				NotAutowired(),
-		).Build()
-		assertErrorInMultiError(t, err, `argument 0 of *github.com/michalkurzeja/godi_test.DepSvc factory is not set`)
-	})
-	t.Run("registering a service with mistyped argument fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(di.Val(42)),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.DepSvc: argument int cannot be assigned to any of the function arguments`)
-	})
-	t.Run("registering a service with mistyped index argument fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(di.Val(42).Idx(1)),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.DepSvc: argument 1 must be assignable to string, got int`)
-	})
-	t.Run("registering a service with index-out-of-range argument fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(di.Val("foo").Idx(42)),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.DepSvc: argument index out of range: 42`)
-	})
-	t.Run("registering a service with too many arguments fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewDepSvc).
-				Args(
-					di.Ref[*NoDepSvc](),
-					di.Val("foo"),
-					di.Val("bar"), // Too many.
-					di.Val(42),    // Too many.
-				),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.DepSvc: argument string cannot be assigned to any of the function arguments`)
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.DepSvc: argument int cannot be assigned to any of the function arguments`)
-	})
-	t.Run("registering a factory with no return values fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(func() {}),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory must return at least one value`)
-	})
-	t.Run("registering a factory with no return values fails (with type param)", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.SvcT[*NoDepSvc](func() {}),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory must return at least one value`)
-	})
-	t.Run("registering a factory with too many return values fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(func() (int, int, int) {
-				return 1, 2, 3
-			}),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory must return at most two values`)
-	})
-	t.Run("registering a factory with error returned first fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			//nolint:stylecheck
-			di.Svc(func() (error, *NoDepSvc) {
-				return nil, &NoDepSvc{}
-			}),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory may only return an error as a second return value, not *github.com/michalkurzeja/godi_test.NoDepSvc`)
-	})
-	t.Run("registering a factory that isn't a func fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc("foobar"),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory must be a function, got string`)
-	})
-	t.Run("registering a factory that isn't a func fails (with type param)", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.SvcT[*NoDepSvc]("foobar"),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition: factory must be a function, got string`)
-	})
-	t.Run("registering a service with factory returning wrong type fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.SvcT[*DepSvc](NewNoDepSvc),
-		).Build()
-
-		assertErrorInMultiError(t, err, `invalid definition: factory of *github.com/michalkurzeja/godi_test.DepSvc must return a value assignable to *github.com/michalkurzeja/godi_test.DepSvc as a first return value`)
-	})
-	t.Run("registering a service with a non-existing method fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewMethodDepSvc).
-				MethodCall("NonExistingMethod"),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.MethodDepSvc: no such method: NonExistingMethod`)
-	})
-	t.Run("registering a service with a method with wrong return value type fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDepInvalid"),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.MethodDepSvc: method SetDepInvalid may only return an error, not int`)
-	})
-	t.Run("registering a service with a method with too many return values fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDepInvalid2"),
-		).Build()
-		assertErrorInMultiError(t, err, `invalid definition of *github.com/michalkurzeja/godi_test.MethodDepSvc: method SetDepInvalid2 must return at most one value`)
-	})
-	t.Run("registering a circular dependency with factories fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewCircularDepASvc),
-			di.Svc(NewCircularDepBSvc),
-			di.Svc(NewCircularDepCSvc),
-		).Build()
-
-		assertErrorInMultiError(t, err, `service *github.com/michalkurzeja/godi_test.CircularDepCSvc has a circular dependency on *github.com/michalkurzeja/godi_test.CircularDepASvc`)
-	})
-	t.Run("registering an eager service with erroring factory fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(func() (*NoDepSvc, error) {
-				return nil, assert.AnError
-			}).Eager(),
-		).Build()
-
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("registering an interface dependency with no implementations fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewIFaceDepSvc),
-		).Build()
-
-		assertErrorInMultiError(t, err, `service github.com/michalkurzeja/godi_test.Fooer is not registered but is referenced by factory of: *github.com/michalkurzeja/godi_test.IFaceDepSvc`)
-	})
-	t.Run("registering an interface dependency with multiple implementations fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("dep1"),
-			di.Svc(NewNoDepSvc).ID("dep2"),
-			di.Svc(NewIFaceDepSvc),
-		).Build()
-
-		assertErrorInMultiError(t, err, `could not resolve argument 0 of service *github.com/michalkurzeja/godi_test.IFaceDepSvc: multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
-	})
-	t.Run("registering an interface dependency (method) with no implementations fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewIFaceMethodDepSvc).MethodCall("SetDep"),
-		).Build()
-
-		assertErrorInMultiError(t, err, `service github.com/michalkurzeja/godi_test.Fooer is not registered but is referenced by: *github.com/michalkurzeja/godi_test.IFaceMethodDepSvc.SetDep`)
-	})
-	t.Run("registering an interface dependency (method) with multiple implementations fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("dep1"),
-			di.Svc(NewNoDepSvc).ID("dep2"),
-			di.Svc(NewIFaceMethodDepSvc).MethodCall("SetDep"),
-		).Build()
-
-		assertErrorInMultiError(t, err, `could not resolve argument 1 of method "SetDep" of service *github.com/michalkurzeja/godi_test.IFaceMethodDepSvc: multiple implementations of github.com/michalkurzeja/godi_test.Fooer found: [dep1 dep2]`)
-	})
-	t.Run("getting a service twice returns the same instance", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		foo1, err := di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		foo2, err := di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		assert.Same(t, foo1, foo2)
-	})
-	t.Run("getting by a non-existent tag returns an empty array", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Build()
-		require.NoError(t, err)
-
-		svcs, err := di.GetByTag[*NoDepSvc](c, "foo")
-		require.NoError(t, err)
-		assert.Empty(t, svcs)
-	})
-	t.Run("getting by tag works and returns only returns public services", func(t *testing.T) {
-		t.Parallel()
-
-		var tag = di.NewTag("my-tag")
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("foo").Tags(tag).Public(),
-			di.Svc(NewNoDepSvc).ID("bar").Tags(tag).Private(),
-			di.Svc(NewNoDepSvc).ID("baz").Tags(tag).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		svcs, err := di.GetByTag[*NoDepSvc](c, tag.ID())
-		require.NoError(t, err)
-		assert.Equal(t, []*NoDepSvc{NewNoDepSvc(), NewNoDepSvc()}, svcs)
-	})
-	t.Run("getting a non-existent service fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*NoDepSvc](c)
-		assert.EqualError(t, err, `service *github.com/michalkurzeja/godi_test.NoDepSvc not found`)
-	})
-	t.Run("getting a private service fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*NoDepSvc](c)
-		assert.EqualError(t, err, `service *github.com/michalkurzeja/godi_test.NoDepSvc is private`)
-	})
-	t.Run("getting a private service by alias fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().
-			Services(di.Svc(NewNoDepSvc)).
-			Aliases(di.NewAlias("foo", di.FQN[*NoDepSvc]())).
-			Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*NoDepSvc](c, di.WithID("foo"))
-		assert.EqualError(t, err, `service foo is private`)
-	})
-	t.Run("getting a service with erroring factory fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(func() (*NoDepSvc, error) {
-				return nil, assert.AnError
-			}).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*NoDepSvc](c)
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("getting a service with erroring method fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc),
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDepErr").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*MethodDepSvc](c)
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("getting a service with erroring factory dependency fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(func() (*NoDepSvc, error) {
-				return nil, assert.AnError
-			}),
-			di.Svc(NewDepSvc).Args(di.Val("foo")).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*DepSvc](c)
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("getting a service with erroring method dependency fails", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(func() (*NoDepSvc, error) {
-				return nil, assert.AnError
-			}),
-			di.Svc(NewMethodDepSvc).
-				MethodCall("SetDep").
-				Public(),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*MethodDepSvc](c)
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("getting by tag when different types are tagged fails", func(t *testing.T) {
-		t.Parallel()
-
-		var tag = di.NewTag("my-tag")
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public().
-				Tags(tag),
-			di.Svc(NewDepSvc).Args(di.Val("foo")).Public().
-				Tags(tag),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.GetByTag[*NoDepSvc](c, tag.ID())
-		assertErrorInMultiError(t, err, `di: service tagged with my-tag is of wrong type; expected *github.com/michalkurzeja/godi_test.NoDepSvc; got *github.com/michalkurzeja/godi_test.DepSvc`)
-	})
-	t.Run("panics on MustGet error", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Build()
-		require.NoError(t, err)
-
-		assert.Panics(t, func() {
-			di.MustGet[*NoDepSvc](c)
-		})
-	})
-	t.Run("panics on MustGetByTag error", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Tags(di.NewTag("foo")).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		assert.Panics(t, func() {
-			di.MustGetByTag[*DepSvc](c, "foo") // Wrong type.
-		})
-	})
-	t.Run("has works correctly for definitions", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("pub").Public(),
-			di.Svc(NewNoDepSvc).ID("priv").Private(),
-		).Build()
-		require.NoError(t, err)
-
-		assert.True(t, di.Has[*NoDepSvc](c, di.WithID("pub")))
-		assert.True(t, di.Has[*NoDepSvc](c, di.WithID("priv")))
-		assert.False(t, di.Has[*NoDepSvc](c, di.WithID("nope")))
-		assert.False(t, di.Has[*NoDepSvc](c))
-		assert.False(t, di.Has[*DepSvc](c))
-	})
-	t.Run("has works correctly for instances", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).ID("pub").Public(),
-			di.Svc(NewNoDepSvc).ID("priv").Private(),
-		).Build()
-		require.NoError(t, err)
-
-		_, err = di.Get[*NoDepSvc](c, di.WithID("pub"))
-		require.NoError(t, err)
-
-		assert.True(t, di.Has[*NoDepSvc](c, di.WithID("pub")))
-		assert.True(t, di.Has[*NoDepSvc](c, di.WithID("priv")))
-		assert.False(t, di.Has[*NoDepSvc](c, di.WithID("nope")))
-		assert.False(t, di.Has[*NoDepSvc](c))
-		assert.False(t, di.Has[*DepSvc](c))
-	})
-	t.Run("initialised works correctly", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public(),
-		).Build()
-		require.NoError(t, err)
-
-		assert.False(t, di.Initialised[*NoDepSvc](c))
-
-		_, err = di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		assert.True(t, di.Initialised[*NoDepSvc](c))
-	})
-	t.Run("uncached service is always constructed anew", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public().NotShared(),
-		).Build()
-		require.NoError(t, err)
-
-		svc1, err := di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		svc2, err := di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		assert.NotSame(t, svc1, svc2)
-	})
-	t.Run("uncached service is never considered initialised", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Services(
-			di.Svc(NewNoDepSvc).Public().NotShared(),
-		).Build()
-		require.NoError(t, err)
-
-		assert.False(t, di.Initialised[*NoDepSvc](c))
-
-		_, err = di.Get[*NoDepSvc](c)
-		require.NoError(t, err)
-
-		assert.False(t, di.Initialised[*NoDepSvc](c))
-	})
-	t.Run("builder can only be used once", func(t *testing.T) {
-		t.Parallel()
-
-		b := di.New()
-		_, err := b.Build()
-		require.NoError(t, err)
-
-		_, err = b.Build()
-		assertErrorInMultiError(t, err, `container already built`)
-
-		assert.Panics(t, func() {
-			b.Aliases(di.NewAlias("foo", "bar"))
-		})
-	})
-	t.Run("specific functions are called on demand", func(t *testing.T) {
-		t.Parallel()
-
-		var called bool
-
-		c, err := di.New().Functions(
-			di.Func("foo", func() { called = true }),
-		).Build()
-		require.NoError(t, err)
-		require.False(t, called)
-
-		err = c.CallFunction("foo")
-
-		require.NoError(t, err)
-		require.True(t, called)
-	})
-	t.Run("all functions are called on demand", func(t *testing.T) {
-		t.Parallel()
-
-		var called bool
-
-		c, err := di.New().Functions(
-			di.Func("foo", func() { called = true }),
-		).Build()
-		require.NoError(t, err)
-		require.False(t, called)
-
-		err = c.CallFunctions()
-
-		require.NoError(t, err)
-		require.True(t, called)
-	})
-	t.Run("functions can return errors", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := di.New().Functions(
-			di.Func("foo", func() error { return assert.AnError }),
-		).Build()
-		require.NoError(t, err)
-
-		err = c.CallFunctions()
-
-		require.ErrorIs(t, err, assert.AnError)
-	})
-	t.Run("functions arguments are resolved", func(t *testing.T) {
-		t.Parallel()
-
-		var called bool
-
-		c, err := di.New().
-			Services(
-				di.Svc(NewNoDepSvc),
-			).
-			Functions(
-				di.Func("foo", func(_ *NoDepSvc) { called = true }),
-			).Build()
-		require.NoError(t, err)
-		require.False(t, called)
-
-		err = c.CallFunctions()
-
-		require.NoError(t, err)
-		require.True(t, called)
-	})
-	t.Run("function arguments that are interfaces are resolved", func(t *testing.T) {
-		t.Parallel()
-
-		var called bool
-
-		c, err := di.New().
-			Services(
-				di.Svc(NewNoDepSvc),
-			).
-			Functions(
-				di.Func("foo", func(_ Fooer) { called = true }),
-			).Build()
-		require.NoError(t, err)
-		require.False(t, called)
-
-		err = c.CallFunctions()
-
-		require.NoError(t, err)
-		require.True(t, called)
-	})
-	t.Run("returns error when function arguments cannot be resolved", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().
-			Functions(
-				di.Func("foo", func(_ *NoDepSvc) {}),
-			).Build()
-		require.ErrorContains(t, err, "service *github.com/michalkurzeja/godi_test.NoDepSvc is not registered but is referenced by function foo")
-	})
-	t.Run("functions cannot return non-error", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Functions(
-			di.Func("foo", func() int { return 42 }),
-		).Build()
-
-		require.ErrorContains(t, err, "function may only return an error, not int")
-	})
-	t.Run("function cannot return more than 1 value", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := di.New().Functions(
-			di.Func("foo", func() (int, error) { return 42, nil }),
-		).Build()
-
-		require.ErrorContains(t, err, "function must return at most one value")
-	})
+type TestSvc struct {
+	Args []any
 }
 
-type NoDepSvc struct {
-	foo string
+func NewTestSvcNoArgs() *TestSvc {
+	return &TestSvc{}
 }
 
-func (d NoDepSvc) Foo() {}
-
-func NewNoDepSvc() *NoDepSvc {
-	return &NoDepSvc{foo: "foo"}
+func NewTestSvcStrArg(s string) *TestSvc {
+	return &TestSvc{Args: []any{s}}
 }
 
-type DepSvc struct {
-	dep  *NoDepSvc
-	prop string
+func NewTestSvcIfaceArg(i TestIface) *TestSvc {
+	return &TestSvc{Args: []any{i}}
 }
 
-func NewDepSvc(foo *NoDepSvc, prop string) *DepSvc {
-	return &DepSvc{dep: foo, prop: prop}
+func NewTestSvcSliceArgs(args []string) *TestSvc {
+	return &TestSvc{Args: lo.ToAnySlice(args)}
 }
 
-type StrDepSvc struct {
-	prop string
+func NewTestSvcVariadicArgs(args ...string) *TestSvc {
+	return &TestSvc{Args: lo.ToAnySlice(args)}
 }
 
-func NewStrDepSvc(prop string) *StrDepSvc {
-	return &StrDepSvc{prop: prop}
+func NewTestSvcIfaceSliceArgs(args []TestIface) *TestSvc {
+	return &TestSvc{Args: lo.ToAnySlice(args)}
 }
 
-type SliceDepSvc struct {
-	deps []*NoDepSvc
+func NewTestSvcIfaceVariadicArgs(args ...TestIface) *TestSvc {
+	return &TestSvc{Args: lo.ToAnySlice(args)}
 }
 
-func NewSliceDepSvc(deps []*NoDepSvc) *SliceDepSvc {
-	return &SliceDepSvc{deps: deps}
+func (s *TestSvc) AddConstArg() {
+	s.Args = append(s.Args, constMethodArg)
 }
 
-func NewSliceDepSvcVariadic(deps ...*NoDepSvc) *SliceDepSvc {
-	return &SliceDepSvc{deps: deps}
+func (s *TestSvc) AddArgStr(arg string) {
+	s.Args = append(s.Args, arg)
 }
 
-type StrSliceDepSvc struct {
-	props []string
+func (s *TestSvc) AddArgIface(arg TestIface) {
+	s.Args = append(s.Args, arg)
 }
 
-func NewStrSliceDepSvc(props []string) *StrSliceDepSvc {
-	return &StrSliceDepSvc{props: props}
+func (s *TestSvc) AddArgsSlice(args []string) {
+	s.Args = append(s.Args, lo.ToAnySlice(args)...)
 }
 
-func NewStrSliceDepSvcVariadic(props ...string) *StrSliceDepSvc {
-	return &StrSliceDepSvc{props: props}
+func (s *TestSvc) AddArgsVariadic(args ...string) {
+	s.Args = append(s.Args, lo.ToAnySlice(args)...)
 }
 
-type MethodDepSvc struct {
-	dep *NoDepSvc
+func (s *TestSvc) AddArgsIfaceSlice(args []TestIface) {
+	s.Args = append(s.Args, lo.ToAnySlice(args)...)
 }
 
-func NewMethodDepSvc() *MethodDepSvc {
-	return &MethodDepSvc{}
+func (s *TestSvc) AddArgsIfaceVariadic(args ...TestIface) {
+	s.Args = append(s.Args, lo.ToAnySlice(args)...)
 }
 
-func (s *MethodDepSvc) SetDep(dep *NoDepSvc) {
-	s.dep = dep
+type TestIface interface {
+	TestIfaceMethod()
 }
 
-func (s *MethodDepSvc) SetDepE(dep *NoDepSvc) error {
-	s.dep = dep
-	return nil
+type TestIfaceImpl struct {
+	MethodCalled bool
 }
 
-func (s *MethodDepSvc) SetDepErr(dep *NoDepSvc) error {
-	s.dep = dep
-	return assert.AnError
+func (i *TestIfaceImpl) TestIfaceMethod() {
+	i.MethodCalled = true
 }
 
-func (s *MethodDepSvc) SetDepInvalid(dep *NoDepSvc) int {
-	s.dep = dep
-	return 0
-}
+func TestGodi_Services(t *testing.T) {
+	tests := []struct {
+		name           string
+		build          func(b *di.Builder, refs *Refs)
+		assertBuildErr func(t *testing.T, err error)
+		assert         func(t *testing.T, c di.Container, refs *Refs)
+	}{
+		// Empty container
+		{
+			name: "can build an empty container",
+		},
+		// Retrieval by ref
+		{
+			name: "can retrieve a service by ref",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").Bind(refs.Svc.New("foo")),
+					di.Svc(NewTestSvcStrArg, "bar").Bind(refs.Svc.New("bar")),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svcFoo, err := di.SvcByRef[*TestSvc](c, refs.Svc.Get(t, "foo"))
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcFoo.Args)
+				svcBar, err := di.SvcByRef[*TestSvc](c, refs.Svc.Get(t, "bar"))
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar"}, svcBar.Args)
+			},
+		},
+		{
+			name: "retrieving a service by empty ref results in an error",
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.SvcByRef[*TestSvc](c, *refs.Svc.New("foo"))
+				require.ErrorContains(t, err, "service not found: empty reference")
+			},
+		},
+		{
+			name: "retrieving a service that doesn't exist by reference results in an error",
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, _ = di.New().Services(
+					di.Svc(NewTestSvcNoArgs).Bind(refs.Svc.New("foo")), // Different container, so even though the ref is not empty, the service is not registered in the current container.
+				).Build()
 
-func (s *MethodDepSvc) SetDepInvalid2(dep *NoDepSvc) (int, error) {
-	s.dep = dep
-	return 0, nil
-}
+				_, err := di.SvcByRef[*TestSvc](c, refs.Svc.Get(t, "foo"))
+				require.ErrorContains(t, err, "service github.com/michalkurzeja/godi/v2_test.(*TestSvc) not found")
+			},
+		},
+		// Retrieval by type
+		{
+			name: "can retrieve a service by type",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: "can retrieve multiple services by type",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo"),
+					di.Svc(NewTestSvcStrArg, "bar"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svcs, err := di.SvcsByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcs[0].Args)
+				require.Equal(t, []any{"bar"}, svcs[1].Args)
+			},
+		},
+		{
+			name: "cannot retrieve a single service by type if multiple exist",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo"),
+					di.Svc(NewTestSvcStrArg, "bar"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.SvcByType[*TestSvc](c)
+				require.ErrorContains(t, err, "found multiple services of type github.com/michalkurzeja/godi/v2_test.(*TestSvc)")
+			},
+		},
+		{
+			name: "retrieving a type that doesn't exist results in an error",
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.SvcByType[*TestSvc](c)
+				require.ErrorContains(t, err, "service of type github.com/michalkurzeja/godi/v2_test.(*TestSvc) not found")
+			},
+		},
+		// Retrieval by label
+		{
+			name: "can retrieve a service by label",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").Labels("my-label", "my-second-label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc1, err := di.SvcByLabel[*TestSvc](c, "my-label")
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc1.Args)
+				svc2, err := di.SvcByLabel[*TestSvc](c, "my-second-label")
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc2.Args)
+				require.Same(t, svc1, svc2)
+			},
+		},
+		{
+			name: "can retrieve multiple services by label",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").Labels("my-label"),
+					di.Svc(NewTestSvcStrArg, "bar").Labels("my-label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svcs, err := di.SvcsByLabel[*TestSvc](c, "my-label")
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcs[0].Args)
+				require.Equal(t, []any{"bar"}, svcs[1].Args)
+			},
+		},
+		{
+			name: "cannot retrieve a single service by label if multiple exist",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").Labels("my-label"),
+					di.Svc(NewTestSvcStrArg, "bar").Labels("my-label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.SvcByLabel[*TestSvc](c, "my-label")
+				require.ErrorContains(t, err, "found multiple services with label my-label")
+			},
+		},
+		{
+			name: "retrieving a label that doesn't exist results in an error",
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.SvcByLabel[*TestSvc](c, "my-label")
+				require.ErrorContains(t, err, "service with label my-label not found")
+			},
+		},
+		// Retrieval by various means
+		{
+			name: "can retrieve a service by ref, type, and label",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").
+						Bind(refs.Svc.New("foo")).
+						Labels("my-label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svcRef, err := di.SvcByRef[*TestSvc](c, refs.Svc.Get(t, "foo"))
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcRef.Args)
 
-type Fooer interface {
-	Foo()
-}
+				svcType, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcType.Args)
 
-type IFaceDepSvc struct {
-	dep Fooer
-}
+				svcLabel, err := di.SvcByLabel[*TestSvc](c, "my-label")
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svcLabel.Args)
+			},
+		},
+		// Literal args (no autowiring) - good cases
+		{
+			name: "can register a service with no args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Empty(t, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual single arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, "foo").NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual single interface arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceArg, new(TestIfaceImpl)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.IsType(t, []any{&TestIfaceImpl{}}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual slice arg (variadic-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs, "foo", "bar").NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual slice arg (slice-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs, []string{"foo", "bar"}).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual interface slice arg (variadic-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceSliceArgs, new(TestIfaceImpl), new(TestIfaceImpl)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual interface slice arg (slice-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceSliceArgs, []TestIface{new(TestIfaceImpl), new(TestIfaceImpl)}).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual variadic arg (variadic-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs, "foo", "bar").NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual variadic arg (slice-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs, []string{"foo", "bar"}).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual interface variadic arg (variadic-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceVariadicArgs, new(TestIfaceImpl), new(TestIfaceImpl)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual interface variadic arg (slice-style)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceVariadicArgs, []TestIface{new(TestIfaceImpl), new(TestIfaceImpl)}).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with manual label args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs, di.SliceOf[string]("label")).NotAutowired(),
+					di.SvcVal("foo"),
+					di.SvcVal("bar").Labels("label"),
+					di.SvcVal("baz").Labels("label", "other"),
+					di.SvcVal("qux").Labels("other"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar", "baz"}, svc.Args)
+			},
+		},
+		{
+			name: "Ref arg selects service by reference",
+			build: func(b *di.Builder, refs *Refs) {
+				var fooRef di.SvcReference
+				b.Services(
+					di.SvcVal("foo").Bind(&fooRef),
+					di.Svc(NewTestSvcStrArg, di.Ref(&fooRef)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: "Ref arg selects service by reference (binding after arg)",
+			build: func(b *di.Builder, refs *Refs) {
+				var fooRef di.SvcReference
+				b.Services(
+					di.Svc(NewTestSvcStrArg, di.Ref(&fooRef)).NotAutowired(),
+					di.SvcVal("foo").Bind(&fooRef),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: `"Type[[]string]" arg selects "[]string" service over "string" services`,
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("loose-1"),
+					di.SvcVal("loose-2"),
+					di.SvcVal([]string{"slice-elem-1", "slice-elem-2"}),
+					di.Svc(NewTestSvcSliceArgs, di.Type[[]string]()).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"slice-elem-1", "slice-elem-2"}, svc.Args)
+			},
+		},
+		{
+			name: `"SliceOf[string]" arg selects "string" services over "[]string" service`,
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("loose-1"),
+					di.SvcVal("loose-2"),
+					di.SvcVal([]string{"slice-elem-1", "slice-elem-2"}),
+					di.Svc(NewTestSvcSliceArgs, di.SliceOf[string]()).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"loose-1", "loose-2"}, svc.Args)
+			},
+		},
+		// Manual args (no autowiring) - error cases
+		{
+			name: "cannot register a service with no args and manual args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs, "foo").NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "invalid definition of github.com/michalkurzeja/godi/v2_test.(*TestSvc): failed to add factory args: argument string cannot be slotted to function")
+			},
+		},
+		{
+			name: "cannot register a service with missing args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcStrArg: argument 0 is not set")
+			},
+		},
+		{
+			name: "cannot register a service with empty interface arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceArg).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcIfaceArg: argument 0 is not set")
+			},
+		},
+		{
+			name: "cannot register a service with empty slice arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcSliceArgs: argument 0 is not set")
+			},
+		},
+		{
+			name: "cannot register a manual service with empty variadic arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcVariadicArgs: argument 0 is not set")
+			},
+		},
+		{
+			name: "cannot register a service with wrong type of arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, 42).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "invalid definition of github.com/michalkurzeja/godi/v2_test.(*TestSvc): failed to add factory args: argument int cannot be slotted to function")
+			},
+		},
+		{
+			name: "cannot register a service with wrong type of interface arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceArg, 42).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "invalid definition of github.com/michalkurzeja/godi/v2_test.(*TestSvc): failed to add factory args: argument int cannot be slotted to function")
+			},
+		},
+		// Child services
+		{
+			name: "can register a child service, which can only be used as a dependency for the parent",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg).Children(
+						di.SvcVal("foo"),
+					),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
 
-func NewIFaceDepSvc(dep Fooer) *IFaceDepSvc {
-	return &IFaceDepSvc{dep: dep}
-}
-
-type IFaceMethodDepSvc struct {
-	dep Fooer
-}
-
-func NewIFaceMethodDepSvc() *IFaceMethodDepSvc {
-	return &IFaceMethodDepSvc{}
-}
-
-func (s *IFaceMethodDepSvc) SetDep(dep Fooer) {
-	s.dep = dep
-}
-
-func assertErrorInMultiError(t *testing.T, err error, errString string, msgAndArgs ...any) bool {
-	t.Helper()
-	multi, ok := lo.ErrorsAs[*multierror.Error](err)
-	if !ok {
-		t.Fatalf("expected multierror, got %T", err)
+				_, err = di.SvcByType[string](c) // This svc only exists in the child scope!
+				require.ErrorContains(t, err, "service of type string not found")
+			},
+		},
+		{
+			name: "can use both children and siblings as dependencies",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcVariadicArgs).Children(
+						di.SvcVal("foo"),
+					),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "sibling service can be accessed by Ref arg",
+			build: func(b *di.Builder, refs *Refs) {
+				var barRef di.SvcReference
+				b.Services(
+					di.SvcVal("bar").Bind(&barRef),
+					di.Svc(NewTestSvcStrArg, di.Ref(&barRef)).Children(
+						di.SvcVal("foo"),
+					),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar"}, svc.Args)
+			},
+		},
+		{
+			name: "child service can be accessed by Ref arg",
+			build: func(b *di.Builder, refs *Refs) {
+				var fooRef di.SvcReference
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcStrArg, di.Ref(&fooRef)).Children(
+						di.SvcVal("foo").Bind(&fooRef),
+					),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: "sibling service can be accessed by Type arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar").Labels("sibling"),
+					di.Svc(NewTestSvcStrArg, di.Type[string]("sibling")).Children(
+						di.SvcVal("foo"),
+					),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar"}, svc.Args)
+			},
+		},
+		{
+			name: "child service can access services from the outer scopes",
+			build: func(b *di.Builder, refs *Refs) {
+				var (
+					foo   di.SvcReference
+					child di.SvcReference
+				)
+				b.Services(
+					di.Svc(Echo[string], di.Ref(&child)).
+						Bind(refs.Svc.New("svc")).
+						Children(
+							di.Svc(Echo[string], di.Ref(&foo)).Bind(&child),
+						),
+					di.SvcVal(Echo("foo")).Bind(&foo),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				got, err := di.SvcByRef[string](c, refs.Svc.Get(t, "svc"))
+				require.NoError(t, err)
+				require.Equal(t, "foo", got)
+			},
+		},
+		// Methods
+		{
+			name: "can register method calls",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, "foo").
+						MethodCall((*AppendableEcho[string]).AppendVariadic, "bar", "baz"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"foo", "bar", "baz"}, svc.Echo())
+			},
+		},
+		{
+			name: "duplicated method call replaces the previous one",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, "foo").
+						MethodCall((*AppendableEcho[string]).Append, "bar", "baz"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"bar", "baz"}, svc.Echo())
+			},
+		},
+		{
+			name: "can register method calls with refs",
+			build: func(b *di.Builder, refs *Refs) {
+				var fooRef di.SvcReference
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, di.Ref(&fooRef)),
+					di.SvcVal("foo").Bind(&fooRef),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"foo"}, svc.Echo())
+			},
+		},
+		{
+			name: "can register method calls with Type arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, di.Type[[]string]()),
+					di.SvcVal([]string{"foo", "bar"}),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"foo", "bar"}, svc.Echo())
+			},
+		},
+		{
+			name: "can register method calls with SliceOf arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, di.SliceOf[string]()),
+					di.SvcVal("foo"),
+					di.SvcVal("bar"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"foo", "bar"}, svc.Echo())
+			},
+		},
+		{
+			name: "can register method calls with label arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewAppendableEcho[string]).
+						MethodCall((*AppendableEcho[string]).Append, di.SliceOf[string]("label")),
+					di.SvcVal("foo"),
+					di.SvcVal("bar").Labels("label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*AppendableEcho[string]](c)
+				require.NoError(t, err)
+				require.Equal(t, []string{"bar"}, svc.Echo())
+			},
+		},
+		// Shared
+		{
+			name: "shared service is only instantiated once",
+			build: func(b *di.Builder, refs *Refs) {
+				var counter int
+				b.Services(
+					di.Svc(Increment, &counter).
+						Bind(refs.Svc.New("incr")).
+						Shared(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				incr1, err := di.SvcByRef[int](c, refs.Svc.Get(t, "incr"))
+				require.NoError(t, err)
+				require.Equal(t, 1, incr1)
+				incr2, err := di.SvcByRef[int](c, refs.Svc.Get(t, "incr"))
+				require.NoError(t, err)
+				require.Equal(t, 1, incr2)
+			},
+		},
+		{
+			name: "non-shared service is instantiated on every retrieval",
+			build: func(b *di.Builder, refs *Refs) {
+				var counter int
+				b.Services(
+					di.Svc(Increment, &counter).
+						Bind(refs.Svc.New("incr")).
+						NotShared(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				incr1, err := di.SvcByRef[int](c, refs.Svc.Get(t, "incr"))
+				require.NoError(t, err)
+				require.Equal(t, 1, incr1)
+				incr2, err := di.SvcByRef[int](c, refs.Svc.Get(t, "incr"))
+				require.NoError(t, err)
+				require.Equal(t, 2, incr2)
+			},
+		},
+		// Funcs
+		{
+			name: "can register and call a function by ref",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcNoArgs).Bind(refs.Func.New("foo")),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				got, err := di.ExecByRef(c, refs.Func.Get(t, "foo"))
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				require.IsType(t, new(TestSvc), got[0])
+			},
+		},
+		{
+			name: "can register and call a function by label",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcNoArgs).Labels("my-label"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				got, err := di.ExecByLabel(c, "my-label")
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				require.IsType(t, new(TestSvc), got[0])
+			},
+		},
+		{
+			name: "can register and call a function by type",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcNoArgs),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				got, err := di.ExecByType[func() *TestSvc](c)
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				require.IsType(t, new(TestSvc), got[0])
+			},
+		},
+		{
+			name: "returns an error when executing a function that doesn't exist",
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				_, err := di.ExecByType[func() *TestSvc](c)
+				require.ErrorContains(t, err, "function of type func() *godi_test.TestSvc not found")
+			},
+		},
+		// Autowiring
+		{
+			name: "can autowire a service with a single arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg),
+					di.SvcVal("foo"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
+			name: "can autowire a service with a slice arg",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs),
+					di.SvcVal("foo"),
+					di.SvcVal("bar"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can autowire a service with a variadic args list",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs),
+					di.SvcVal("foo"),
+					di.SvcVal("bar"),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "autowiring picks exact type match for slices (slice arg)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs),
+					di.SvcVal("foo"),
+					di.SvcVal("bar"),
+					di.SvcVal([]string{"slice-elem-1", "slice-elem-2"}),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"slice-elem-1", "slice-elem-2"}, svc.Args)
+			},
+		},
+		{
+			name: "autowiring picks exact type match for slices (variadic arg)",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs),
+					di.SvcVal("foo"),
+					di.SvcVal("bar"),
+					di.SvcVal([]string{"slice-elem-1", "slice-elem-2"}),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"slice-elem-1", "slice-elem-2"}, svc.Args)
+			},
+		},
+		{
+			name: "autowires only missing args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(func(a, b string, i int, f float64) *TestSvc { return &TestSvc{Args: []any{a, b, i, f}} }, "foo", 4.2),
+					di.SvcVal("bar"),
+					di.SvcVal(42),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar", 42, 4.2}, svc.Args)
+			},
+		},
+		// Interface binding
+		{
+			name: "can bind an interface to a concrete type",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceArg),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a slice of interface to multiple implementations",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceSliceArgs),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a variadic list of interface to multiple implementations",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceVariadicArgs),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "returns a build error when multiple implementations of an interface are available",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcIfaceArg),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, `could not bind argument 0 of service github.com/michalkurzeja/godi/v2_test.(*TestSvc): multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+			},
+		},
+		// Interface binding - method calls
+		{
+			name: "can bind an interface to a concrete type in a method call",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs).
+						MethodCall((*TestSvc).AddArgIface),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a slice of interface to multiple implementations in a method call",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs).
+						MethodCall((*TestSvc).AddArgsIfaceSlice),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a variadic list of interface to multiple implementations in a method call",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs).
+						MethodCall((*TestSvc).AddArgsIfaceVariadic),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "returns a build error when multiple implementations of an interface are available in a method call",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcNoArgs).
+						MethodCall((*TestSvc).AddArgIface),
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, `could not bind argument 1 of method github.com/michalkurzeja/godi/v2_test.(*TestSvc).AddArgIface: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+			},
+		},
+		// Interface binding - functions
+		{
+			name: "can bind an interface to a concrete type in a function",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcIfaceArg).Labels("fn"),
+				).Services(
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				res, err := di.ExecByLabel(c, "fn")
+				require.NoError(t, err)
+				require.Len(t, res, 1)
+				svc, ok := res[0].(*TestSvc)
+				require.True(t, ok)
+				require.Equal(t, []any{new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a slice of interface to multiple implementations in a function",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcIfaceSliceArgs).Labels("fn"),
+				).Services(
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				res, err := di.ExecByLabel(c, "fn")
+				require.NoError(t, err)
+				require.Len(t, res, 1)
+				svc, ok := res[0].(*TestSvc)
+				require.True(t, ok)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "can bind a variadic list of interface to multiple implementations in a function",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcIfaceVariadicArgs).Labels("fn"),
+				).Services(
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				res, err := di.ExecByLabel(c, "fn")
+				require.NoError(t, err)
+				require.Len(t, res, 1)
+				svc, ok := res[0].(*TestSvc)
+				require.True(t, ok)
+				require.Equal(t, []any{new(TestIfaceImpl), new(TestIfaceImpl)}, svc.Args)
+			},
+		},
+		{
+			name: "returns a build error when multiple implementations of an interface are available in a function",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcIfaceArg),
+				).Services(
+					di.SvcVal(new(TestIfaceImpl)),
+					di.SvcVal(new(TestIfaceImpl)),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, `could not bind argument 0 of function github.com/michalkurzeja/godi/v2_test.NewTestSvcIfaceArg: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+			},
+		},
+		// Cycle
+		{
+			name: "returns a build error when a cycle is detected",
+			build: func(b *di.Builder, refs *Refs) {
+				var aRef, bRef, cRef di.SvcReference
+				b.Services(
+					di.Svc(Echo[string], di.Ref(&bRef)).
+						Bind(&aRef).
+						Labels("echo-a"),
+					di.Svc(Echo[string], di.Ref(&cRef)).
+						Bind(&bRef).
+						Labels("echo-b"),
+					di.Svc(Echo[string], di.Ref(&aRef)).
+						Bind(&cRef).
+						Labels("echo-c"),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "service string (echo-c) has a circular dependency on string (echo-a)")
+			},
+		},
 	}
-	for _, merr := range multi.Errors {
-		if merr.Error() == errString {
-			return true
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			refs := Refs{Svc: make(SvcRefs), Func: make(FuncRefs)}
+			builder := di.New()
+			if tt.build != nil {
+				tt.build(builder, &refs)
+			}
+
+			c, err := builder.Build()
+			if tt.assertBuildErr != nil {
+				tt.assertBuildErr(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tt.assert != nil {
+				tt.assert(t, c, &refs)
+			}
+		})
+	}
+}
+
+func TestDI_Eager(t *testing.T) {
+	var (
+		eagerCounter int
+		lazyCounter  int
+	)
+
+	_, err := di.New().
+		Services(
+			di.Svc(Increment, &eagerCounter).Eager(),
+			di.Svc(Increment, &lazyCounter).Lazy(),
+		).Build()
+
+	require.NoError(t, err)
+	require.Equal(t, 1, eagerCounter)
+	require.Equal(t, 0, lazyCounter)
+}
+
+type Refs struct {
+	Svc  SvcRefs
+	Func FuncRefs
+}
+
+type SvcRefs = RefsMap[di.SvcReference]
+type FuncRefs = RefsMap[di.FuncReference]
+
+type RefsMap[R di.SvcReference | di.FuncReference] map[string]*R
+
+func (r RefsMap[R]) New(k string) *R {
+	ref := new(R)
+	r[k] = ref
+	return ref
+}
+
+func (r RefsMap[R]) Get(t *testing.T, k string) R {
+	ref, ok := r[k]
+	require.Truef(t, ok, "reference not found by key: %s", k)
+	return *ref
+}
+
+func TestGodi_Old(t *testing.T) {
+	t.Run("can register and call a function by ref", func(t *testing.T) {
+		t.Parallel()
+
+		var fooRef, barRef di.FuncReference
+
+		var fooCalled, barCalled bool
+
+		c, err := di.New().
+			Functions(
+				di.Func(func() { fooCalled = true }).Bind(&fooRef),
+				di.Func(func() { barCalled = true }).Bind(&barRef),
+			).
+			Build()
+		require.NoError(t, err)
+
+		require.False(t, fooCalled)
+		require.False(t, barCalled)
+
+		_, err = di.ExecByRef(c, fooRef)
+		require.NoError(t, err)
+		require.True(t, fooCalled)
+		_, err = di.ExecByRef(c, barRef)
+		require.NoError(t, err)
+		require.True(t, barCalled)
+	})
+	t.Run("can register and call multiple functions by type", func(t *testing.T) {
+		t.Parallel()
+
+		type myFunc func()
+
+		var fooCalled, barCalled bool
+
+		c, err := di.New().
+			Functions(
+				di.Func(myFunc(func() { fooCalled = true })),
+				di.Func(myFunc(func() { barCalled = true })),
+			).
+			Build()
+		require.NoError(t, err)
+
+		require.False(t, fooCalled)
+		require.False(t, barCalled)
+
+		_, err = di.ExecAllByType[myFunc](c)
+		require.NoError(t, err)
+		require.True(t, fooCalled)
+		require.True(t, barCalled)
+	})
+	t.Run("can register and call multiple functions by label", func(t *testing.T) {
+		t.Parallel()
+
+		var fooCalled, barCalled bool
+
+		c, err := di.New().
+			Functions(
+				di.Func(func() { fooCalled = true }).Labels("my-label"),
+				di.Func(func() { barCalled = true }).Labels("my-label"),
+			).
+			Build()
+		require.NoError(t, err)
+
+		require.False(t, fooCalled)
+		require.False(t, barCalled)
+
+		_, err = di.ExecAllByLabel(c, "my-label")
+		require.NoError(t, err)
+		require.True(t, fooCalled)
+		require.True(t, barCalled)
+	})
+
+	t.Run("can manually bind a slice of interface", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(false),
+				di.Svc(fmt.Sprint),
+			).
+			Bindings(
+				di.BindSlice[any, int](),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[string](c)
+		require.NoError(t, err)
+		require.Equal(t, "42", got)
+	})
+	t.Run("can automatically bind an interface", func(t *testing.T) {
+		t.Parallel()
+
+		sprintOne := func(v any) string {
+			return fmt.Sprint(v)
 		}
-	}
-	return assert.Fail(t, fmt.Sprintf("Error message not found in multierror:\n"+
-		"expected: %q\n"+
-		"got: %q", errString, multi), msgAndArgs...)
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.Svc(sprintOne),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[string](c)
+		require.NoError(t, err)
+		require.Equal(t, "42", got)
+	})
+	t.Run("can manually bind an interface", func(t *testing.T) {
+		t.Parallel()
+
+		sprintOne := func(v any) string {
+			return fmt.Sprint(v)
+		}
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(false),
+				di.Svc(sprintOne),
+			).
+			Bindings(
+				di.BindType[any, int](),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[string](c)
+		require.NoError(t, err)
+		require.Equal(t, "42", got)
+	})
+	t.Run("can automatically bind a slice of interface", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.Svc(fmt.Sprint),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[string](c)
+		require.NoError(t, err)
+		require.Equal(t, "42", got)
+	})
+	t.Run("automatic interface binding results in an error when multiple implementations are found", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal(42),    // Implements any!
+				di.SvcVal(false), // Also implements any!
+				di.Svc(func(a any) string { return fmt.Sprint(a) }),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (interface binding) returned an error: could not bind argument 0 of service string: multiple implementations of interface interface {} found: [int bool]")
+	})
+
+	t.Run("autowire matches a single arg", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.Svc(strconv.Itoa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[string](c)
+		require.NoError(t, err)
+		require.Equal(t, "42", got)
+	})
+	t.Run("autowire matches a slice arg", func(t *testing.T) {
+		t.Parallel()
+
+		iitoaa := func(ii []int) []string {
+			return lo.Map(ii, func(i int, _ int) string {
+				return strconv.Itoa(i)
+			})
+		}
+		c, err := di.New().
+			Services(
+				di.SvcVal([]int{42, 66}),
+				di.Svc(iitoaa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[[]string](c)
+		require.NoError(t, err)
+		require.Equal(t, []string{"42", "66"}, got)
+	})
+	t.Run("autowire matches single values with a slice arg", func(t *testing.T) {
+		t.Parallel()
+
+		iitoaa := func(ii []int) []string {
+			return lo.Map(ii, func(i int, _ int) string {
+				return strconv.Itoa(i)
+			})
+		}
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(66),
+				di.Svc(iitoaa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[[]string](c)
+		require.NoError(t, err)
+		require.Equal(t, []string{"42", "66"}, got)
+	})
+	t.Run("autowire prefers slices over single values when matching a slice arg", func(t *testing.T) {
+		t.Parallel()
+
+		iitoaa := func(ii []int) []string {
+			return lo.Map(ii, func(i int, _ int) string {
+				return strconv.Itoa(i)
+			})
+		}
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(66),
+				di.SvcVal([]int{1, 2}),
+				di.Svc(iitoaa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[[]string](c)
+		require.NoError(t, err)
+		require.Equal(t, []string{"1", "2"}, got)
+	})
+	t.Run("autowire works (variadic)", func(t *testing.T) {
+		t.Parallel()
+
+		iitoaa := func(ii ...int) []string {
+			return lo.Map(ii, func(i int, _ int) string {
+				return strconv.Itoa(i)
+			})
+		}
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(66),
+				di.Svc(iitoaa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[[]string](c)
+		require.NoError(t, err)
+		require.Equal(t, []string{"42", "66"}, got)
+	})
+	t.Run("can register a variadic service with no variadic args", func(t *testing.T) {
+		t.Parallel()
+
+		iitoaa := func(ii ...int) []string {
+			return lo.Map(ii, func(i int, _ int) string {
+				return strconv.Itoa(i)
+			})
+		}
+
+		c, err := di.New().
+			Services(
+				di.Svc(iitoaa),
+			).
+			Build()
+		require.NoError(t, err)
+
+		got, err := di.SvcByType[[]string](c)
+		require.NoError(t, err)
+		require.Equal(t, []string{}, got)
+	})
+
+	t.Run("returns error when a service is missing an argument", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(strconv.Itoa).NotAutowired(),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service string: invalid factory strconv.Itoa: argument 0 is not set")
+	})
+	t.Run("returns error when autowired argument does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(strconv.Itoa),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service string: invalid factory strconv.Itoa: invalid argument 0: no services found for type int")
+	})
+	t.Run("returns error when autowired argument resolves to multiple services", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(66),
+				di.Svc(strconv.Itoa),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service string: invalid factory strconv.Itoa: invalid argument 0: multiple services found for type int")
+	})
+	t.Run("returns error when method is missing an argument", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(NewAppendableEcho[string]).
+					MethodCall((*AppendableEcho[string]).Append).
+					NotAutowired(),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[string]): invalid method github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[...]).Append: argument 1 is not set")
+	})
+	t.Run("returns error when autowired method argument does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(NewAppendableEcho[string]).MethodCall((*AppendableEcho[string]).Append),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[string]): invalid method github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[...]).Append: invalid argument 1: no services found for type []string")
+	})
+	t.Run("returns error when autowired method argument resolves to multiple services", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal([]string{"foo"}),
+				di.SvcVal([]string{"bar"}),
+				di.Svc(NewAppendableEcho[string]).MethodCall((*AppendableEcho[string]).Append),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[string]): invalid method github.com/michalkurzeja/godi/v2_test.(*AppendableEcho[...]).Append: invalid argument 1: multiple services found for type []string")
+	})
+	t.Run("returns error when a func is missing an argument", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Functions(
+				di.Func(strconv.Itoa).NotAutowired(),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid function strconv.Itoa: argument 0 is not set")
+	})
+	t.Run("returns error when autowired func argument does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Functions(
+				di.Func(strconv.Itoa),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid function strconv.Itoa: invalid argument 0: no services found for type int")
+	})
+	t.Run("returns error when autowired func argument resolves to multiple services", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal(42),
+				di.SvcVal(66),
+			).
+			Functions(
+				di.Func(strconv.Itoa),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid function strconv.Itoa: invalid argument 0: multiple services found for type int")
+	})
+
+	t.Run("returns error when a service is self-referencing", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(Echo[string]),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (cycle validation) returned an error: service string has a circular dependency on string")
+	})
+	t.Run("returns error when service dependencies are cyclic", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.Svc(func(string) int { return 0 }),
+				di.Svc(func(int) bool { return false }),
+				di.Svc(func(bool) string { return "" }),
+			).
+			Build()
+		require.ErrorContains(t, err, "compilation failed: compiler pass (cycle validation) returned an error: service string has a circular dependency on bool")
+	})
 }
 
-type CircularDepASvc struct {
-	dep *CircularDepBSvc
+func Echo[T any](v T) T            { return v }
+func EchoMany[T any](vs []T) []T   { return vs }
+func EchoManyV[T any](vs ...T) []T { return vs }
+
+type AppendableEcho[T any] struct {
+	vals []T
 }
 
-func NewCircularDepASvc(dep *CircularDepBSvc) *CircularDepASvc {
-	return &CircularDepASvc{dep: dep}
+func NewAppendableEcho[T any]() *AppendableEcho[T] {
+	return &AppendableEcho[T]{}
 }
 
-type CircularDepBSvc struct {
-	dep *CircularDepCSvc
+func (e *AppendableEcho[T]) AppendVariadic(vs ...T) { e.vals = append(e.vals, vs...) }
+func (e *AppendableEcho[T]) Append(vs []T)          { e.vals = append(e.vals, vs...) }
+
+func (e *AppendableEcho[T]) Echo() []T {
+	return e.vals
 }
 
-func NewCircularDepBSvc(dep *CircularDepCSvc) *CircularDepBSvc {
-	return &CircularDepBSvc{dep: dep}
-}
-
-type CircularDepCSvc struct {
-	dep *CircularDepASvc
-}
-
-func NewCircularDepCSvc(dep *CircularDepASvc) *CircularDepCSvc {
-	return &CircularDepCSvc{dep: dep}
-}
-
-type CircularMethodASvc struct {
-	dep *CircularMethodBSvc
-}
-
-func NewCircularMethodASvc() *CircularMethodASvc {
-	return &CircularMethodASvc{}
-}
-
-func (s *CircularMethodASvc) SetDep(dep *CircularMethodBSvc) {
-	s.dep = dep
-}
-
-type CircularMethodBSvc struct {
-	dep *CircularMethodCSvc
-}
-
-func NewCircularMethodBSvc() *CircularMethodBSvc {
-	return &CircularMethodBSvc{}
-}
-
-func (s *CircularMethodBSvc) SetDep(dep *CircularMethodCSvc) {
-	s.dep = dep
-}
-
-type CircularMethodCSvc struct {
-	dep *CircularMethodASvc
-}
-
-func NewCircularMethodCSvc() *CircularMethodCSvc {
-	return &CircularMethodCSvc{}
-}
-
-func (s *CircularMethodCSvc) SetDep(dep *CircularMethodASvc) {
-	s.dep = dep
+func Increment(i *int) int {
+	*i++
+	return *i
 }

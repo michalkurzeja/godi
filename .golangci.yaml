@@ -13,7 +13,7 @@ linters:
     - ineffassign
     - misspell
     - nakedret
-    - exportloopref
+    - copyloopvar
     - staticcheck
     - stylecheck
     - typecheck
@@ -27,7 +27,7 @@ linters:
     - errorlint
     - revive
 
-linters-settings: # copy from revive.toml
+linters-settings:
   revive:
     ignore-generated-header: false
     severity: warning
@@ -52,6 +52,7 @@ linters-settings: # copy from revive.toml
       - name: unexported-return
       - name: unreachable-code
       - name: unused-parameter
+        exclude: ["TEST"]
       - name: var-declaration
       - name: var-naming
   govet:

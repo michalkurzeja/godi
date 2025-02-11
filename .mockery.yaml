@@ -1,0 +1,9 @@
+log-level: "warn"
+all: true
+dir: "{{.InterfaceDir}}/mocks"
+outpkg: "mocks"
+filename: "{{.InterfaceName | snakecase}}.go"
+mockname: "{{.InterfaceName}}"
+recursive: True
+packages:
+  github.com/michalkurzeja/godi/v2:
