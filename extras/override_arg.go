@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/michalkurzeja/godi/v2"
+	godi "github.com/michalkurzeja/godi/v2"
 	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )

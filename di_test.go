@@ -1,4 +1,4 @@
-package godi_test
+package di_test
 
 import (
 	"fmt"
@@ -85,7 +85,7 @@ func (i *TestIfaceImpl) TestIfaceMethod() {
 	i.MethodCalled = true
 }
 
-func TestGodi_Services(t *testing.T) {
+func TestGodi(t *testing.T) {
 	tests := []struct {
 		name           string
 		build          func(b *di.Builder, refs *Refs)
@@ -846,7 +846,7 @@ func TestGodi_Services(t *testing.T) {
 			name: "returns an error when executing a function that doesn't exist",
 			assert: func(t *testing.T, c di.Container, refs *Refs) {
 				_, err := di.ExecByType[func() *TestSvc](c)
-				require.ErrorContains(t, err, "function of type func() *godi_test.TestSvc not found")
+				require.ErrorContains(t, err, "function of type func() *di_test.TestSvc not found")
 			},
 		},
 		// Autowiring
