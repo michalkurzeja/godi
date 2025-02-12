@@ -14,10 +14,22 @@ import (
 // to change the default configuration of services.
 // These can be overridden per Definition.
 var (
-	DefaultLazy      = true
-	DefaultShared    = true
-	DefaultAutowired = true
+	defaultLazy      = true
+	defaultShared    = true
+	defaultAutowired = true
 )
+
+func SetDefaultLazy(b bool) {
+	defaultLazy = b
+}
+
+func SetDefaultShared(b bool) {
+	defaultShared = b
+}
+
+func SetDefaultAutowired(b bool) {
+	defaultAutowired = b
+}
 
 type ID string
 
@@ -58,9 +70,9 @@ func NewServiceDefinition(factory *Factory) *ServiceDefinition {
 
 		methodCalls: make(map[string]*Method),
 
-		lazy:      DefaultLazy,
-		shared:    DefaultShared,
-		autowired: DefaultAutowired,
+		lazy:      defaultLazy,
+		shared:    defaultShared,
+		autowired: defaultAutowired,
 	}
 }
 
@@ -220,8 +232,8 @@ func NewFunctionDefinition(function *Func) *FunctionDefinition {
 		id:       NewID(),
 		function: function,
 
-		lazy:      DefaultLazy,
-		autowired: DefaultAutowired,
+		lazy:      defaultLazy,
+		autowired: defaultAutowired,
 	}
 }
 
