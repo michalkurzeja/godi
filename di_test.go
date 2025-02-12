@@ -8,7 +8,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
-	"github.com/michalkurzeja/godi/v2"
+	di "github.com/michalkurzeja/godi/v2"
 )
 
 const constMethodArg = "const-method-arg"
