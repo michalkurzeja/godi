@@ -133,9 +133,9 @@ func (b *ServiceDefinitionBuilder) Children(services ...*ServiceDefinitionBuilde
 	return b
 }
 
-// ParseFactory parses the factory function WITHOUT the arguments to determine the service type.
-// This method MUST be called prior to Build.
-func (b *ServiceDefinitionBuilder) ParseFactory() (joinedErrs error) {
+// parseFactory parses the factory function WITHOUT the arguments to determine the service type.
+// This method MUST be called prior to build.
+func (b *ServiceDefinitionBuilder) parseFactory() (joinedErrs error) {
 	f, err := di.NewFactory(b.factory.fn)
 	if err != nil {
 		joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "failed to build factory"))
@@ -144,7 +144,7 @@ func (b *ServiceDefinitionBuilder) ParseFactory() (joinedErrs error) {
 	}
 
 	for _, child := range b.children {
-		err := child.ParseFactory()
+		err := child.parseFactory()
 		if err != nil {
 			joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 		}
@@ -159,7 +159,7 @@ func (b *ServiceDefinitionBuilder) ParseFactory() (joinedErrs error) {
 	return nil
 }
 
-func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
+func (b *ServiceDefinitionBuilder) build(scope *di.Scope) (joinedErrs error) {
 	if !b.factoryParsed {
 		return fmt.Errorf("failed to build service definition: factory of %s is not parsed", b.def)
 	}
@@ -196,7 +196,7 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 		childScope := scope.NewChild(b.def.String())
 
 		for _, child := range b.children {
-			err := child.Build(childScope)
+			err := child.build(childScope)
 			if err != nil {
 				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 			}
@@ -278,7 +278,7 @@ func (b *FunctionDefinitionBuilder) Children(services ...*ServiceDefinitionBuild
 	return b
 }
 
-func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
+func (b *FunctionDefinitionBuilder) build(scope *di.Scope) (joinedErrs error) {
 	err := b.setFunc()
 	if err != nil {
 		joinedErrs = errors.Join(joinedErrs, err)
@@ -288,7 +288,7 @@ func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 		childScope := scope.NewChild(b.def.String())
 
 		for _, child := range b.children {
-			err := child.Build(childScope)
+			err := child.build(childScope)
 			if err != nil {
 				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 			}
