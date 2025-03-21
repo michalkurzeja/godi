@@ -4,6 +4,11 @@ dir: "{{.InterfaceDir}}/mocks"
 outpkg: "mocks"
 filename: "{{.InterfaceName | snakecase}}.go"
 mockname: "{{.InterfaceName}}"
-recursive: True
+recursive: true
 packages:
   github.com/michalkurzeja/godi/v2:
+
+# Deprecations compliance
+resolve-type-alias: false
+disable-version-string: true
+issue-845-fix: true
