@@ -435,6 +435,21 @@ func TestGodi(t *testing.T) {
 			},
 		},
 		{
+			name: "Ref arg selects service by reference (shorthand)",
+			build: func(b *di.Builder, refs *Refs) {
+				var fooRef di.SvcReference
+				b.Services(
+					di.SvcVal("foo").Bind(&fooRef),
+					di.Svc(NewTestSvcStrArg, &fooRef).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo"}, svc.Args)
+			},
+		},
+		{
 			name: "Ref arg selects service by reference (binding after arg)",
 			build: func(b *di.Builder, refs *Refs) {
 				var fooRef di.SvcReference
