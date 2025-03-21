@@ -18,6 +18,9 @@ func Arg(v any) *ArgBuilder {
 	if builder, ok := v.(*ArgBuilder); ok {
 		return builder
 	}
+	if ref, ok := v.(*SvcReference); ok {
+		return Ref(ref)
+	}
 	return Val(v)
 }
 
