@@ -404,7 +404,7 @@ func main() {
 	svc3, _ := di.SvcByRef[fmt.Stringer](c, ref) // ...or by ref, as a compatible type
 
 	fmt.Println(svc.String(), svc2.String(), svc3.String())
-	
+
 	// Output: hello hello hello
 }
 
@@ -484,7 +484,7 @@ func main() {
 	res, _ := di.ExecByLabel(c, "myFun")
 
 	fmt.Println(res[0])
-	
+
 	// Output: hellohello
 }
 
@@ -538,7 +538,7 @@ func main() {
 	svc, _ := di.SvcByType[*MySvc](c)
 
 	fmt.Println(svc.String())
-	
+
 	// Output: hello
 }
 
@@ -552,10 +552,10 @@ you can define them as children of another service.
 
 > ❗ Child services are only "visible" to their parent and their own siblings.
 > They cannot be retrieved from the container, nor can they be used as dependencies of other services.
-> 
+>
 > They can, however, get dependencies from the outer scopes, like siblings of their parent.
-> 
-> Child services can have their own children, and those children can have their children, and...
+>
+> Child services can have their own children, and those children can have their children, and so on...
 
 #### Example
 
@@ -568,32 +568,32 @@ import (
 	di "github.com/michalkurzeja/godi/v2"
 )
 
-type MySvc struct {
+type StringsCollector struct {
 	strs []string
 }
 
-func NewMySvc(strs ...string) MySvc {
-	return MySvc{strs: strs}
+func NewStringsCollector(strs ...string) StringsCollector {
+	return StringsCollector{strs: strs}
 }
 
-func (s MySvc) Strings() []string {
+func (s StringsCollector) Strings() []string {
 	return s.strs
 }
 
 func main() {
 	c, _ := di.New().Services(
-		di.Svc(NewMySvc).Children(
+		di.Svc(NewStringsCollector).Children(
 			di.SvcVal("child-str"),
 		),
 		di.SvcVal("outer-str"),
 	).Build()
 
-	svc, _ := di.SvcByType[MySvc](c)
+	svc, _ := di.SvcByType[StringsCollector](c)
 	strs, _ := di.SvcsByType[string](c)
 
 	fmt.Println(svc.Strings())
 	fmt.Println(strs)
-	
+
 	// Output:
 	// [child-str outer-str]
 	// [outer-str]
@@ -604,6 +604,160 @@ func main() {
 ### Arguments
 
 When you define a service, function or a method call, you provide a function that likely takes some arguments.
-In order for that function to be later called, the container needs to know what to pass as those arguments.
+You can tell godi what those arguments are when defining a service/function, or you can let it figure them out automatically (this is what we call "autowiring").
 
-One way is to provide them manually, by you. The other - let godi figure it out via the mechanism we call "autowiring".
+Once you ask the container to call that function, it needs to resolve the exact values of those arguments.
+Those arguments can be literal values (like the ones you've seen in the examples above) or other services.
+Resolving a literal argument is easy - godi just passes it to the function.
+Resolving a service arg is a bit more complex - godi needs to instantiate that service first, and resolve its arguments (which can be services too!).
+It will do that to all arguments, recursively, until all dependencies are resolved.
+
+#### Arg types
+
+There are multiple types of arguments, which resolve differently to their final values.
+
+##### di.Val
+
+This is a literal argument - it resolves to what you provide.
+
+```go
+di.New().Services(
+di.Svc(NewService, di.Val("literal-arg")),
+// or a shorthand way:
+di.Svc(NewService, "literal-arg"),
+)
+```
+
+Both examples above will cause the string `"literal-arg"` to be passed to the `NewService` function.
+
+##### di.Ref
+
+This argument resolves to the service that the reference points to.
+
+```go
+var ref di.SvcReference
+
+di.New().Services(
+di.Svc(NewService).Bind(&ref),
+di.Svc(NewOtherService, di.Ref(&ref)),
+// or a shorthand way:
+di.Svc(NewOtherService, &ref),
+)
+```
+
+In this example, instantiating `OtherService` will cause `Service` to be instantiated first, and passed to `NewOtherService` as an argument.
+
+> 💡 Note that the shorthand way of providing a reference is the same as the shorthand for literal args.
+> Godi will figure out what to do by the arg type: if it's a reference, it will be converted to a ref arg.
+> Otherwise, it will become a val arg.
+
+##### di.Type
+
+This argument resolves to a service of the given type.
+
+```go
+di.New().Services(
+di.Svc(NewService),
+di.Svc(NewOtherService, di.Type[*Service]()),
+)
+```
+
+In this example, instantiating `OtherService` will cause a service of type `Service` to be instantiated first, and passed to `NewOtherService` as an argument.
+
+Optionally, you can use labels to pick a specific service of the given type:
+
+```go
+di.New().Services(
+di.Svc(NewService).Labels("my-label"),
+di.Svc(NewService).Labels("other-label"),
+di.Svc(NewOtherService, di.Type[*Service]("my-label")),
+)
+```
+
+##### di.SliceOf
+
+Sometimes you need to pass a slice of services to a function. This argument is just for that:
+
+```go
+
+di.New().Services(
+di.Svc(NewService),
+di.Svc(NewService),
+di.Svc(NewService),
+di.Svc(NewRegistry, di.SliceOf[*Service]()),
+)
+```
+
+Here, `NewRegistry` will receive instances of all 3 `Service` types.
+
+We can use labels to narrow the collection down:
+
+```go
+di.New().Services(
+di.Svc(NewService).Labels("my-label"),
+di.Svc(NewService).Labels("other-label"),
+di.Svc(NewService).Labels("my-label"),
+di.Svc(NewRegistry, di.SliceOf[*Service]("my-label")),
+)
+```
+
+Now, `NewRegistry` will receive only 2 instances of `Service` - the ones with the label "my-label".
+
+##### di.Compound
+
+This is a special argument that allows you to combine other arguments into a single one.
+
+```go
+var ref di.SvcReference
+
+di.New().Services(
+di.SvcVal("service-str").Bind(&ref),
+di.Svc(NewStringsCollector, di.Compound[[]string](
+di.Val("literal-str"),
+di.Ref(&ref),
+)),
+)
+```
+
+Compound arg makes it possible to combine values obtained in different ways into a single collection.
+While powerful, it's probably only useful in generic code, e.g. in godi extensions.
+
+#### Arg order
+
+You can pass arguments in any order, godi will match them with the function's arguments by their types.
+The only instance in which the order matters is when a resolved value is assignable to multiple arguments.
+In that case, it will be slotted into the first matching "free" argument.
+
+Here's an example:
+
+```go
+func NewService(a, b string, c int) *Service {
+return &Service{}
+}
+
+di.New().Services(
+di.Svc(NewService, "a", 1, "b"),
+)
+```
+
+In this case, the string "a" will be passed to the first argument, the int 1 to the third argument, and the string "b" to the second argument, so the final call will be:
+
+```go
+NewService("a", "b", 1)
+```
+
+#### Autowiring
+
+With autowiring enabled, godi will find all un-slotted arguments (i.e. those that are not provided by you) and try to resolve them by type:
+
+- For non-slice arguments, it will look for exactly one service of the matching type.
+- For slice or variadic args, it will first try to find a matching slice-type service (e.g. `[]*Service`), and if that fails, it will try to find services of the element type (`*Service`).
+
+Godi will also resolve interfaces.
+If an argument type is an interface, then godi will first try to find an exact type match.
+If it fails, it will try to find a services that implement that interface:
+
+- For non-slice arguments, it will succeed only if there is exactly one service that implements the interface.
+- For slice or variadic args, it will resolve all services that implement the interface, even if they are all of different types.
+
+This behaviour guarantees that any automatic choice made by godi is unambiguous and deterministic.
