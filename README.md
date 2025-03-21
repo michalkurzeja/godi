@@ -621,11 +621,20 @@ There are multiple types of arguments, which resolve differently to their final 
 This is a literal argument - it resolves to what you provide.
 
 ```go
-di.New().Services(
-di.Svc(NewService, di.Val("literal-arg")),
-// or a shorthand way:
-di.Svc(NewService, "literal-arg"),
+package main
+
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	di.New().Services(
+		di.Svc(NewService, di.Val("literal-arg")),
+		// or a shorthand way:
+		di.Svc(NewService, "literal-arg"),
+	)
+}
+
 ```
 
 Both examples above will cause the string `"literal-arg"` to be passed to the `NewService` function.
@@ -635,14 +644,23 @@ Both examples above will cause the string `"literal-arg"` to be passed to the `N
 This argument resolves to the service that the reference points to.
 
 ```go
-var ref di.SvcReference
+package main
 
-di.New().Services(
-di.Svc(NewService).Bind(&ref),
-di.Svc(NewOtherService, di.Ref(&ref)),
-// or a shorthand way:
-di.Svc(NewOtherService, &ref),
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	var ref di.SvcReference
+
+	di.New().Services(
+		di.Svc(NewService).Bind(&ref),
+		di.Svc(NewOtherService, di.Ref(&ref)),
+		// or a shorthand way:
+		di.Svc(NewOtherService, &ref),
+	)
+}
+
 ```
 
 In this example, instantiating `OtherService` will cause `Service` to be instantiated first, and passed to `NewOtherService` as an argument.
@@ -656,10 +674,19 @@ In this example, instantiating `OtherService` will cause `Service` to be instant
 This argument resolves to a service of the given type.
 
 ```go
-di.New().Services(
-di.Svc(NewService),
-di.Svc(NewOtherService, di.Type[*Service]()),
+package main
+
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	di.New().Services(
+		di.Svc(NewService),
+		di.Svc(NewOtherService, di.Type[*Service]()),
+	)
+}
+
 ```
 
 In this example, instantiating `OtherService` will cause a service of type `Service` to be instantiated first, and passed to `NewOtherService` as an argument.
@@ -667,11 +694,20 @@ In this example, instantiating `OtherService` will cause a service of type `Serv
 Optionally, you can use labels to pick a specific service of the given type:
 
 ```go
-di.New().Services(
-di.Svc(NewService).Labels("my-label"),
-di.Svc(NewService).Labels("other-label"),
-di.Svc(NewOtherService, di.Type[*Service]("my-label")),
+package main
+
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	di.New().Services(
+		di.Svc(NewService).Labels("my-label"),
+		di.Svc(NewService).Labels("other-label"),
+		di.Svc(NewOtherService, di.Type[*Service]("my-label")),
+	)
+}
+
 ```
 
 ##### di.SliceOf
@@ -679,13 +715,21 @@ di.Svc(NewOtherService, di.Type[*Service]("my-label")),
 Sometimes you need to pass a slice of services to a function. This argument is just for that:
 
 ```go
+package main
 
-di.New().Services(
-di.Svc(NewService),
-di.Svc(NewService),
-di.Svc(NewService),
-di.Svc(NewRegistry, di.SliceOf[*Service]()),
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	di.New().Services(
+		di.Svc(NewService),
+		di.Svc(NewService),
+		di.Svc(NewService),
+		di.Svc(NewRegistry, di.SliceOf[*Service]()),
+	)
+}
+
 ```
 
 Here, `NewRegistry` will receive instances of all 3 `Service` types.
@@ -693,12 +737,21 @@ Here, `NewRegistry` will receive instances of all 3 `Service` types.
 We can use labels to narrow the collection down:
 
 ```go
-di.New().Services(
-di.Svc(NewService).Labels("my-label"),
-di.Svc(NewService).Labels("other-label"),
-di.Svc(NewService).Labels("my-label"),
-di.Svc(NewRegistry, di.SliceOf[*Service]("my-label")),
+package main
+
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	di.New().Services(
+		di.Svc(NewService).Labels("my-label"),
+		di.Svc(NewService).Labels("other-label"),
+		di.Svc(NewService).Labels("my-label"),
+		di.Svc(NewRegistry, di.SliceOf[*Service]("my-label")),
+	)
+}
+
 ```
 
 Now, `NewRegistry` will receive only 2 instances of `Service` - the ones with the label "my-label".
@@ -708,15 +761,25 @@ Now, `NewRegistry` will receive only 2 instances of `Service` - the ones with th
 This is a special argument that allows you to combine other arguments into a single one.
 
 ```go
-var ref di.SvcReference
+package main
 
-di.New().Services(
-di.SvcVal("service-str").Bind(&ref),
-di.Svc(NewStringsCollector, di.Compound[[]string](
-di.Val("literal-str"),
-di.Ref(&ref),
-)),
+import (
+	di "github.com/michalkurzeja/godi/v2"
 )
+
+func main() {
+	var ref di.SvcReference
+
+	di.New().Services(
+		di.SvcVal("service-str").Bind(&ref),
+		di.Svc(NewStringsCollector, di.Compound[[]string](
+			di.Val("literal-str"),
+			di.Ref(&ref),
+		)),
+	)
+
+}
+
 ```
 
 Compound arg makes it possible to combine values obtained in different ways into a single collection.
@@ -731,13 +794,23 @@ In that case, it will be slotted into the first matching "free" argument.
 Here's an example:
 
 ```go
+package main
+
+import (
+	di "github.com/michalkurzeja/godi/v2"
+)
+
 func NewService(a, b string, c int) *Service {
-return &Service{}
+	return &Service{}
 }
 
-di.New().Services(
-di.Svc(NewService, "a", 1, "b"),
-)
+func main() {
+	di.New().Services(
+		di.Svc(NewService, "a", 1, "b"),
+	)
+
+}
+
 ```
 
 In this case, the string "a" will be passed to the first argument, the int 1 to the third argument, and the string "b" to the second argument, so the final call will be:
