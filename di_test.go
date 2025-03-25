@@ -1176,7 +1176,6 @@ func TestGodi(t *testing.T) {
 				// This is a cycle, like in the test case above.
 				// The build will succeed, but we don't want to try
 				// and retrieve either of those services - it will cause stack overflow fatal error.
-				// We don't want to request
 				var aRef, bRef, cRef di.SvcReference
 				b.Services(
 					di.Svc(Echo[string], di.Ref(&bRef)).

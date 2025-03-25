@@ -119,6 +119,7 @@ type CompilerConfig struct {
 	// SkipCycleValidation disables the cycle validation compiler pass.
 	// In general, it's recommended to keep the cycle validation enabled, as it can detect user misconfiguration.
 	// It is, however, a costly operation, so it can be disabled to increase the performance of the container building process.
+	// Be aware that disabling the cycle validation can lead to stack overflow errors if the user creates a cycle in the container.
 	SkipCycleValidation bool
 }
 
