@@ -14,6 +14,7 @@ type ArgBuilder struct {
 	slotSet bool
 }
 
+// Arg returns an argument builder appropriate for the given value.
 func Arg(v any) *ArgBuilder {
 	if builder, ok := v.(*ArgBuilder); ok {
 		return builder
@@ -43,20 +44,21 @@ func (b *ArgBuilder) Build() (di.Arg, error) {
 	return arg, nil
 }
 
+// Ref returns an argument builder for a service reference.
 func Ref(ref *SvcReference) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
 		return di.NewRefArg(ref.def)
 	}}
 }
 
-// Val returns an argument build for a literal value.
+// Val returns an argument builder for a literal value.
 func Val(v any) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
 		return di.NewLiteralArg(v), nil
 	}}
 }
 
-// Type returns an argument build for a typed reference.
+// Type returns an argument builder for a typed reference.
 func Type[T any](label ...Label) *ArgBuilder {
 	if len(label) > 0 {
 		return &ArgBuilder{newArg: func() (di.Arg, error) {
@@ -68,7 +70,7 @@ func Type[T any](label ...Label) *ArgBuilder {
 	}}
 }
 
-// SliceOf returns an argument build for a typed reference to a slice.
+// SliceOf returns an argument builder for a typed reference to a slice.
 func SliceOf[T any](label ...Label) *ArgBuilder {
 	if len(label) > 0 {
 		return &ArgBuilder{newArg: func() (di.Arg, error) {
@@ -80,6 +82,7 @@ func SliceOf[T any](label ...Label) *ArgBuilder {
 	}}
 }
 
+// Compound returns an argument builder for an argument composed of other arguments.
 func Compound[T any](builders ...*ArgBuilder) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
 		args := make([]di.Arg, 0, len(builders))
