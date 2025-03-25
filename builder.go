@@ -49,21 +49,21 @@ func (b *Builder) Build() (Container, error) {
 	var joinedErr error
 
 	for _, builder := range b.services {
-		if err := builder.parseFactory(); err != nil {
+		if err := builder.ParseFactory(); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}
 	}
 
 	for _, builder := range b.services {
-		if err := builder.build(b.cb.RootScope()); err != nil {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}
 	}
 
 	for _, builder := range b.functions {
-		if err := builder.build(b.cb.RootScope()); err != nil {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
 			joinedErr = errors.Join(joinedErr, err)
 			continue
 		}

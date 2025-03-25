@@ -9,10 +9,10 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )
 
-// OverrideSvcArgPass overrides an argument of the referenced service with the one provided.
+// OverrideSvcArg overrides an argument of the referenced service with the one provided.
 // slotIdx is the index of the argument to override.
 // arg is the argument to override the argument with. It can be a literal value (e.g. "foo" or 42) or an *godi.ArgBuilder (e.g. godi.Val("foo") or godi.Type[MyType]()).
-func OverrideSvcArgPass(ref godi.SvcReference, slotIdx uint, arg any) *di.CompilerPass {
+func OverrideSvcArg(ref godi.SvcReference, slotIdx uint, arg any) *di.CompilerPass {
 	return di.NewCompilerPass("override arg", di.PreAutomation, di.CompilerOpFunc(func(builder *di.ContainerBuilder) error {
 		if ref.IsEmpty() {
 			return errors.New("cannot override argument: empty reference")
@@ -33,10 +33,10 @@ func OverrideSvcArgPass(ref godi.SvcReference, slotIdx uint, arg any) *di.Compil
 	}))
 }
 
-// OverrideFuncArgPass overrides an argument of the referenced function with the one provided.
+// OverrideFuncArg overrides an argument of the referenced function with the one provided.
 // slotIdx is the index of the argument to override.
 // arg is the argument to override the argument with. It can be a literal value (e.g. "foo" or 42) or an *godi.ArgBuilder (e.g. godi.Val("foo") or godi.Type[MyType]()).
-func OverrideFuncArgPass(ref godi.FuncReference, slotIdx uint, arg any) *di.CompilerPass {
+func OverrideFuncArg(ref godi.FuncReference, slotIdx uint, arg any) *di.CompilerPass {
 	return di.NewCompilerPass("override arg", di.PreAutomation, di.CompilerOpFunc(func(builder *di.ContainerBuilder) error {
 		if ref.IsEmpty() {
 			return errors.New("cannot override argument: empty reference")

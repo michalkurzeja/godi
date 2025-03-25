@@ -11,7 +11,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/extras"
 )
 
-func TestOverrideSvcArgPass(t *testing.T) {
+func TestOverrideSvcArg(t *testing.T) {
 	t.Run("can override an arg value", func(t *testing.T) {
 		t.Parallel()
 
@@ -22,7 +22,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, 42),
+				extras.OverrideSvcArg(ref, 0, 42),
 			).
 			Build()
 		require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(sprint, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, "foo"),
+				extras.OverrideSvcArg(ref, 0, "foo"),
 			).
 			Build()
 		require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(fmt.Sprint, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideSvcArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(strconv.Itoa).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, 42),
+				extras.OverrideSvcArg(ref, 0, 42),
 			).
 			Build()
 		require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(sprint).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, "foo"),
+				extras.OverrideSvcArg(ref, 0, "foo"),
 			).
 			Build()
 		require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(fmt.Sprint).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideSvcArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.NoError(t, err)
@@ -142,7 +142,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 
 		_, err := di.New().
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideSvcArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of string: service not found")
@@ -157,7 +157,7 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 1, 42),
+				extras.OverrideSvcArg(ref, 1, 42),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of string: argument int is assigned to slot 1, but function has only 1 argument slots")
@@ -172,14 +172,14 @@ func TestOverrideSvcArgPass(t *testing.T) {
 				di.Svc(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideSvcArgPass(ref, 0, "foo"),
+				extras.OverrideSvcArg(ref, 0, "foo"),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of string: argument string cannot be assigned to slot 0")
 	})
 }
 
-func TestOverrideFuncArgPass(t *testing.T) {
+func TestOverrideFuncArg(t *testing.T) {
 	t.Run("can override an arg value", func(t *testing.T) {
 		t.Parallel()
 
@@ -190,7 +190,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, 42),
+				extras.OverrideFuncArg(ref, 0, 42),
 			).
 			Build()
 		require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(sprint, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, "foo"),
+				extras.OverrideFuncArg(ref, 0, "foo"),
 			).
 			Build()
 		require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(fmt.Sprint, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideFuncArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(strconv.Itoa).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, 42),
+				extras.OverrideFuncArg(ref, 0, 42),
 			).
 			Build()
 		require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(sprint).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, "foo"),
+				extras.OverrideFuncArg(ref, 0, "foo"),
 			).
 			Build()
 		require.NoError(t, err)
@@ -296,7 +296,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(fmt.Sprint).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideFuncArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 
 		_, err := di.New().
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, []any{"foo"}),
+				extras.OverrideFuncArg(ref, 0, []any{"foo"}),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of strconv.Itoa: function not found")
@@ -331,7 +331,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 1, 42),
+				extras.OverrideFuncArg(ref, 1, 42),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of strconv.Itoa: argument int is assigned to slot 1, but function has only 1 argument slots")
@@ -346,7 +346,7 @@ func TestOverrideFuncArgPass(t *testing.T) {
 				di.Func(strconv.Itoa, 0).Bind(&ref),
 			).
 			CompilerPasses(
-				extras.OverrideFuncArgPass(ref, 0, "foo"),
+				extras.OverrideFuncArg(ref, 0, "foo"),
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (override arg) returned an error: cannot override argument of strconv.Itoa: argument string cannot be assigned to slot 0")
