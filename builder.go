@@ -8,8 +8,8 @@ import (
 
 // New creates a new Builder.
 // This is the recommended entrypoint to the godi library.
-func New() *Builder {
-	return &Builder{cb: di.NewContainerBuilder()}
+func New(opts ...BuilderOption) *Builder {
+	return &Builder{cb: di.NewContainerBuilder(newConfig(opts))}
 }
 
 // Builder is a helper for building a container.
@@ -82,4 +82,20 @@ func (b *Builder) Build() (Container, error) {
 
 	container, err := b.cb.Build()
 	return container, errors.Join(joinedErr, err)
+}
+
+func newConfig(opts []BuilderOption) di.Config {
+	conf := di.NewConfig()
+	for _, opt := range opts {
+		opt(&conf)
+	}
+	return conf
+}
+
+type BuilderOption func(*di.Config)
+
+func SkipCycleValidation() BuilderOption {
+	return func(b *di.Config) {
+		b.CompilerConfig.SkipCycleValidation = true
+	}
 }

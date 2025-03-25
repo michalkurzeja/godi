@@ -64,14 +64,17 @@ const (
 // be executed in the order they were added.
 type Passes []*CompilerPass
 
-func NewPasses() Passes {
-	return Passes{
+func BasePasses(skipCycleValidation bool) Passes {
+	passes := Passes{
 		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()),
 		NewCompilerPass("autowiring", Automation, NewAutowiringPass()),
 		NewCompilerPass("argument validation", Validation, NewArgValidationPass()),
-		NewCompilerPass("cycle validation", Validation, NewCycleValidationPass()),
 		NewCompilerPass("eager initialization", Finalization, NewEagerInitPass()),
 	}
+	if !skipCycleValidation {
+		passes = append(passes, NewCompilerPass("cycle validation", Validation, NewCycleValidationPass()))
+	}
+	return passes
 }
 
 func (passes Passes) sort() {
@@ -93,8 +96,8 @@ type Compiler struct {
 	passes Passes
 }
 
-func NewCompiler() *Compiler {
-	return &Compiler{passes: NewPasses()}
+func NewCompiler(conf CompilerConfig) *Compiler {
+	return &Compiler{passes: BasePasses(conf.SkipCycleValidation)}
 }
 
 func (c *Compiler) AddPass(pass *CompilerPass) {
@@ -110,4 +113,18 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		}
 	}
 	return nil
+}
+
+type CompilerConfig struct {
+	// SkipCycleValidation disables the cycle validation compiler pass.
+	// In general, it's recommended to keep the cycle validation enabled, as it can detect user misconfiguration.
+	// It is, however, a costly operation, so it can be disabled to increase the performance of the container building process.
+	// Be aware that disabling the cycle validation can lead to stack overflow errors if the user creates a cycle in the container.
+	SkipCycleValidation bool
+}
+
+func NewCompilerConfig() CompilerConfig {
+	return CompilerConfig{
+		SkipCycleValidation: false,
+	}
 }

@@ -88,6 +88,7 @@ func (i *TestIfaceImpl) TestIfaceMethod() {
 func TestGodi(t *testing.T) {
 	tests := []struct {
 		name           string
+		builderOpts    []di.BuilderOption
 		build          func(b *di.Builder, refs *Refs)
 		assertBuildErr func(t *testing.T, err error)
 		assert         func(t *testing.T, c di.Container, refs *Refs)
@@ -1168,13 +1169,34 @@ func TestGodi(t *testing.T) {
 				require.ErrorContains(t, err, "service string (echo-c) has a circular dependency on string (echo-a)")
 			},
 		},
+		{
+			name:        "doesn't detect cycle when cycle detection is disabled",
+			builderOpts: []di.BuilderOption{di.SkipCycleValidation()},
+			build: func(b *di.Builder, refs *Refs) {
+				// This is a cycle, like in the test case above.
+				// The build will succeed, but we don't want to try
+				// and retrieve either of those services - it will cause stack overflow fatal error.
+				var aRef, bRef, cRef di.SvcReference
+				b.Services(
+					di.Svc(Echo[string], di.Ref(&bRef)).
+						Bind(&aRef).
+						Labels("echo-a"),
+					di.Svc(Echo[string], di.Ref(&cRef)).
+						Bind(&bRef).
+						Labels("echo-b"),
+					di.Svc(Echo[string], di.Ref(&aRef)).
+						Bind(&cRef).
+						Labels("echo-c"),
+				)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			refs := Refs{Svc: make(SvcRefs), Func: make(FuncRefs)}
-			builder := di.New()
+			builder := di.New(tt.builderOpts...)
 			if tt.build != nil {
 				tt.build(builder, &refs)
 			}
