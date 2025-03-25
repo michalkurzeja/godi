@@ -19,10 +19,10 @@ type ContainerBuilder struct {
 	built bool
 }
 
-func NewContainerBuilder() *ContainerBuilder {
+func NewContainerBuilder(conf Config) *ContainerBuilder {
 	return &ContainerBuilder{
 		container: NewContainer(),
-		compiler:  NewCompiler(),
+		compiler:  NewCompiler(conf.CompilerConfig),
 	}
 }
 
