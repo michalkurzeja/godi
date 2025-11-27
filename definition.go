@@ -200,7 +200,7 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 	}
 
 	if len(b.children) > 0 {
-		childScope := scope.NewChild(b.def.String())
+		childScope := scope.NewChild(b.def.ID().String())
 
 		for _, child := range b.children {
 			err := child.Build(childScope)
