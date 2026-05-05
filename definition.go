@@ -292,7 +292,13 @@ func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 	}
 
 	if len(b.children) > 0 {
-		childScope := scope.NewChild(b.def.String())
+		for _, child := range b.children {
+			if err := child.ParseFactory(); err != nil {
+				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
+			}
+		}
+
+		childScope := scope.NewChild(b.def.ID().String())
 
 		for _, child := range b.children {
 			err := child.Build(childScope)

@@ -23,7 +23,7 @@ func OverrideSvcArg(ref godi.SvcReference, slotIdx uint, arg any) *di.CompilerPa
 		}
 		a, err := godi.Arg(arg).Build()
 		if err != nil {
-			return errorsx.Wrap(err, "cannot override argument of %s: invalid arg")
+			return errorsx.Wrapf(err, "cannot override argument of %s: invalid arg", ref)
 		}
 		err = def.Factory().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
 		if err != nil {
@@ -47,7 +47,7 @@ func OverrideFuncArg(ref godi.FuncReference, slotIdx uint, arg any) *di.Compiler
 		}
 		a, err := godi.Arg(arg).Build()
 		if err != nil {
-			return errorsx.Wrap(err, "cannot override argument of %s: invalid arg")
+			return errorsx.Wrapf(err, "cannot override argument of %s: invalid arg", ref)
 		}
 		err = def.Func().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
 		if err != nil {
