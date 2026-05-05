@@ -126,7 +126,7 @@ func (p *autowiringPass) Run(builder *ContainerBuilder) error {
 		for _, method := range def.MethodCalls() {
 			err := p.autowire(method.Args())
 			if err != nil {
-				return errorsx.Wrapf(err, "failed to autowire smethod %s", method)
+				return errorsx.Wrapf(err, "failed to autowire method %s", method)
 			}
 		}
 	}
@@ -191,8 +191,8 @@ func (p *argValidationPass) Run(builder *ContainerBuilder) error {
 		}
 	}
 
-	for scope, def := range builder.FunctionDefinitionsSeq() {
-		err := p.validateArgs(scope, def.Func().Args())
+	for _, def := range builder.FunctionDefinitionsSeq() {
+		err := p.validateArgs(def.EffectiveScope(), def.Func().Args())
 		if err != nil {
 			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "invalid function %s", def))
 		}

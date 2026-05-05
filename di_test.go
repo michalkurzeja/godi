@@ -859,6 +859,21 @@ func TestGodi(t *testing.T) {
 			},
 		},
 		{
+			name: "function child service can be used as an autowired dependency",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Functions(
+					di.Func(NewTestSvcStrArg).
+						Children(di.SvcVal("foo")),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				got, err := di.ExecByType[func(string) *TestSvc](c)
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				require.Equal(t, []any{"foo"}, got[0].(*TestSvc).Args)
+			},
+		},
+		{
 			name: "returns an error when executing a function that doesn't exist",
 			assert: func(t *testing.T, c di.Container, refs *Refs) {
 				_, err := di.ExecByType[func() *TestSvc](c)

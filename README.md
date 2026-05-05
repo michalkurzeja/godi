@@ -288,6 +288,11 @@ There are 3 settings that can be configured globally, or per-service/function.
 >
 > Changing the defaults will not affect the already-existing definitions!
 
+> ⚠️ The global defaults are **not safe for concurrent use**.
+> They are package-level variables with no synchronization.
+> Only change them once at program startup (e.g. in `init()` or at the top of `main`),
+> before any `di.Svc`/`di.Func` calls and before spawning goroutines that use the package.
+
 #### Lazy/Eager
 
 By default, the container is lazy - it will only instantiate a service or execute a function when you request it.
@@ -501,6 +506,9 @@ Just like factories and functions, the dependencies (arguments) of the method ar
 > if service A depends on service B, and service B depends on service A,
 > godi won't allow you to inject A to B and B to A via factories, as this would lead to an infinite loop.
 > Instead, you can inject A to B via a factory, and B to A via a method call.
+
+> ⚠️ Registering the same method twice on one service silently **replaces** the first registration.
+> Only the last `MethodCall` for a given method name takes effect.
 
 #### Example
 

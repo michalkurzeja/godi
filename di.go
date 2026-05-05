@@ -5,25 +5,24 @@ import (
 	"io"
 	"reflect"
 
-	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
 type Container interface {
-	HasService(id di.ID) bool
-	GetService(id di.ID) (any, error)
-	GetServices(ids ...di.ID) (svcs []any, err error)
+	HasService(id ID) bool
+	GetService(id ID) (any, error)
+	GetServices(ids ...ID) (svcs []any, err error)
 	GetServicesIDsByType(typ reflect.Type) []ID
 	GetServicesByType(typ reflect.Type) ([]any, error)
 	GetServicesIDsByLabel(label Label) []ID
-	GetServicesByLabel(label di.Label) ([]any, error)
-	HasFunction(id di.ID) bool
-	ExecuteFunction(id di.ID) ([]any, error)
-	ExecuteFunctions(ids ...di.ID) (results [][]any, err error)
+	GetServicesByLabel(label Label) ([]any, error)
+	HasFunction(id ID) bool
+	ExecuteFunction(id ID) ([]any, error)
+	ExecuteFunctions(ids ...ID) (results [][]any, err error)
 	GetFunctionsIDsByType(typ reflect.Type) []ID
 	ExecuteFunctionsByType(typ reflect.Type) ([][]any, error)
 	GetFunctionsIDsByLabel(label Label) []ID
-	ExecuteFunctionsByLabel(label di.Label) ([][]any, error)
+	ExecuteFunctionsByLabel(label Label) ([][]any, error)
 	Print(w io.Writer)
 }
 
