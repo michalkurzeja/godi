@@ -68,6 +68,45 @@ func NewMyOtherSvc(s string) *MyOtherSvc {
 
 ```
 
+## 🤖 Claude Code plugin
+
+This repository doubles as a [Claude Code](https://claude.com/claude-code) plugin marketplace.
+Installing it teaches Claude the godi API, so it writes correct container code instead of
+guessing at the fluent builder.
+
+### Install
+
+From inside Claude Code:
+
+```
+/plugin marketplace add michalkurzeja/godi
+/plugin install godi@godi
+/reload-plugins
+```
+
+Or from your shell:
+
+```bash
+claude plugin marketplace add michalkurzeja/godi
+claude plugin install godi@godi
+```
+
+### Usage
+
+Nothing to invoke. Claude loads the skill on its own when it sees a file importing
+`github.com/michalkurzeja/godi/v2`, or when you ask it to register services, autowire
+dependencies, define bindings, or add compiler passes.
+
+To pull it in explicitly:
+
+```
+/godi:godi-v2
+```
+
+The skill ships with the full technical reference for v2, which Claude reads on demand
+when a task needs detail beyond the common API.
+
+
 ## ⚡ Performance
 
 Godi uses reflection to inspect your services and their dependencies.
