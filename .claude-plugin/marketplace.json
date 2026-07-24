@@ -1,0 +1,15 @@
+{
+  "name": "godi",
+  "owner": {
+    "name": "Michał Kurzeja",
+    "email": "mike.kurzeja@gmail.com"
+  },
+  "description": "Plugins for the godi dependency-injection library.",
+  "plugins": [
+    {
+      "name": "godi",
+      "source": "./plugins/godi",
+      "description": "Teaches Claude to correctly write and understand Go code that uses the godi v2 dependency-injection container."
+    }
+  ]
+}
