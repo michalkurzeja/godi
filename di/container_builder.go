@@ -4,6 +4,7 @@ import (
 	"errors"
 	"iter"
 
+	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/iterx"
 )
@@ -60,6 +61,18 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 			}
 		}
 	}
+}
+
+// Graph returns the dependency graph of the container being built, as it stands
+// right now. Called from a compiler pass, it shows the wiring before later
+// passes - autowiring included - have had their say.
+//
+// Build nils out the builder's container, so this only works during compilation.
+func (b *ContainerBuilder) Graph(cfg graph.Config) *graph.Graph {
+	if b.container == nil {
+		return nil
+	}
+	return b.container.Graph(cfg)
 }
 
 func (b *ContainerBuilder) Compiler() *Compiler {

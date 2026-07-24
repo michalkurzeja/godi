@@ -163,12 +163,27 @@ func (slots Slots) Args() []Arg {
 	})
 }
 
+// argOrigin tells who filled a Slot. A slot exists before anything fills it -
+// NewArgList creates one per function parameter - so the zero value is argOriginNone.
+type argOrigin uint8
+
+const (
+	argOriginNone         argOrigin = iota // Nothing has filled this slot.
+	argOriginManual                        // Filled by the user, at definition time.
+	argOriginAutowiring                    // Filled by the autowiring pass.
+	argOriginCompilerPass                  // Filled or replaced by a Compiler pass.
+)
+
 type Slot struct {
 	arg      Arg
 	args     []Arg
 	typ      reflect.Type
 	i        uint
 	variadic bool
+
+	origin     argOrigin
+	originPass string // Name of the pass, for argOriginAutowiring and argOriginCompilerPass.
+	dirty      bool   // Whether the slot was filled since the Compiler last looked.
 }
 
 func NewSlot(typ reflect.Type, i uint, variadic bool) *Slot {
@@ -225,6 +240,7 @@ func (s *Slot) Set(arg Arg) error {
 	}
 
 	s.arg = arg
+	s.markFilled()
 	return nil
 }
 
@@ -240,7 +256,24 @@ func (s *Slot) Append(args ...Arg) error {
 	}
 
 	s.args = append(s.args, args...)
+	s.markFilled()
 	return nil
+}
+
+// markFilled records that the slot was just filled, leaving it for the Compiler
+// to credit. Until something does, the fill is the user's own: a container that
+// is never compiled still reports its wiring honestly.
+func (s *Slot) markFilled() {
+	s.origin = argOriginManual
+	s.originPass = ""
+	s.dirty = true
+}
+
+// creditTo names whoever made the pending fill.
+func (s *Slot) creditTo(origin argOrigin, pass string) {
+	s.origin = origin
+	s.originPass = pass
+	s.dirty = false
 }
 
 func (s *Slot) Arg() Arg {

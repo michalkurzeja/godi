@@ -5,6 +5,7 @@ import (
 	"io"
 	"reflect"
 
+	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
@@ -23,7 +24,16 @@ type Container interface {
 	ExecuteFunctionsByType(typ reflect.Type) ([][]any, error)
 	GetFunctionsIDsByLabel(label Label) []ID
 	ExecuteFunctionsByLabel(label Label) ([][]any, error)
+
+	// Deprecated: use the graph package with the text encoder:
+	//
+	//	g, err := graph.Extract(c)
+	//	err = g.Encode(w, text.New())
 	Print(w io.Writer)
+
+	// Graph returns the dependency graph of the container.
+	// Prefer graph.Extract, which takes options rather than a built Config.
+	Graph(cfg graph.Config) *graph.Graph
 }
 
 // SvcByRef returns a service from the container by its reference.

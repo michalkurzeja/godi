@@ -2,9 +2,13 @@ package di
 
 import (
 	"io"
+	"iter"
 	"reflect"
 
 	"github.com/elliotchance/orderedmap/v2"
+
+	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/internal/iterx"
 )
 
 const RootScope = "root"
@@ -80,6 +84,91 @@ func (c *Container) GetBindingFor(typ reflect.Type) (Arg, bool) {
 	return c.root.GetBoundArg(typ)
 }
 
+// Deprecated: use the graph package with the text encoder:
+//
+//	g, err := graph.Extract(c)
+//	err = g.Encode(w, text.New())
 func (c *Container) Print(w io.Writer) {
 	Print(c.root, w)
+}
+
+// Graph returns the dependency graph of the container.
+//
+// Prefer graph.Extract, which takes the options rather than a built Config.
+func (c *Container) Graph(cfg graph.Config) *graph.Graph {
+	return newExtractor(c, cfg).extract()
+}
+
+// scopesSeq yields every scope in the container, in the order they were created.
+func (c *Container) scopesSeq() iter.Seq[*Scope] {
+	return iterx.Values(c.scopes.Iterator())
+}
+
+// serviceDefsSeq yields every service definition in the container, with the
+// scope it is registered in.
+func (c *Container) serviceDefsSeq() iter.Seq2[*Scope, *ServiceDefinition] {
+	return func(yield func(*Scope, *ServiceDefinition) bool) {
+		for scope := range c.scopesSeq() {
+			for def := range scope.ServiceDefinitionsSeq() {
+				if !yield(scope, def) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// functionDefsSeq yields every function definition in the container, with the
+// scope it is registered in.
+func (c *Container) functionDefsSeq() iter.Seq2[*Scope, *FunctionDefinition] {
+	return func(yield func(*Scope, *FunctionDefinition) bool) {
+		for scope := range c.scopesSeq() {
+			for def := range scope.FunctionDefinitionsSeq() {
+				if !yield(scope, def) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// slotsSeq yields every argument slot in the container: factory arguments,
+// method call arguments and function arguments, across all scopes.
+func (c *Container) slotsSeq() iter.Seq[*Slot] {
+	return func(yield func(*Slot) bool) {
+		for _, def := range c.serviceDefsSeq() {
+			for _, slot := range def.Factory().Args().Slots() {
+				if !yield(slot) {
+					return
+				}
+			}
+			for _, method := range def.MethodCalls() {
+				for _, slot := range method.Args().Slots() {
+					if !yield(slot) {
+						return
+					}
+				}
+			}
+		}
+		for _, def := range c.functionDefsSeq() {
+			for _, slot := range def.Func().Args().Slots() {
+				if !yield(slot) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// bindingsSeq yields every interface binding in every scope.
+func (c *Container) bindingsSeq() iter.Seq[*InterfaceBinding] {
+	return func(yield func(*InterfaceBinding) bool) {
+		for scope := range c.scopesSeq() {
+			for binding := range scope.BindingsSeq() {
+				if !yield(binding) {
+					return
+				}
+			}
+		}
+	}
 }

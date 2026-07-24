@@ -12,14 +12,37 @@ type CompilerPass struct {
 	stage    CompilerStage
 	priority int
 	op       CompilerOp
+
+	argOrigin  argOrigin  // What a slot filled by this pass means.
+	bindOrigin bindOrigin // What a binding created by this pass means.
 }
 
 func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerPass {
-	return &CompilerPass{name: name, stage: stage, op: op}
+	return &CompilerPass{
+		name:       name,
+		stage:      stage,
+		op:         op,
+		argOrigin:  argOriginCompilerPass,
+		bindOrigin: bindOriginCompilerPass,
+	}
 }
 
 func (p *CompilerPass) WithPriority(priority int) *CompilerPass {
 	p.priority = priority
+	return p
+}
+
+// withArgOrigin marks the arguments this pass fills as one of godi's own
+// behaviours rather than a third-party extension.
+func (p *CompilerPass) withArgOrigin(origin argOrigin) *CompilerPass {
+	p.argOrigin = origin
+	return p
+}
+
+// withBindOrigin marks the bindings this pass creates as one of godi's own
+// behaviours rather than a third-party extension.
+func (p *CompilerPass) withBindOrigin(origin bindOrigin) *CompilerPass {
+	p.bindOrigin = origin
 	return p
 }
 
@@ -66,8 +89,8 @@ type Passes []*CompilerPass
 
 func BasePasses(skipCycleValidation bool) Passes {
 	passes := Passes{
-		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()),
-		NewCompilerPass("autowiring", Automation, NewAutowiringPass()),
+		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()).withBindOrigin(bindOriginAutobinding),
+		NewCompilerPass("autowiring", Automation, NewAutowiringPass()).withArgOrigin(argOriginAutowiring),
 		NewCompilerPass("argument validation", Validation, NewArgValidationPass()),
 		NewCompilerPass("eager initialization", Finalization, NewEagerInitPass()),
 	}
@@ -106,13 +129,36 @@ func (c *Compiler) AddPass(pass *CompilerPass) {
 
 func (c *Compiler) Run(builder *ContainerBuilder) error {
 	c.passes.sort()
+
+	// Whatever is already wired, the user wired: the passes have not run yet.
+	c.creditPendingWiring(builder.container, argOriginManual, bindOriginManual, "")
+
 	for _, pass := range c.passes {
 		err := pass.Run(builder)
 		if err != nil {
 			return errorsx.Wrapf(err, "compiler pass (%s) returned an error", pass)
 		}
+		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 	}
 	return nil
+}
+
+// creditPendingWiring names whoever is responsible for the wiring changed since
+// the last call, and only that wiring: each pass is credited with its own work
+// and nothing else. Running it before the first pass, and again after each one,
+// is what tells a hand-written argument apart from one godi or an extension
+// supplied.
+func (c *Compiler) creditPendingWiring(container *Container, args argOrigin, binds bindOrigin, pass string) {
+	for slot := range container.slotsSeq() {
+		if slot.dirty {
+			slot.creditTo(args, pass)
+		}
+	}
+	for binding := range container.bindingsSeq() {
+		if binding.dirty {
+			binding.creditTo(binds, pass)
+		}
+	}
 }
 
 type CompilerConfig struct {

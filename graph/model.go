@@ -1,0 +1,359 @@
+package graph
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/michalkurzeja/godi/v2/graph/internal/render"
+	"github.com/michalkurzeja/godi/v2/internal/errorsx"
+)
+
+// Schema identifies the shape of the model, for anything that serialises it.
+const Schema = "godi.graph/v1"
+
+type (
+	// ScopeID is a readable path: "root", or the node ID of the scope's owner.
+	ScopeID string
+	// NodeID is a readable, build-stable identifier: "root/svc:http.(*Server)".
+	NodeID string
+	// ParamID identifies an injection point: "<NodeID>#f:2", "<NodeID>#m:SetLogger:1".
+	ParamID string
+)
+
+// Graph is the dependency graph of a container: what depends on what, how each
+// dependency was wired, and what was passed where.
+//
+// It is plain data. Nothing here refers to the container it came from, which is
+// what lets encoders live outside godi entirely.
+type Graph struct {
+	Schema      string        `json:"schema"`
+	Scopes      []*Scope      `json:"scopes"`   // Depth first from the root.
+	Nodes       []*Node       `json:"nodes"`    // Sorted by ID.
+	Edges       []*Edge       `json:"edges"`    // Sorted by (From, Param, Ordinal).
+	Bindings    []*Binding    `json:"bindings"` // Sorted by (Scope, Interface).
+	Roots       []NodeID      `json:"roots"`    // Where reachability starts.
+	Diagnostics []*Diagnostic `json:"diagnostics,omitempty"`
+
+	// Lookup indexes, built on first use.
+	nodes  map[NodeID]*Node
+	params map[ParamID]*Param
+	scopes map[ScopeID]*Scope
+	out    map[NodeID][]*Edge
+	in     map[NodeID][]*Edge
+}
+
+// Scope is a group of definitions. Child scopes hold services private to the
+// definition that declared them.
+type Scope struct {
+	ID     ScopeID `json:"id"`
+	Parent ScopeID `json:"parent,omitzero"` // Empty for the root scope.
+	Depth  int     `json:"depth"`
+	Name   string  `json:"name"`           // The container's own name for it; a uuid for child scopes.
+	Owner  NodeID  `json:"owner,omitzero"` // The node that declared this scope.
+}
+
+// NodeKind tells a service apart from a function.
+type NodeKind string
+
+const (
+	NodeService  NodeKind = "service"
+	NodeFunction NodeKind = "function"
+)
+
+// Node is a service or a function definition.
+type Node struct {
+	ID    NodeID   `json:"id"`
+	Kind  NodeKind `json:"kind"`
+	UUID  string   `json:"uuid"` // The container's own ID, for runtime lookups.
+	Scope ScopeID  `json:"scope"`
+
+	Type   string   `json:"type"` // Fully qualified: "github.com/acme/app/http.(*Server)".
+	Name   string   `json:"name"` // Factory name for services, function name for functions.
+	Labels []string `json:"labels,omitzero"`
+
+	Lazy      bool `json:"lazy"`
+	Shared    bool `json:"shared"` // Always false for functions.
+	Autowired bool `json:"autowired"`
+
+	ChildScope ScopeID  `json:"childScope,omitzero"` // The scope this node declared, if any.
+	Params     []*Param `json:"params,omitzero"`
+
+	InDegree  int `json:"inDegree"`
+	OutDegree int `json:"outDegree"`
+	// ReachableFromRoots is a lower bound: services fetched at runtime with
+	// SvcByType and friends are invisible to the container, so an unreachable
+	// node is a candidate for dead wiring, never a proof of it.
+	ReachableFromRoots bool `json:"reachableFromRoots"`
+	// Instantiated reports whether the container had built this service by the
+	// time the graph was taken.
+	Instantiated bool `json:"instantiated"`
+}
+
+// TypeShort is Type without the package path, for labels.
+func (n *Node) TypeShort() string { return render.Short(n.Type) }
+
+// NameShort is Name without the package path, for labels.
+func (n *Node) NameShort() string { return render.Short(n.Name) }
+
+// InjectionKind tells where an argument is injected.
+type InjectionKind string
+
+const (
+	InjectFactoryArg     InjectionKind = "factory-arg"
+	InjectFunctionArg    InjectionKind = "function-arg"
+	InjectMethodArg      InjectionKind = "method-arg"
+	InjectMethodReceiver InjectionKind = "method-receiver"
+)
+
+// ArgOrigin says who wired an argument.
+type ArgOrigin string
+
+const (
+	ArgOriginNone         ArgOrigin = "none"          // Nothing wired it; only possible before autowiring runs.
+	ArgOriginManual       ArgOrigin = "manual"        // The user wired it, at definition time.
+	ArgOriginAutowiring   ArgOrigin = "autowiring"    // godi's autowiring wired it.
+	ArgOriginCompilerPass ArgOrigin = "compiler-pass" // A compiler pass wired it.
+)
+
+// ArgKind is the kind of argument filling a slot.
+type ArgKind string
+
+const (
+	ArgKindNone          ArgKind = "none"
+	ArgKindLiteral       ArgKind = "literal"
+	ArgKindRef           ArgKind = "ref"
+	ArgKindType          ArgKind = "type"
+	ArgKindLabel         ArgKind = "label"
+	ArgKindFlexibleSlice ArgKind = "flexible-slice"
+	ArgKindCompound      ArgKind = "compound"
+	ArgKindUnknown       ArgKind = "unknown"
+)
+
+// Param is one injection point: a single argument slot of a factory, function
+// or method call. It produces zero edges for a literal, one for an ordinary
+// dependency, and many for a slice or variadic slot.
+type Param struct {
+	ID     ParamID       `json:"id"`
+	Node   NodeID        `json:"node"`
+	Kind   InjectionKind `json:"kind"`
+	Method string        `json:"method,omitzero"` // Set for method arguments.
+	Index  int           `json:"index"`           // Slot index; method arguments start at 1.
+
+	Type     string `json:"type"`
+	ElemType string `json:"elemType,omitzero"` // Element type, for slice slots.
+	Slice    bool   `json:"slice"`
+	Variadic bool   `json:"variadic"`
+
+	Origin     ArgOrigin `json:"origin"`
+	OriginPass string    `json:"originPass,omitzero"` // Pass name, when a pass wired it.
+	Arg        ArgKind   `json:"arg"`
+	Label      string    `json:"label,omitzero"`
+	Literals   []Literal `json:"literals,omitzero"`
+
+	EdgeCount  int    `json:"edgeCount"`
+	Unresolved bool   `json:"unresolved,omitzero"`
+	Note       string `json:"note,omitzero"`
+}
+
+// TypeShort is Type without the package path, for labels.
+func (p *Param) TypeShort() string { return render.Short(p.Type) }
+
+// Literal is a constant passed to a factory. Values are omitted unless asked
+// for: literals routinely carry credentials.
+type Literal struct {
+	Type      string `json:"type"`
+	Value     string `json:"value,omitzero"`
+	Truncated bool   `json:"truncated,omitzero"`
+	Redacted  bool   `json:"redacted,omitzero"`
+}
+
+// Resolution is the mechanism that matched a dependency to a param.
+type Resolution string
+
+const (
+	ResolutionRef         Resolution = "ref"             // An explicit reference to a definition.
+	ResolutionByType      Resolution = "by-type"         // Matched against the registry by type.
+	ResolutionBySliceType Resolution = "by-slice-type"   // A slice slot matched a []T service.
+	ResolutionByElemType  Resolution = "by-element-type" // A slice slot collected T services.
+	ResolutionByLabel     Resolution = "by-label"
+)
+
+// Edge is one dependency injected into one param.
+//
+// Provenance has two independent facets: who wired the argument (Origin,
+// OriginPass) and how it resolved to this target (Resolution, Bindings).
+type Edge struct {
+	From  NodeID        `json:"from"` // The consumer.
+	To    NodeID        `json:"to"`   // The dependency.
+	Param ParamID       `json:"param"`
+	Kind  InjectionKind `json:"kind"` // Copied from the param, so encoders need no lookup.
+
+	Origin     ArgOrigin    `json:"origin"`
+	OriginPass string       `json:"originPass,omitzero"`
+	Resolution Resolution   `json:"resolution"`
+	Bindings   []BindingHop `json:"bindings,omitzero"` // Interface bindings traversed.
+
+	ParamType string `json:"paramType"` // What the consumer declared.
+	Ordinal   int    `json:"ordinal"`   // Position among the param's edges, i.e. in the injected slice.
+	OfMany    bool   `json:"ofMany"`
+	Cycle     bool   `json:"cycle,omitzero"`
+}
+
+// Binding returns the first interface binding this edge resolved through, which
+// is the one applied to the declared parameter type.
+func (e *Edge) Binding() (BindingHop, bool) {
+	if len(e.Bindings) == 0 {
+		return BindingHop{}, false
+	}
+	return e.Bindings[0], true
+}
+
+// BindOrigin says who created an interface binding.
+type BindOrigin string
+
+const (
+	BindOriginManual       BindOrigin = "manual"        // The user declared it.
+	BindOriginAutobinding  BindOrigin = "autobinding"   // godi created it automatically.
+	BindOriginCompilerPass BindOrigin = "compiler-pass" // A compiler pass created it.
+)
+
+// BindingHop is one interface binding traversed while resolving an edge.
+// Bindings chain, so an edge can traverse several.
+type BindingHop struct {
+	Interface  string     `json:"interface"`
+	Scope      ScopeID    `json:"scope"`
+	Origin     BindOrigin `json:"origin"`
+	OriginPass string     `json:"originPass,omitzero"`
+}
+
+// Binding is an interface binding declared in, or created for, a scope.
+type Binding struct {
+	Scope      ScopeID    `json:"scope"`
+	Interface  string     `json:"interface"`
+	Origin     BindOrigin `json:"origin"`
+	OriginPass string     `json:"originPass,omitzero"`
+	BoundTo    string     `json:"boundTo"`
+	Targets    []NodeID   `json:"targets,omitzero"`
+	// EdgeCount is how many edges resolved through this binding. Zero means it
+	// is declared but unused.
+	EdgeCount int `json:"edgeCount"`
+}
+
+// Diagnostic reports something the extractor could not make sense of. Extraction
+// never fails on odd input; it records it here instead.
+type Diagnostic struct {
+	Severity string  `json:"severity"`
+	Scope    ScopeID `json:"scope,omitzero"`
+	Node     NodeID  `json:"node,omitzero"`
+	Param    ParamID `json:"param,omitzero"`
+	Message  string  `json:"message"`
+}
+
+// Node returns the node with the given ID.
+func (g *Graph) Node(id NodeID) (*Node, bool) {
+	g.index()
+	n, ok := g.nodes[id]
+	return n, ok
+}
+
+// Param returns the injection point with the given ID.
+func (g *Graph) Param(id ParamID) (*Param, bool) {
+	g.index()
+	p, ok := g.params[id]
+	return p, ok
+}
+
+// Scope returns the scope with the given ID.
+func (g *Graph) Scope(id ScopeID) (*Scope, bool) {
+	g.index()
+	s, ok := g.scopes[id]
+	return s, ok
+}
+
+// OutEdges returns the edges from the given node to its dependencies.
+func (g *Graph) OutEdges(id NodeID) []*Edge {
+	g.index()
+	return g.out[id]
+}
+
+// InEdges returns the edges from the consumers of the given node.
+func (g *Graph) InEdges(id NodeID) []*Edge {
+	g.index()
+	return g.in[id]
+}
+
+// Unreachable returns the nodes not reachable from any root. They are candidates
+// for dead wiring, not proof of it - see Node.ReachableFromRoots.
+func (g *Graph) Unreachable() []*Node {
+	var out []*Node
+	for _, n := range g.Nodes {
+		if !n.ReachableFromRoots {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// ChildScopes returns the scopes directly nested in the given one.
+func (g *Graph) ChildScopes(id ScopeID) []*Scope {
+	var out []*Scope
+	for _, s := range g.Scopes {
+		if s.Parent == id && s.ID != id {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// ScopeNodes returns the nodes registered in the given scope.
+func (g *Graph) ScopeNodes(id ScopeID) []*Node {
+	var out []*Node
+	for _, n := range g.Nodes {
+		if n.Scope == id {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// Encode writes the graph to w in the encoder's format.
+func (g *Graph) Encode(w io.Writer, enc Encoder) error {
+	if g == nil {
+		return fmt.Errorf("graph: cannot encode a nil graph")
+	}
+	if v, ok := enc.(Validator); ok {
+		if err := v.Check(g); err != nil {
+			return errorsx.Wrapf(err, "graph: %s cannot encode this graph", enc.Format().Name)
+		}
+	}
+	if err := enc.Encode(g, w); err != nil {
+		return errorsx.Wrapf(err, "graph: %s encoding failed", enc.Format().Name)
+	}
+	return nil
+}
+
+func (g *Graph) index() {
+	if g.nodes != nil {
+		return
+	}
+
+	g.nodes = make(map[NodeID]*Node, len(g.Nodes))
+	g.params = make(map[ParamID]*Param)
+	g.scopes = make(map[ScopeID]*Scope, len(g.Scopes))
+	g.out = make(map[NodeID][]*Edge)
+	g.in = make(map[NodeID][]*Edge)
+
+	for _, s := range g.Scopes {
+		g.scopes[s.ID] = s
+	}
+	for _, n := range g.Nodes {
+		g.nodes[n.ID] = n
+		for _, p := range n.Params {
+			g.params[p.ID] = p
+		}
+	}
+	for _, e := range g.Edges {
+		g.out[e.From] = append(g.out[e.From], e)
+		g.in[e.To] = append(g.in[e.To], e)
+	}
+}

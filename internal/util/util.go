@@ -20,20 +20,23 @@ func Signature(typ reflect.Type) string {
 	//	return funcSignature(typ)
 	//}
 
+	named := typ
 	var isPtr bool
 	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
+		named = typ.Elem()
 		isPtr = true
 	}
 
-	if pkgPath := typ.PkgPath(); pkgPath != "" {
-		name := typ.Name()
+	if pkgPath := named.PkgPath(); pkgPath != "" {
+		name := named.Name()
 		if isPtr {
 			name = fmt.Sprintf("(*%s)", name)
 		}
 		return pkgPath + "." + name
 	}
 
+	// Report the type as given: a pointer to something unnamed is still a
+	// pointer, so *int must not come back as int.
 	return typ.String()
 }
 
@@ -50,6 +53,26 @@ func FuncNameShort(val reflect.Value) string {
 		return split[0]
 	}
 	return split[len(split)-1]
+}
+
+// Truncate shortens s to at most maxRunes runes, reporting whether it had to cut.
+// A maxRunes of zero or less leaves s alone.
+//
+// It walks to the cut point rather than slicing by byte, which would split a
+// multi-byte rune and leave invalid UTF-8 behind.
+func Truncate(s string, maxRunes int) (string, bool) {
+	if maxRunes <= 0 {
+		return s, false
+	}
+
+	var n int
+	for i := range s {
+		if n == maxRunes {
+			return s[:i], true
+		}
+		n++
+	}
+	return s, false
 }
 
 func Zero[T any]() T {

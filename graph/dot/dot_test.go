@@ -1,0 +1,564 @@
+package dot_test
+
+import (
+	"bytes"
+	"os/exec"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/dot"
+)
+
+// encode is the whole pipeline under test: a model in, DOT out.
+func encode(t *testing.T, g *graph.Graph, opts ...dot.Option) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	require.NoError(t, g.Encode(&buf, dot.New(opts...)))
+	return buf.String()
+}
+
+// modelWith builds a one-service graph whose single argument carries the given
+// provenance, which is all most of these tests need.
+func modelWith(edge *graph.Edge, params ...*graph.Param) *graph.Graph {
+	consumer := &graph.Node{
+		ID: "root/svc:app.(*Consumer)", Kind: graph.NodeService, Scope: "root",
+		Type: "github.com/acme/app.(*Consumer)", Name: "github.com/acme/app.NewConsumer",
+		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true,
+		Params: params,
+	}
+	dep := &graph.Node{
+		ID: "root/svc:app.(*Dep)", Kind: graph.NodeService, Scope: "root",
+		Type: "github.com/acme/app.(*Dep)", Name: "github.com/acme/app.NewDep",
+		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true,
+	}
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
+		Nodes:  []*graph.Node{consumer, dep},
+	}
+	if edge != nil {
+		g.Edges = []*graph.Edge{edge}
+	}
+	return g
+}
+
+func param(origin graph.ArgOrigin, pass string) *graph.Param {
+	return &graph.Param{
+		ID: "root/svc:app.(*Consumer)#f:0", Node: "root/svc:app.(*Consumer)",
+		Kind: graph.InjectFactoryArg, Index: 0,
+		Type: "github.com/acme/app.(*Dep)", Origin: origin, OriginPass: pass,
+		Arg: graph.ArgKindType, EdgeCount: 1,
+	}
+}
+
+func edge(origin graph.ArgOrigin, pass string, hops ...graph.BindingHop) *graph.Edge {
+	return &graph.Edge{
+		From: "root/svc:app.(*Consumer)", To: "root/svc:app.(*Dep)",
+		Param: "root/svc:app.(*Consumer)#f:0", Kind: graph.InjectFactoryArg,
+		Origin: origin, OriginPass: pass, Resolution: graph.ResolutionByType,
+		Bindings: hops, ParamType: "github.com/acme/app.(*Dep)",
+	}
+}
+
+// edgeLine returns the single dependency edge line, ignoring the preamble.
+func edgeLine(t *testing.T, out string) string {
+	t.Helper()
+
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "->") {
+			return line
+		}
+	}
+	t.Fatal("no edge in output")
+	return ""
+}
+
+func TestProvenanceIsDrawnWithoutRelyingOnColour(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		edge     *graph.Edge
+		style    string // Who wired it.
+		arrow    string // How it resolved.
+		wantText string
+	}{
+		{
+			name:  "the user wired it",
+			edge:  edge(graph.ArgOriginManual, ""),
+			style: "solid", arrow: "normal",
+		},
+		{
+			name:  "autowired by type",
+			edge:  edge(graph.ArgOriginAutowiring, "autowiring"),
+			style: "dashed", arrow: "normal",
+		},
+		{
+			name: "autowired through a binding godi created",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring", graph.BindingHop{
+				Interface: "github.com/acme/app.Iface", Scope: "root",
+				Origin: graph.BindOriginAutobinding, OriginPass: "interface binding",
+			}),
+			style: "dashed", arrow: "odiamond",
+		},
+		{
+			name: "resolved through a binding the user declared",
+			edge: edge(graph.ArgOriginManual, "", graph.BindingHop{
+				Interface: "github.com/acme/app.Iface", Scope: "root",
+				Origin: graph.BindOriginManual,
+			}),
+			style: "solid", arrow: "odiamond",
+		},
+		{
+			name:     "a compiler pass wired it",
+			edge:     edge(graph.ArgOriginCompilerPass, "override arg"),
+			style:    "dashed",
+			arrow:    "normal",
+			wantText: "override arg", // Named on the edge, so it reads off the picture.
+		},
+		{
+			name: "a binding a compiler pass created",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring", graph.BindingHop{
+				Interface: "github.com/acme/app.Iface", Scope: "root",
+				Origin: graph.BindOriginCompilerPass, OriginPass: "my pass",
+			}),
+			style: "dashed", arrow: "odiamond",
+			wantText: `label="my pass"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			line := edgeLine(t, encode(t, modelWith(tt.edge, param(tt.edge.Origin, tt.edge.OriginPass))))
+
+			require.Contains(t, line, `style="`+tt.style+`"`)
+			require.Contains(t, line, "arrowhead="+tt.arrow)
+			if tt.wantText != "" {
+				require.Contains(t, line, tt.wantText)
+			}
+		})
+	}
+}
+
+// The head says how the dependency was matched; the colour says who chose it.
+// Keeping them independent is what lets a reader tell "godi picked the
+// implementation" from "you did" at a glance.
+func TestHeadSaysHowAndColourSaysWho(t *testing.T) {
+	t.Parallel()
+
+	const (
+		white  = `color="#1f2328"`
+		teal   = `color="#0f766e"`
+		purple = `color="#8250df"`
+	)
+
+	tests := []struct {
+		name         string
+		edge         *graph.Edge
+		arrow, color string
+	}{
+		{
+			name:  "exact type, you chose it",
+			edge:  edge(graph.ArgOriginManual, ""),
+			arrow: "normal", color: white,
+		},
+		{
+			name:  "exact type, godi chose it",
+			edge:  edge(graph.ArgOriginAutowiring, "autowiring"),
+			arrow: "normal", color: teal,
+		},
+		{
+			name:  "exact type, a pass chose it",
+			edge:  edge(graph.ArgOriginCompilerPass, "override arg"),
+			arrow: "normal", color: purple,
+		},
+		{
+			// The argument was autowired, but the target came from the binding
+			// the user declared, so the colour follows the binding.
+			name: "interface binding you declared",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring",
+				graph.BindingHop{Origin: graph.BindOriginManual}),
+			arrow: "odiamond", color: white,
+		},
+		{
+			name: "interface binding godi created",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring",
+				graph.BindingHop{Origin: graph.BindOriginAutobinding}),
+			arrow: "odiamond", color: teal,
+		},
+		{
+			name: "interface binding a pass created",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring",
+				graph.BindingHop{Origin: graph.BindOriginCompilerPass, OriginPass: "p"}),
+			arrow: "odiamond", color: purple,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			line := edgeLine(t, encode(t, modelWith(tt.edge, param(tt.edge.Origin, tt.edge.OriginPass))))
+			require.Contains(t, line, "arrowhead="+tt.arrow)
+			require.Contains(t, line, tt.color)
+		})
+	}
+}
+
+func TestEveryProvenanceGetsADistinctAppearance(t *testing.T) {
+	t.Parallel()
+
+	// The six combinations must not collapse onto each other, or the picture
+	// would claim two different things were wired the same way.
+	combos := []*graph.Edge{
+		edge(graph.ArgOriginManual, ""),
+		edge(graph.ArgOriginAutowiring, "autowiring"),
+		edge(graph.ArgOriginCompilerPass, "p"),
+		edge(graph.ArgOriginManual, "", graph.BindingHop{Origin: graph.BindOriginManual}),
+		edge(graph.ArgOriginAutowiring, "autowiring", graph.BindingHop{Origin: graph.BindOriginAutobinding}),
+		edge(graph.ArgOriginAutowiring, "autowiring", graph.BindingHop{Origin: graph.BindOriginCompilerPass, OriginPass: "p"}),
+	}
+
+	seen := make(map[string]bool, len(combos))
+	for _, e := range combos {
+		line := edgeLine(t, encode(t, modelWith(e, param(e.Origin, e.OriginPass))))
+
+		// All four channels together, since no single one separates every case:
+		// the head says how it was matched, the colour who chose it.
+		key := strings.Join([]string{
+			between(line, `style="`, `"`),
+			between(line, "arrowhead=", ","),
+			between(line, `color="`, `"`),
+			between(line, "penwidth=", ","),
+		}, "/")
+
+		require.False(t, seen[key], "two provenances look identical: %s", key)
+		seen[key] = true
+	}
+}
+
+func between(s, start, end string) string {
+	_, after, ok := strings.Cut(s, start)
+	if !ok {
+		return ""
+	}
+	before, _, _ := strings.Cut(after, end)
+	return before
+}
+
+func TestEscaping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		typ     string
+		literal string
+		absent  string
+		present string
+	}{
+		{
+			name:    "a directional channel is not read as markup",
+			typ:     "chan<- int",
+			present: "chan&lt;- int",
+		},
+		{
+			name:    "a generic instantiation survives",
+			typ:     "github.com/acme/app.Cache[string,int]",
+			present: "Cache[string,int]",
+		},
+		{
+			name:    "an empty interface survives",
+			typ:     "interface {}",
+			present: "interface {}",
+		},
+		{
+			// Graphviz substitutes \N with the node name inside a label, so a
+			// backslash must be escaped before anything else.
+			name:    `a literal containing \N is not substituted`,
+			typ:     "string",
+			literal: `C:\Notes`,
+			present: `C:\\Notes`,
+		},
+		{
+			name:    "a literal containing a quote does not end the string",
+			typ:     "string",
+			literal: `say "hi"`,
+			present: `&#34;hi&#34;`, // The form html.EscapeString emits; Graphviz takes either.
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := &graph.Param{
+				ID: "root/svc:app.(*Consumer)#f:0", Node: "root/svc:app.(*Consumer)",
+				Kind: graph.InjectFactoryArg, Index: 0, Type: tt.typ, Origin: graph.ArgOriginManual,
+				Arg: graph.ArgKindType,
+			}
+			if tt.literal != "" {
+				p.Arg = graph.ArgKindLiteral
+				p.Literals = []graph.Literal{{Type: "string", Value: tt.literal}}
+			}
+
+			out := encode(t, modelWith(nil, p))
+			require.Contains(t, out, tt.present)
+			requireBalancedQuotes(t, out)
+		})
+	}
+}
+
+// requireBalancedQuotes is a cheap structural check: an unescaped quote leaking
+// out of a label would break every line after it.
+func requireBalancedQuotes(t *testing.T, out string) {
+	t.Helper()
+
+	for line := range strings.SplitSeq(out, "\n") {
+		var count int
+		for i := 0; i < len(line); i++ {
+			switch line[i] {
+			case '\\':
+				i++ // Skip whatever it escapes.
+			case '"':
+				count++
+			}
+		}
+		require.Zero(t, count%2, "unbalanced quotes in: %s", line)
+	}
+}
+
+func TestScopesBecomeNestedClusters(t *testing.T) {
+	t.Parallel()
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{
+			{ID: "root", Name: "root"},
+			{ID: "root/svc:app.(*Server)", Parent: "root", Depth: 1, Owner: "root/svc:app.(*Server)", Name: "uuid-here"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "root/svc:app.(*Server)", Kind: graph.NodeService, Scope: "root",
+				Type: "github.com/acme/app.(*Server)", ChildScope: "root/svc:app.(*Server)", ReachableFromRoots: true},
+			{ID: "root/svc:app.(*Server)/svc:app.(*Conn)", Kind: graph.NodeService, Scope: "root/svc:app.(*Server)",
+				Type: "github.com/acme/app.(*Conn)", ReachableFromRoots: true},
+		},
+	}
+
+	out := encode(t, g)
+
+	require.Contains(t, out, `subgraph "cluster_root"`)
+	require.Contains(t, out, `subgraph "cluster_root/svc:app.(*Server)"`)
+	// Named after what declared it, not after the uuid the container uses.
+	require.Contains(t, out, `label="children of app.(*Server)"`)
+	require.NotContains(t, out, "uuid-here")
+
+	inner := strings.Index(out, `cluster_root/svc:app.(*Server)`)
+	conn := strings.Index(out, "app.(*Conn)")
+	require.Less(t, inner, conn, "the private service sits inside its owner's cluster")
+}
+
+func TestUnreachableNodesAreFlagged(t *testing.T) {
+	t.Parallel()
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
+		Nodes: []*graph.Node{{
+			ID: "root/svc:app.(*Orphan)", Kind: graph.NodeService, Scope: "root",
+			Type: "github.com/acme/app.(*Orphan)", ReachableFromRoots: false,
+		}},
+	}
+
+	out := encode(t, g)
+	require.Contains(t, out, "⚠ ")
+	require.Contains(t, out, `class="service unreachable"`)
+	// Phrased as a candidate, never as a verdict: runtime lookups are invisible.
+	require.Contains(t, out, "not reachable from any eager service or function")
+}
+
+func TestPortsCanBeTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	g := modelWith(edge(graph.ArgOriginManual, ""), param(graph.ArgOriginManual, ""))
+
+	require.Contains(t, encode(t, g, dot.Ports(dot.PortsOn)), `PORT="f0"`)
+	require.NotContains(t, encode(t, g, dot.Ports(dot.PortsOff)), `PORT="f0"`)
+	require.Contains(t, edgeLine(t, encode(t, g, dot.Ports(dot.PortsOn))), ":f0:w")
+}
+
+func TestThemesDifferAndBothSetABackground(t *testing.T) {
+	t.Parallel()
+
+	g := modelWith(nil, param(graph.ArgOriginManual, ""))
+
+	light := encode(t, g, dot.Theme(dot.Light))
+	dark := encode(t, g, dot.Theme(dot.Dark))
+
+	// A single Graphviz SVG cannot suit both backgrounds: the colours are baked
+	// in, so each theme must state its own.
+	require.Contains(t, light, `bgcolor="#ffffff"`)
+	require.Contains(t, dark, `bgcolor="#0d1117"`)
+	require.NotEqual(t, light, dark)
+}
+
+// Cluster labels - the scope names and the key's own caption - take the graph
+// font colour, not the node one. Leaving it unset renders them black, which is
+// unreadable on a dark background.
+func TestClusterLabelsFollowTheTheme(t *testing.T) {
+	t.Parallel()
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
+		Nodes: []*graph.Node{{
+			ID: "root/svc:app.(*A)", Kind: graph.NodeService, Scope: "root",
+			Type: "github.com/acme/app.(*A)", ReachableFromRoots: true,
+		}},
+	}
+
+	for _, tc := range []struct {
+		theme dot.ThemeName
+		text  string
+	}{
+		{dot.Light, "#1f2328"},
+		{dot.Dark, "#e6edf3"},
+	} {
+		out := encode(t, g, dot.Theme(tc.theme))
+
+		// Attribute lists wrap across lines, so scan statements, not lines.
+		var checked int
+		for stmt := range strings.SplitSeq(out, "];") {
+			if strings.Contains(stmt, `label="scope: root"`) || strings.Contains(stmt, `label="legend"`) {
+				checked++
+				require.Contains(t, stmt, `fontcolor="`+tc.text+`"`,
+					"cluster label must state its own colour: %s", stmt)
+			}
+		}
+		require.Equal(t, 2, checked, "expected the scope and the legend cluster")
+	}
+}
+
+// The key exists to show the arrowheads. Describing them in prose - which an
+// earlier version did - leaves the reader guessing what a diamond means.
+func TestLegendDrawsRealSampleEdges(t *testing.T) {
+	t.Parallel()
+
+	out := encode(t, modelWith(nil, param(graph.ArgOriginManual, "")))
+
+	var samples []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "legend_") && strings.Contains(line, "->") &&
+			!strings.Contains(line, "style=invis") {
+			samples = append(samples, line)
+		}
+	}
+	require.Len(t, samples, 5, "two rows for the head, three for the colour")
+
+	joined := strings.Join(samples, "\n")
+	for _, head := range []string{"normal", "odiamond"} {
+		require.Contains(t, joined, "arrowhead="+head)
+	}
+	for _, colour := range []string{"#1f2328", "#0f766e", "#8250df"} {
+		require.Contains(t, joined, `color="`+colour+`"`)
+	}
+
+	// The samples must be level and the same length, or the key reads as though
+	// the differences between rows were meaningful.
+	require.Contains(t, joined, "weight=100")
+	require.Contains(t, out, "minlen=0")
+
+	// Ordering is not left to the layout: the rows would otherwise come out
+	// bottom to top.
+	require.Contains(t, out, "{ rank=same; ")
+	require.Contains(t, out, "[style=invis, minlen=0, weight=100]; }")
+
+	// The key gets the first columns to itself. Sharing them with the graph
+	// stretches every sample arrow to the width of the widest service table.
+	require.Contains(t, out, "legend_rank_pad -> ")
+	require.Contains(t, out, "[style=invis, minlen=2]")
+}
+
+// TestGraphvizAcceptsTheOutput is the only test that needs the real tool, so it
+// skips where Graphviz is absent - CI has none.
+func TestGraphvizAcceptsTheOutput(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("dot"); err != nil {
+		t.Skip("graphviz not installed")
+	}
+
+	g := modelWith(
+		edge(graph.ArgOriginAutowiring, "autowiring", graph.BindingHop{
+			Interface: "github.com/acme/app.Iface", Origin: graph.BindOriginAutobinding,
+		}),
+		&graph.Param{
+			ID: "root/svc:app.(*Consumer)#f:0", Node: "root/svc:app.(*Consumer)",
+			Kind: graph.InjectFactoryArg, Index: 0, Type: "chan<- map[string]interface {}",
+			Origin: graph.ArgOriginManual, Arg: graph.ArgKindLiteral, EdgeCount: 1,
+			Literals: []graph.Literal{{Type: "string", Value: `weird \N "value"`}},
+		},
+	)
+
+	cmd := exec.Command("dot", "-Tsvg")
+	cmd.Stdin = strings.NewReader(encode(t, g))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	require.NoError(t, err, "graphviz rejected the output: %s", stderr.String())
+	require.Empty(t, stderr.String(), "graphviz warned about the output")
+	require.Contains(t, string(out), "<svg")
+}
+
+// The head already says whether a pass wired the argument or created the
+// binding, so naming it twice ("bind: bind reporter") only adds noise.
+func TestPassNameIsQualifiedOnlyWhenAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		edge *graph.Edge
+		want string
+	}{
+		{
+			name: "a pass wired the argument",
+			edge: edge(graph.ArgOriginCompilerPass, "override arg"),
+			want: `label="override arg"`,
+		},
+		{
+			name: "a pass created the binding",
+			edge: edge(graph.ArgOriginAutowiring, "autowiring",
+				graph.BindingHop{Origin: graph.BindOriginCompilerPass, OriginPass: "bind reporter"}),
+			want: `label="bind reporter"`,
+		},
+		{
+			name: "the same pass did both",
+			edge: edge(graph.ArgOriginCompilerPass, "rewire",
+				graph.BindingHop{Origin: graph.BindOriginCompilerPass, OriginPass: "rewire"}),
+			want: `label="rewire"`,
+		},
+		{
+			// Only here is there anything to disambiguate.
+			name: "two different passes",
+			edge: edge(graph.ArgOriginCompilerPass, "override arg",
+				graph.BindingHop{Origin: graph.BindOriginCompilerPass, OriginPass: "bind reporter"}),
+			want: `label="arg: override arg, bind: bind reporter"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			line := edgeLine(t, encode(t, modelWith(tt.edge, param(tt.edge.Origin, tt.edge.OriginPass))))
+			require.Contains(t, line, tt.want)
+		})
+	}
+}
