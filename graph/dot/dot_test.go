@@ -541,6 +541,7 @@ func TestGraphvizAcceptsTheOutput(t *testing.T) {
 		{Severity: "warning", Message: `scope "orphan" belongs to no definition`},
 		{Severity: "warning", Message: "chan<- int could not be resolved"},
 	}
+	g.Snapshot = &graph.Snapshot{Stage: "automation", Pass: "autowiring", Done: []string{"interface binding"}}
 
 	cmd := exec.Command("dot", "-Tsvg")
 	cmd.Stdin = strings.NewReader(encode(t, g))
@@ -646,4 +647,22 @@ func TestAGraphWithNothingToReportDrawsNoNotices(t *testing.T) {
 	t.Parallel()
 
 	require.NotContains(t, encode(t, modelWith(nil, param(graph.ArgOriginManual, ""))), "cluster_notices")
+}
+
+// A drawing of half-finished wiring is indistinguishable from a drawing of
+// finished wiring with pieces missing, so it has to say which it is.
+func TestASnapshotIsDrawnAmongTheNotices(t *testing.T) {
+	t.Parallel()
+
+	g := modelWith(nil, param(graph.ArgOriginManual, ""))
+	g.Snapshot = &graph.Snapshot{
+		Stage: "pre-validation", Pass: "graph snapshot",
+		Done: []string{"interface binding", "autowiring"},
+	}
+
+	out := encode(t, g)
+
+	require.Contains(t, out, "cluster_notices")
+	require.Contains(t, out, "snapshot: taken during the graph snapshot pass")
+	require.Contains(t, out, "passes run: interface binding, autowiring")
 }

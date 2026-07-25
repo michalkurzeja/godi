@@ -62,6 +62,7 @@ func (p *printer) line(depth int, format string, args ...any) {
 
 func (p *printer) write(g *graph.Graph) {
 	p.line(0, "%s", p.summary(g))
+	p.snapshot(g)
 	if p.cfg.locations && g.SourceRoot != "" {
 		p.line(0, "under %s", g.SourceRoot)
 	}
@@ -96,6 +97,21 @@ func (p *printer) summary(g *graph.Graph) string {
 		count(len(g.Edges), "dependency", "dependencies"),
 		count(roots, "root", "roots"),
 	}, ", ")
+}
+
+// snapshot says the container was still being built when this was taken. It
+// goes directly under the counts, because those counts are the first thing a
+// half-wired graph misleads you about.
+func (p *printer) snapshot(g *graph.Graph) {
+	if !g.Partial() {
+		return
+	}
+
+	p.line(0, "snapshot: %s", g.Snapshot.Label())
+	p.line(1, "%s", g.Snapshot.Caveat())
+	if len(g.Snapshot.Done) > 0 {
+		p.line(1, "passes run: %s", strings.Join(g.Snapshot.Done, ", "))
+	}
 }
 
 func count(n int, one, many string) string {

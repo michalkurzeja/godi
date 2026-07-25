@@ -345,3 +345,30 @@ func TestAValueRegisteredAsAServiceIsNamedByWhatItIs(t *testing.T) {
 	require.NotContains(t, out, "value:", "a struct handed over has nothing to name")
 	require.NotContains(t, out, "factory:  ")
 }
+
+// A graph taken mid-build is a picture of unfinished work, and reads as a
+// container with dependencies missing unless it says otherwise.
+func TestASnapshotSaysSoBeforeAnythingElse(t *testing.T) {
+	t.Parallel()
+
+	g := model()
+	g.Snapshot = &graph.Snapshot{
+		Stage: "pre-validation", Pass: "graph snapshot",
+		Done: []string{"interface binding", "autowiring"},
+	}
+
+	out := encode(t, g)
+
+	require.Contains(t, out, "snapshot: taken during the graph snapshot pass")
+	require.Contains(t, out, "passes run: interface binding, autowiring")
+	require.Contains(t, out, "reads as a root", "the caveat every format repeats")
+
+	lines := strings.Split(out, "\n")
+	require.Contains(t, lines[1], "snapshot:", "it belongs under the counts it qualifies")
+}
+
+func TestAFinishedGraphSaysNothingAboutSnapshots(t *testing.T) {
+	t.Parallel()
+
+	require.NotContains(t, encode(t, model()), "snapshot")
+}

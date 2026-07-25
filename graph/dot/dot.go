@@ -462,15 +462,25 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 // fails on odd input, it records it - and a drawing that leaves the record out
 // is the one place a reader would never think to look for it.
 func (p *printer) notices(g *graph.Graph) {
-	if len(g.Diagnostics) == 0 {
-		return
-	}
-
 	// Escaped a line at a time, then joined with a break: inside an HTML-like
 	// label a newline is just whitespace, and <BR/> is the only line ending.
-	lines := make([]string, 0, len(g.Diagnostics))
+	lines := make([]string, 0, len(g.Diagnostics)+3)
+
+	// A half-wired picture looks exactly like a finished one with dependencies
+	// missing, so the drawing has to say which it is.
+	if g.Partial() {
+		lines = append(lines, esc("snapshot: "+g.Snapshot.Label()), esc(g.Snapshot.Caveat()))
+		if len(g.Snapshot.Done) > 0 {
+			lines = append(lines, esc("passes run: "+strings.Join(g.Snapshot.Done, ", ")))
+		}
+	}
+
 	for _, d := range g.Diagnostics {
 		lines = append(lines, esc(d.Severity+": "+d.Message))
+	}
+
+	if len(lines) == 0 {
+		return
 	}
 
 	p.printf("\tsubgraph cluster_notices {\n")
