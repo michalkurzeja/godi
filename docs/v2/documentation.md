@@ -1297,6 +1297,22 @@ After removal, the definition is no longer enumerable by compiler passes. Compil
 
 ---
 
+### extras/graph.go
+
+**Package:** `extras`
+
+**Purpose:** Takes the dependency graph partway through compilation.
+
+```go
+func CaptureGraph(stage di.CompilerStage, capture func(*graph.Graph) error, opts ...graph.Option) *di.CompilerPass
+```
+
+A pass named `graph snapshot` that extracts from the builder and hands the result to `capture`. The stage — with `WithPriority` where a stage is not precise enough — is what chooses the moment. A nil `capture`, or an error from it, fails the build like any other pass.
+
+The graph it produces carries a `graph.Snapshot`; see below.
+
+---
+
 ### graph/ — the dependency graph
 
 **Packages:** `graph`, `graph/dot`, `graph/text`, `graph/html`, `graph/view`, `graph/internal/render`
@@ -1325,7 +1341,15 @@ func (g *Graph) Encode(w io.Writer, enc Encoder) error
 func (g *Graph) Select(filters ...Filter) *Graph
 ```
 
-`Source` is anything with `Graph(Config) *Graph`: a built container, or a `*di.ContainerBuilder` inside a compiler pass, which gives the pre-autowiring picture. `Extract` guards against a nil graph, which is what a generated mock returns.
+`Source` is anything with `Graph(Config) *Graph`: a built container, the fluent `*di.Builder` before `Build`, or a `*di.ContainerBuilder` inside a compiler pass. `Extract` guards against a nil graph, which is what a generated mock returns.
+
+#### Unfinished wiring
+
+A graph from anything other than a built container carries a `*Snapshot`: the stage and pass in progress, and the names of the passes that had finished. `Graph.Partial()` is the test; `Snapshot.Label()` and `Snapshot.Caveat()` are the wording, written once so all three encoders say the same thing. Text prints it under the counts, DOT puts it in the notices cluster, and the viewer shows a strip across the top and badges an unwired argument "not wired" rather than "none".
+
+Two mechanisms feed it. `Compiler.Run` records the pass it is running and the ones it has finished, so `ContainerBuilder.Graph` can stamp the graph. And the fluent `Builder` materialises its definition builders in `prepare()`, memoised, so `Graph` can be called before `Build` without filling the same argument lists twice — the definitions the graph is read from are the ones `Build` compiles.
+
+`Node.Root` is still computed on a partial graph, and before autowiring runs *every* node is a root. That is true of the snapshot rather than of the container, which is what the caveat says.
 
 `Option` and `Filter` are separate types because they answer separate questions: an `Option` tells the `Source` what to build (and cannot be revisited afterwards), a `Filter` narrows the result. Neither compiles in the other's place, so nothing is silently ignored. `Filter` is a struct with unexported fields, so this package's functions are the only way to make one; the zero value is skipped rather than dereferenced. `Config` therefore carries extraction settings only.
 

@@ -367,6 +367,17 @@ Patterns are globs (`*` = any run of characters), matched against the qualified 
 the short form alike, so `ByType("app.(*Server)")` and `ByType("github.com/acme/*")` both
 work.
 
+The builder is a graph source too, so wiring can be read before - or partway through - the
+build. Both carry a `graph.Snapshot` saying when the graph was taken and which passes had
+run; every format prints it, because a half-wired graph otherwise reads as a finished one
+with dependencies missing.
+
+```go
+g, err := graph.Extract(di.New().Services(...))          // as declared, before Build
+
+extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error { ... })  // mid-compilation
+```
+
 A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
 guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
 

@@ -194,18 +194,27 @@ func main() {
 	layout := flag.String("layout", "", "html layout engine: graphviz or dagre")
 	link := flag.String("link", "", "html editor for source links: "+strings.Join(html.Editors(), ", ")+", or a template of your own")
 	show := flag.Bool("open", false, "open the graph instead of writing it to stdout")
+	snapshot := flag.Bool("snapshot", false, "graph the wiring as declared, before the container is compiled")
 	flag.Parse()
 
-	if err := run(*format, *theme, *layout, *link, *show, os.Stdout); err != nil {
+	if err := run(*format, *theme, *layout, *link, *show, *snapshot, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(format, theme, layout, link string, show bool, w io.Writer) error {
-	c, err := build()
-	if err != nil {
-		return err
+func run(format, theme, layout, link string, show, snapshot bool, w io.Writer) error {
+	// A builder is a graph source too. Graphing one shows what you declared and
+	// nothing godi worked out for you, which is the picture to look at when the
+	// container will not build - the point at which there is no container to
+	// graph at all.
+	var src graph.Source = configure()
+	if !snapshot {
+		c, err := build()
+		if err != nil {
+			return err
+		}
+		src = c
 	}
 
 	enc, err := encoder(format, theme, layout, link)
@@ -222,7 +231,7 @@ func run(format, theme, layout, link string, show bool, w io.Writer) error {
 	opts := []graph.Option{graph.WithLiteralValues(28)}
 
 	if show {
-		path, err := openGraph(c, enc, opts...)
+		path, err := openGraph(src, enc, opts...)
 		if err != nil {
 			return err
 		}
@@ -230,7 +239,7 @@ func run(format, theme, layout, link string, show bool, w io.Writer) error {
 		return nil
 	}
 
-	g, err := graph.Extract(c, opts...)
+	g, err := graph.Extract(src, opts...)
 	if err != nil {
 		return err
 	}
@@ -311,6 +320,12 @@ func bindReporter() *dicore.CompilerPass {
 }
 
 func build() (di.Container, error) {
+	return configure().Build()
+}
+
+// configure declares everything and stops short of building, so that both the
+// finished container and the wiring on its own can be graphed.
+func configure() *di.Builder {
 	var (
 		configRef    di.SvcReference
 		serverRef    di.SvcReference
@@ -393,6 +408,5 @@ func build() (di.Container, error) {
 			extras.OverrideSvcArg(schedulerRef, 0, di.Type[FrozenClock]()),
 
 			bindReporter(),
-		).
-		Build()
+		)
 }

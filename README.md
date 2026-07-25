@@ -968,6 +968,34 @@ A **root** is a node nothing injects: the top of a dependency tree. Those are yo
 any wiring nothing uses, and `godi` does not try to tell the two apart — a service fetched at runtime with
 `SvcByType` or `SvcByRef` leaves no trace in the container, so only you know which of your roots are deliberate.
 
+#### Before it is built
+
+A container you cannot build is exactly the one you want to look at, so the builder is a graph source too:
+
+```go
+b := di.New().Services(...)
+
+g, err := graph.Extract(b)  // what you declared, before godi works anything out
+```
+
+To see a moment partway through compilation — after autowiring, before validation — capture it from a pass:
+
+```go
+var midway *graph.Graph
+
+c, err := di.New().
+	Services(...).
+	CompilerPasses(extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error {
+		midway = g
+		return nil
+	})).
+	Build()
+```
+
+Either way the graph carries a `graph.Snapshot` saying when it was taken and which passes had run, and every
+format says so on the way out. It matters: a half-wired graph looks exactly like a finished one with
+dependencies missing, and an argument nothing has wired *yet* is not an argument nothing will ever wire.
+
 #### Example
 
 `examples/graph` wires a small container that exercises every kind of provenance the encoders can draw:
@@ -976,4 +1004,5 @@ any wiring nothing uses, and `godi` does not try to tell the two apart — a ser
 go run ./examples/graph -format text            # read it here
 go run ./examples/graph | dot -Tsvg -o graph.svg
 go run ./examples/graph -format html -open      # open the interactive viewer
+go run ./examples/graph -format html -snapshot -open   # the wiring as declared, before it is compiled
 ```

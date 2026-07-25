@@ -13,6 +13,15 @@
 // plain data with no dependency on the container, so a third party can add a
 // format by implementing Encoder.
 //
+// # Wiring that is not finished yet
+//
+// A graph can also be taken from a container that is still being built: from a
+// *di.ContainerBuilder, from the fluent builder before Build, or from inside a
+// compiler pass. What a later pass would have wired is simply not there, so
+// those graphs carry a Snapshot saying when they were taken and which passes
+// had run, and every encoder passes that on. Without it a half-wired graph
+// reads as a finished one with dependencies missing.
+//
 // # Provenance
 //
 // Every edge records two independent facts. Origin says who wired the argument:

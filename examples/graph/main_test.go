@@ -25,8 +25,8 @@ func TestOpenDrawsTheSameGraphAsStdout(t *testing.T) {
 	t.Cleanup(func() { openGraph = restore })
 
 	var out bytes.Buffer
-	require(t, run("dot", "", "", "", false, &out))
-	require(t, run("dot", "", "", "", true, io.Discard))
+	require(t, run("dot", "", "", "", false, false, &out))
+	require(t, run("dot", "", "", "", true, false, io.Discard))
 
 	if opened == nil {
 		t.Fatal("the -open path never extracted a graph")
@@ -59,5 +59,19 @@ func require(t *testing.T, err error) {
 
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The wiring as declared is a graph too, and the one to reach for when the
+// container will not build. It has to say that is what it is.
+func TestSnapshotDrawsTheWiringBeforeItIsCompiled(t *testing.T) {
+	var out bytes.Buffer
+	require(t, run("text", "", "", "", false, true, &out))
+
+	if !strings.Contains(out.String(), "snapshot: taken before the container was compiled") {
+		t.Errorf("the snapshot does not say it is one:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "autowiring") {
+		t.Error("nothing should be autowired before the container is compiled")
 	}
 }
