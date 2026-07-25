@@ -996,6 +996,20 @@ Either way the graph carries a `graph.Snapshot` saying when it was taken and whi
 format says so on the way out. It matters: a half-wired graph looks exactly like a finished one with
 dependencies missing, and an argument nothing has wired *yet* is not an argument nothing will ever wire.
 
+#### When the build fails
+
+A failed `Build` leaves the builder standing, so the graph of exactly where the compiler stopped is one call away:
+
+```go
+c, err := di.New().Services(...).Build()
+if err != nil {
+	path, _ := view.Open(b, html.New())  // b is the builder
+}
+```
+
+The snapshot names the pass that failed, and every service missing something it needs is drawn with a red
+border and a warning mark — so the one that stopped the build is the one you see first.
+
 #### Example
 
 `examples/graph` wires a small container that exercises every kind of provenance the encoders can draw:

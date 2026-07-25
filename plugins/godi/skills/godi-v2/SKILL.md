@@ -378,6 +378,11 @@ g, err := graph.Extract(di.New().Services(...))          // as declared, before 
 extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error { ... })  // mid-compilation
 ```
 
+A failed `Build` leaves the builder standing, so `graph.Extract(builder)` afterwards shows
+where the compiler stopped. `Snapshot.Failed` names the pass that failed, and every node
+with `Incomplete` set — an argument naming a service that is not registered, or one nothing
+will wire — is drawn with a red border in the viewer.
+
 A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
 guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
 

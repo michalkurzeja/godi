@@ -1349,7 +1349,11 @@ A graph from anything other than a built container carries a `*Snapshot`: the st
 
 Two mechanisms feed it. `Compiler.Run` records the pass it is running and the ones it has finished, so `ContainerBuilder.Graph` can stamp the graph. And the fluent `Builder` materialises its definition builders in `prepare()`, memoised, so `Graph` can be called before `Build` without filling the same argument lists twice — the definitions the graph is read from are the ones `Build` compiles.
 
-`Node.Root` is still computed on a partial graph, and before autowiring runs *every* node is a root. That is true of the snapshot rather than of the container, which is what the caveat says.
+`Node.Root` is still computed on a partial graph, and before autowiring runs *every* node is a root — true of the snapshot rather than of the container.
+
+`Node.Incomplete` marks a node something it needs is missing from: an argument naming a dependency the container does not have (`Param.Unresolved`), or one nothing has wired once nothing is going to. The second is gated on `Snapshot.Autowired`, because before autowiring every argument is unwired and marking every node would say nothing. The viewer draws those in the warning colour with a `⚠` on the box and counts them in the footer; a built container has none, since validation would have rejected it.
+
+A failed `Build` leaves the builder's container standing, so `graph.Extract(builder)` afterwards is the picture of where the compiler stopped, with `Snapshot.Failed` naming the pass that stopped it. That is the intended way to find what broke a build.
 
 `Option` and `Filter` are separate types because they answer separate questions: an `Option` tells the `Source` what to build (and cannot be revisited afterwards), a `Filter` narrows the result. Neither compiles in the other's place, so nothing is silently ignored. `Filter` is a struct with unexported fields, so this package's functions are the only way to make one; the zero value is skipped rather than dereferenced. `Config` therefore carries extraction settings only.
 
