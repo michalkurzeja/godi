@@ -458,3 +458,25 @@ func TestATemplateWithQueryParametersSurvivesEncoding(t *testing.T) {
 	require.Equal(t, "goland://open?file={file}&line={line}", data.SourceLink)
 	require.NotContains(t, page, "goland://open?file={file}&line=", "the raw & must not reach the markup")
 }
+
+// The page has to be able to say the graph carries on past what it draws, so
+// the count a filter left behind has to reach it.
+func TestElisionReachesThePayload(t *testing.T) {
+	g := model()
+	g.Nodes[0].Elided = 4
+
+	var data struct {
+		Nodes []struct {
+			ID     string `json:"id"`
+			Elided int    `json:"elided"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(capture(t, dataRe, encode(t, g))), &data))
+
+	byID := make(map[string]int, len(data.Nodes))
+	for _, n := range data.Nodes {
+		byID[n.ID] = n.Elided
+	}
+	require.Equal(t, 4, byID[string(g.Nodes[0].ID)])
+	require.Equal(t, 0, byID[string(g.Nodes[1].ID)], "a node nothing was cut from says nothing")
+}

@@ -220,6 +220,30 @@ await test('the rules image is sized to the box it is stretched over', async () 
 		|| `viewBox ${box[1]}x${box[2]} against a box of ${w}x${h}`;
 });
 
+// A filtered graph stops where the filter did, not where the wiring does. The
+// box has to say so, or it reads as a service with nothing else around it.
+await test('a node says when a filter cut its neighbours off', async () => {
+	const elide = (n) => ev(`(() => {
+		const node = godi.data.nodes.find((x) => x.id === ${JSON.stringify(SERVER)});
+		${n ? `node.elided = ${n};` : 'delete node.elided;'}
+		return true;
+	})()`);
+
+	// Toggling a row filter is what rebuilds the labels from the model.
+	const rebuild = async () => { await toggle('args', false); await toggle('args', true); };
+
+	await elide(3);
+	await rebuild();
+	const cut = await rows(SERVER);
+
+	await elide(0);
+	await rebuild();
+	const whole = await rows(SERVER);
+
+	return (cut.at(-1) === '⋯ +3 more' && cut.at(-2) === '' && !whole.some((l) => l.includes('more')))
+		|| `cut: ${JSON.stringify(cut.slice(-3))}, whole: ${JSON.stringify(whole.slice(-2))}`;
+});
+
 await test('and the rules stop short of the border', async () => {
 	const uri = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).data('rules')`);
 	const svg = decodeURIComponent(uri.replace(/^data:image\/svg\+xml;charset=utf-8,/, ''));

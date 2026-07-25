@@ -11,11 +11,13 @@ func Extract(src Source, opts ...Option) (*Graph, error) {
 		return nil, fmt.Errorf("graph: nil source")
 	}
 
-	g := src.Graph(New(opts...))
+	cfg := New(opts...)
+
+	g := src.Graph(cfg)
 	if g == nil {
 		// A mock container satisfies Source but has nothing to describe.
 		return nil, fmt.Errorf("graph: %T produced no graph", src)
 	}
 
-	return g, nil
+	return g.selected(cfg.filters), nil
 }

@@ -136,6 +136,11 @@ type Node struct {
 	// Instantiated reports whether the container had built this service by the
 	// time the graph was taken.
 	Instantiated bool `json:"instantiated"`
+	// Elided is how many of this node's neighbours a filter cut off. It is only
+	// ever set by a limit - a focus that ran out of hops, a node cap - never by
+	// an exclusion the caller named, because the point of it is to say that the
+	// graph carries on where the picture stops.
+	Elided int `json:"elided,omitzero"`
 }
 
 // TypeShort is Type without the package path, for labels.

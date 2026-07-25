@@ -382,6 +382,34 @@ func TestRootsAreDistinguishable(t *testing.T) {
 	require.Contains(t, out, "nothing injects this: it is the top of a tree")
 }
 
+// A filtered graph stops somewhere the wiring does not. Saying so is what keeps
+// the picture from reading as the whole story.
+func TestAFilteredNodeSaysWhatWasCutOff(t *testing.T) {
+	t.Parallel()
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
+		Nodes: []*graph.Node{{
+			ID: "root/svc:app.(*Server)", Kind: graph.NodeService, Scope: "root",
+			Type: "github.com/acme/app.(*Server)", Elided: 7,
+		}},
+	}
+
+	out := encode(t, g)
+	require.Contains(t, out, "⋯ +7 more")
+	require.Contains(t, out, "7 neighbours were filtered out")
+}
+
+func TestANodeWithNothingCutOffSaysNothing(t *testing.T) {
+	t.Parallel()
+
+	out := encode(t, modelWith(nil, param(graph.ArgOriginManual, "")))
+
+	require.NotContains(t, out, "more")
+	require.NotContains(t, out, "filtered out")
+}
+
 func TestPortsCanBeTurnedOff(t *testing.T) {
 	t.Parallel()
 

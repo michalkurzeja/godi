@@ -191,6 +191,14 @@ function rows(n) {
 	section((n.params || []).filter((p) => !isMethod(p)));
 	section((n.params || []).filter(isMethod));
 
+	// A filter stopped here rather than the wiring. A box that does not say so
+	// reads as a service with nothing else around it.
+	if (n.elided) {
+		rules.push(lines.length);
+		lines.push('');
+		lines.push('⋯ +' + n.elided + ' more');
+	}
+
 	return { text: lines.join('\n'), count: lines.length, paramLine, rules };
 }
 
@@ -880,6 +888,11 @@ function showPanel(id) {
 			}
 			parts.push(paramBlock(p, outgoing));
 		}
+	}
+
+	if (n.elided) {
+		parts.push(make('p', 'via',
+			n.elided + ' of this node’s neighbours were filtered out of the graph.'));
 	}
 
 	const incoming = into.get(n.id) || [];

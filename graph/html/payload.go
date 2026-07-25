@@ -63,6 +63,9 @@ type viewNode struct {
 	Autowired    bool `json:"autowired"`
 	Instantiated bool `json:"instantiated"`
 	Root         bool `json:"root"`
+	// Elided is how many neighbours a filter cut off, so the page can say the
+	// graph carries on where it stops.
+	Elided int `json:"elided,omitzero"`
 
 	Params []viewParam `json:"params,omitzero"`
 
@@ -164,6 +167,7 @@ func newViewNode(node *graph.Node) viewNode {
 		Autowired:    node.Autowired,
 		Instantiated: node.Instantiated,
 		Root:         node.Root,
+		Elided:       node.Elided,
 		Registered:   newViewLocation(node.Registered),
 		Defined:      newViewLocation(node.Defined),
 	}

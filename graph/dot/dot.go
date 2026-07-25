@@ -190,6 +190,9 @@ func (p *printer) nodeTooltip(node *graph.Node) string {
 	if node.Root {
 		sb.WriteString("\nnothing injects this: it is the top of a tree")
 	}
+	if node.Elided > 0 {
+		fmt.Fprintf(&sb, "\n%d neighbours were filtered out", node.Elided)
+	}
 	return sb.String()
 }
 
@@ -224,6 +227,12 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 		for _, param := range node.Params {
 			p.labelRow(&sb, portName(param), small(8, "", esc(p.paramText(param))))
 		}
+	}
+
+	// A filter stopped here rather than the wiring, and a picture that does not
+	// say so reads as the whole story.
+	if node.Elided > 0 {
+		p.labelRow(&sb, "", small(8, p.palette.muted, esc(fmt.Sprintf("⋯ +%d more", node.Elided))))
 	}
 
 	sb.WriteString("</TABLE>>")

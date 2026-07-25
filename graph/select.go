@@ -1,0 +1,523 @@
+package graph
+
+import (
+	"cmp"
+	"slices"
+	"strings"
+
+	"github.com/michalkurzeja/godi/v2/graph/internal/render"
+)
+
+// Filters narrow a graph after it has been extracted. They are what makes a
+// real application readable: past a hundred or so nodes no layout engine and no
+// format produces a picture worth looking at, so readability comes from asking
+// a narrower question rather than from a better renderer.
+//
+// Because they work on the model, every format gets them for free and no
+// encoder contains filter logic.
+
+// Selector picks nodes by one of their properties. The By* functions build
+// them; Any and Not combine them.
+type Selector func(*Node) bool
+
+// Patterns are globs in which * stands for any run of characters, including
+// none. Each is tried against the full name and against the short form, so a
+// node named "github.com/acme/app.(*Server)" is found by that, by
+// "app.(*Server)", and by "github.com/acme/*".
+func matches(patterns []string, full string) bool {
+	short := render.Short(full)
+	for _, pattern := range patterns {
+		if glob(pattern, full) || glob(pattern, short) {
+			return true
+		}
+	}
+	return false
+}
+
+func glob(pattern, s string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == s
+	}
+
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+
+	// Each middle part has to appear in order. Taking the first occurrence of
+	// each is enough: the parts cannot overlap, so an earlier match never rules
+	// out a later one.
+	for _, part := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, part)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(part):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
+}
+
+// ByType selects services by the type they provide, and functions by their
+// signature.
+func ByType(patterns ...string) Selector {
+	return func(n *Node) bool { return matches(patterns, n.Type) }
+}
+
+// ByName selects nodes by the name of their factory or function.
+func ByName(patterns ...string) Selector {
+	return func(n *Node) bool { return matches(patterns, n.Name) }
+}
+
+// ByLabel selects nodes carrying any of the given labels.
+func ByLabel(patterns ...string) Selector {
+	return func(n *Node) bool {
+		return slices.ContainsFunc(n.Labels, func(label string) bool {
+			return matches(patterns, label)
+		})
+	}
+}
+
+// ByID selects nodes by their graph ID.
+func ByID(patterns ...string) Selector {
+	return func(n *Node) bool { return matches(patterns, string(n.ID)) }
+}
+
+// ByFile selects nodes registered or defined in a matching file. Paths are
+// relative to the graph's SourceRoot, so "internal/*" reaches a whole tree.
+func ByFile(patterns ...string) Selector {
+	return func(n *Node) bool {
+		return matches(patterns, n.Registered.File) || matches(patterns, n.Defined.File)
+	}
+}
+
+// Any selects a node that any of the given selectors picks.
+func Any(sels ...Selector) Selector {
+	return func(n *Node) bool {
+		return slices.ContainsFunc(sels, func(sel Selector) bool { return sel(n) })
+	}
+}
+
+// Not inverts a selector.
+func Not(sel Selector) Selector {
+	return func(n *Node) bool { return !sel(n) }
+}
+
+// ---------------------------------------------------------------- filters ---
+
+// filter narrows a selection. It sees the whole graph, because a filter that
+// follows edges has to look past what is currently selected to know what it is
+// cutting off.
+type filter struct {
+	// wiring marks a filter that takes away a kind of wiring rather than a set
+	// of nodes. Those run first, whatever order they were given in, because
+	// they change what "reachable" means: hiding method calls has to hide what
+	// only a method call reached, or the answer would depend on which filter
+	// the caller happened to write down first.
+	wiring bool
+	apply  func(*Graph, *selection)
+}
+
+func withFilter(apply func(*Graph, *selection)) Option {
+	return func(cfg *Config) { cfg.filters = append(cfg.filters, filter{apply: apply}) }
+}
+
+func withWiringFilter(apply func(*Graph, *selection)) Option {
+	return func(cfg *Config) {
+		cfg.filters = append(cfg.filters, filter{wiring: true, apply: apply})
+	}
+}
+
+// unlimited is a hop count with no limit; unset is a direction the caller did
+// not mention.
+const (
+	unlimited = -1
+	unset     = -2
+)
+
+// FocusOption limits how far Focus follows the wiring.
+type FocusOption func(*reach)
+
+type reach struct{ up, down int }
+
+// Upstream follows consumers - who asks for this - for at most hops edges.
+func Upstream(hops int) FocusOption { return func(r *reach) { r.up = hops } }
+
+// Downstream follows dependencies - what this asks for - for at most hops edges.
+func Downstream(hops int) FocusOption { return func(r *reach) { r.down = hops } }
+
+// Focus keeps the selected nodes and what surrounds them, dropping the rest.
+//
+// With no options it follows the wiring as far as it goes in both directions,
+// which is the whole connected component. Naming one direction takes the other
+// out: Focus(sel, Downstream(3)) is "this and the three levels it is built
+// from", not "and also everything that uses it".
+func Focus(sel Selector, opts ...FocusOption) Option {
+	r := reach{up: unset, down: unset}
+	for _, opt := range opts {
+		opt(&r)
+	}
+	switch {
+	case r.up == unset && r.down == unset:
+		r.up, r.down = unlimited, unlimited
+	case r.up == unset:
+		r.up = 0
+	case r.down == unset:
+		r.down = 0
+	}
+
+	return withFilter(func(g *Graph, s *selection) {
+		var seeds []NodeID
+		for _, n := range g.Nodes {
+			if s.has(n.ID) && sel(n) {
+				seeds = append(seeds, n.ID)
+			}
+		}
+
+		keep := s.neighbourhood(g, seeds, r)
+		for _, n := range g.Nodes {
+			if s.has(n.ID) && !keep[n.ID] {
+				s.cut(n.ID)
+			}
+		}
+	})
+}
+
+// Exclude drops the selected nodes. Unlike Focus it says nothing about what it
+// removed: you named these, so their absence is not news.
+func Exclude(sel Selector) Option {
+	return withFilter(func(g *Graph, s *selection) {
+		for _, n := range g.Nodes {
+			if sel(n) {
+				s.drop(n.ID)
+			}
+		}
+	})
+}
+
+// ExcludeTypes drops services by the type they provide.
+func ExcludeTypes(patterns ...string) Option { return Exclude(ByType(patterns...)) }
+
+// ExcludeLabels drops nodes carrying any of the given labels.
+func ExcludeLabels(patterns ...string) Option { return Exclude(ByLabel(patterns...)) }
+
+// OnlyScope keeps the nodes of the matching scopes. A scope matches on its ID,
+// on the container's own name for it, or on the name a reader would see.
+func OnlyScope(patterns ...string) Option {
+	return withFilter(func(g *Graph, s *selection) {
+		wanted := make(map[ScopeID]bool)
+		for _, scope := range g.Scopes {
+			if matches(patterns, string(scope.ID)) ||
+				matches(patterns, scope.Name) ||
+				matches(patterns, scope.Label()) {
+				wanted[scope.ID] = true
+			}
+		}
+		for _, n := range g.Nodes {
+			if !wanted[n.Scope] {
+				s.drop(n.ID)
+			}
+		}
+	})
+}
+
+// OnlyRoots keeps the nodes nothing injects: the top of every dependency tree.
+// It is how you find the entry points of an application, and the wiring nothing
+// uses, which look the same from here.
+func OnlyRoots() Option {
+	return withFilter(func(g *Graph, s *selection) {
+		for _, n := range g.Nodes {
+			if !n.Root {
+				s.drop(n.ID)
+			}
+		}
+	})
+}
+
+// HideMethodCalls drops the arguments injected through method calls, and the
+// edges into them. The services stay; only that way of reaching them goes - so
+// a service nothing else asks for is left standing on its own, which is the
+// honest picture of what hiding that wiring does.
+func HideMethodCalls() Option {
+	return withWiringFilter(func(g *Graph, s *selection) {
+		for _, n := range g.Nodes {
+			for _, p := range n.Params {
+				if p.Kind == InjectMethodArg || p.Kind == InjectMethodReceiver {
+					delete(s.params, p.ID)
+				}
+			}
+		}
+	})
+}
+
+// MaxNodes keeps at most n nodes, the most connected first, and says on each
+// survivor how many of its neighbours went. It is a last resort for a graph too
+// big to draw at all: which n nodes matter is a question only you can answer,
+// and Focus is how you answer it.
+func MaxNodes(n int) Option {
+	return withFilter(func(g *Graph, s *selection) {
+		alive := make([]*Node, 0, len(g.Nodes))
+		for _, node := range g.Nodes {
+			if s.has(node.ID) {
+				alive = append(alive, node)
+			}
+		}
+		if len(alive) <= n {
+			return
+		}
+
+		// Ties break on ID so that the same graph always yields the same view.
+		slices.SortFunc(alive, func(a, b *Node) int {
+			if c := cmp.Compare(b.InDegree+b.OutDegree, a.InDegree+a.OutDegree); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.ID, b.ID)
+		})
+		for _, node := range alive[max(n, 0):] {
+			s.cut(node.ID)
+		}
+	})
+}
+
+// -------------------------------------------------------------- selection ---
+
+// selection is what survives so far. Filters only ever remove from it, so their
+// order does not matter and none of them has to know about the others.
+type selection struct {
+	nodes  map[NodeID]bool
+	params map[ParamID]bool
+	// gone records nodes a limit removed, as opposed to ones the caller named.
+	// It is what lets the result say the graph continues past its edge.
+	gone map[NodeID]bool
+}
+
+func newSelection(g *Graph) *selection {
+	s := &selection{
+		nodes:  make(map[NodeID]bool, len(g.Nodes)),
+		params: make(map[ParamID]bool),
+		gone:   make(map[NodeID]bool),
+	}
+	for _, n := range g.Nodes {
+		s.nodes[n.ID] = true
+		for _, p := range n.Params {
+			s.params[p.ID] = true
+		}
+	}
+	return s
+}
+
+func (s *selection) has(id NodeID) bool { return s.nodes[id] }
+
+func (s *selection) drop(id NodeID) { delete(s.nodes, id) }
+
+func (s *selection) cut(id NodeID) {
+	delete(s.nodes, id)
+	s.gone[id] = true
+}
+
+// neighbourhood walks out from the seeds along the edges between nodes that are
+// still selected, up to the given number of hops in each direction.
+//
+// Each direction is walked on its own. Following both at once would let a path
+// change direction partway - down to a dependency, then back up to something
+// else that uses it - which reaches the seed's siblings and counts them as
+// neighbours. They are not on any path through it.
+func (s *selection) neighbourhood(g *Graph, seeds []NodeID, r reach) map[NodeID]bool {
+	seen := make(map[NodeID]bool, len(seeds))
+	for _, id := range seeds {
+		seen[id] = true
+	}
+
+	walk := func(hops int, next func(NodeID) []*Edge, far func(*Edge) NodeID) {
+		// Its own record of where it has been, so that a node the other
+		// direction already found does not stop this one walking through it.
+		reached := make(map[NodeID]bool, len(seeds))
+		frontier := seeds
+		for _, id := range seeds {
+			reached[id] = true
+		}
+
+		for i := 0; hops == unlimited || i < hops; i++ {
+			var found []NodeID
+			for _, id := range frontier {
+				for _, e := range next(id) {
+					to := far(e)
+					if !reached[to] && s.has(to) && s.params[e.Param] {
+						reached[to] = true
+						seen[to] = true
+						found = append(found, to)
+					}
+				}
+			}
+			if len(found) == 0 {
+				return
+			}
+			frontier = found
+		}
+	}
+
+	walk(r.down, g.OutEdges, func(e *Edge) NodeID { return e.To })
+	walk(r.up, g.InEdges, func(e *Edge) NodeID { return e.From })
+
+	return seen
+}
+
+// ---------------------------------------------------------------- rebuild ---
+
+// Select returns the graph narrowed by the given filters. Options that are not
+// filters are ignored: what a literal looks like is settled during extraction
+// and cannot be revisited here.
+//
+// The result is a new graph. Nodes and params are copied, because their counts
+// change; edges and scopes are shared, because they do not.
+func (g *Graph) Select(opts ...Option) *Graph {
+	return g.selected(New(opts...).filters)
+}
+
+func (g *Graph) selected(filters []filter) *Graph {
+	if len(filters) == 0 {
+		return g
+	}
+
+	sel := newSelection(g)
+	for _, f := range filters {
+		if f.wiring {
+			f.apply(g, sel)
+		}
+	}
+	for _, f := range filters {
+		if !f.wiring {
+			f.apply(g, sel)
+		}
+	}
+	return g.rebuild(sel)
+}
+
+func (g *Graph) rebuild(sel *selection) *Graph {
+	out := &Graph{
+		Schema:      g.Schema,
+		SourceRoot:  g.SourceRoot,
+		Diagnostics: g.Diagnostics,
+	}
+
+	kept := make(map[NodeID]*Node, len(sel.nodes))
+	for _, n := range g.Nodes {
+		if !sel.has(n.ID) {
+			continue
+		}
+
+		node := *n
+		node.InDegree, node.OutDegree, node.Elided = 0, 0, 0
+		node.Params = nil
+		for _, p := range n.Params {
+			if !sel.params[p.ID] {
+				continue
+			}
+			param := *p
+			param.EdgeCount = 0
+			node.Params = append(node.Params, &param)
+		}
+
+		kept[n.ID] = &node
+		out.Nodes = append(out.Nodes, &node)
+	}
+
+	params := make(map[ParamID]*Param, len(sel.params))
+	for _, n := range out.Nodes {
+		for _, p := range n.Params {
+			params[p.ID] = p
+		}
+	}
+
+	for _, e := range g.Edges {
+		from, to := kept[e.From], kept[e.To]
+
+		// An edge whose other end went is not drawn, but it is the reason a
+		// surviving node can say the graph carries on past it.
+		if from != nil && sel.gone[e.To] {
+			from.Elided++
+		}
+		if to != nil && sel.gone[e.From] {
+			to.Elided++
+		}
+
+		if from == nil || to == nil || !sel.params[e.Param] {
+			continue
+		}
+		from.OutDegree++
+		to.InDegree++
+		if p := params[e.Param]; p != nil {
+			p.EdgeCount++
+		}
+		out.Edges = append(out.Edges, e)
+	}
+
+	out.Scopes = g.keptScopes(kept)
+	out.Bindings = keptBindings(g.Bindings, out.Edges, kept)
+	return out
+}
+
+// keptScopes keeps the scopes that still hold a node, and the ancestors that
+// contain them: a scope box with nothing in it says nothing, but a gap in the
+// middle of a path would misplace the scopes below it.
+func (g *Graph) keptScopes(kept map[NodeID]*Node) []*Scope {
+	wanted := make(map[ScopeID]bool)
+	for _, n := range kept {
+		for id := n.Scope; id != ""; {
+			if wanted[id] {
+				break
+			}
+			wanted[id] = true
+
+			scope, ok := g.Scope(id)
+			if !ok {
+				break
+			}
+			id = scope.Parent
+		}
+	}
+
+	var out []*Scope
+	for _, scope := range g.Scopes {
+		if wanted[scope.ID] {
+			out = append(out, scope)
+		}
+	}
+	return out
+}
+
+// keptBindings drops the bindings of scopes that went, points the rest at the
+// targets that remain, and counts them against the edges still drawn - so a
+// binding reported as unused in a narrowed graph is unused in that graph.
+func keptBindings(bindings []*Binding, edges []*Edge, kept map[NodeID]*Node) []*Binding {
+	type hop struct {
+		scope ScopeID
+		iface string
+	}
+
+	used := make(map[hop]int)
+	for _, e := range edges {
+		for _, b := range e.Bindings {
+			used[hop{b.Scope, b.Interface}]++
+		}
+	}
+
+	var out []*Binding
+	for _, b := range bindings {
+		targets := make([]NodeID, 0, len(b.Targets))
+		for _, id := range b.Targets {
+			if kept[id] != nil {
+				targets = append(targets, id)
+			}
+		}
+		if len(targets) == 0 && len(b.Targets) > 0 {
+			continue
+		}
+
+		binding := *b
+		binding.Targets = targets
+		binding.EdgeCount = used[hop{b.Scope, b.Interface}]
+		out = append(out, &binding)
+	}
+	return out
+}
