@@ -285,6 +285,9 @@ func snapshotModel() *graph.Graph {
 		Origin: graph.ArgOriginNone,
 		Arg:    graph.ArgKindNone,
 	}}
+	// Set by the extractor from the argument above; written down here because
+	// this fixture is built by hand.
+	metrics.Incomplete = true
 
 	return g
 }

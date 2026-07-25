@@ -499,7 +499,7 @@ func (s *Snapshot) Label() string {
 	case s == nil:
 		return ""
 	case s.Failed != "":
-		return "taken where compilation stopped: the " + s.Failed + " pass failed"
+		return "taken where the " + s.Failed + " pass failed"
 	case s.Pass != "":
 		return "taken during the " + s.Pass + " pass"
 	case s.Stage != "":
@@ -507,13 +507,6 @@ func (s *Snapshot) Label() string {
 	default:
 		return "taken before the container was compiled"
 	}
-}
-
-// Caveat is what a reader needs to know to read a partial graph correctly.
-// Every encoder says it, so it is worded once, here.
-func (s *Snapshot) Caveat() string {
-	return "wiring the remaining passes would add is missing: an argument can read as not wired, " +
-		"and a node nothing injects yet reads as a root"
 }
 
 // Partial reports that the graph was taken while the container was still being

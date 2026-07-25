@@ -709,8 +709,7 @@ func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
 
 	require.Equal(t, "argument validation", g.Snapshot.Failed)
 	require.True(t, g.Snapshot.Autowired, "autowiring ran before the pass that failed")
-	require.Equal(t, "taken where compilation stopped: the argument validation pass failed",
-		g.Snapshot.Label())
+	require.Equal(t, "taken where the argument validation pass failed", g.Snapshot.Label())
 
 	p := paramOf(t, g, "v2_test.(*Server)", 1)
 	require.True(t, p.Unresolved, "the argument that stopped the build says so")

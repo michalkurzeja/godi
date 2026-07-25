@@ -361,7 +361,6 @@ func TestASnapshotSaysSoBeforeAnythingElse(t *testing.T) {
 
 	require.Contains(t, out, "snapshot: taken during the graph snapshot pass")
 	require.Contains(t, out, "passes run: interface binding, autowiring")
-	require.Contains(t, out, "reads as a root", "the caveat every format repeats")
 
 	lines := strings.Split(out, "\n")
 	require.Contains(t, lines[1], "snapshot:", "it belongs under the counts it qualifies")

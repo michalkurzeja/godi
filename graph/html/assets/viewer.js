@@ -190,8 +190,10 @@ const shownParam = (p) => state.args && (state.show.method || !isMethod(p));
 function rows(n) {
 	const lines = [];
 	// A root is the top of a tree, and a function is a function; a root
-	// function wears both.
-	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
+	// function wears both. A node missing something it needs leads with the
+	// warning, because that is the one you are looking for.
+	const head = (n.incomplete ? '⚠ ' : '') + (n.root ? '▲ ' : '') +
+		(n.kind === 'function' ? 'ƒ ' : '');
 	const heading = displayName(n);
 	const sub = displaySub(n);
 	lines.push(clip(head + heading));
@@ -314,6 +316,7 @@ function buildElements() {
 			data: {
 				id: n.id, parent: 'scope:' + n.scope,
 				kind: n.kind, shared: n.shared, lazy: n.lazy, root: n.root,
+				incomplete: !!n.incomplete,
 				...boxOf(n),
 			},
 		});
@@ -374,8 +377,11 @@ function stylesheet() {
 				// says so: width and style already mean lazy and shared, and a
 				// root is not a problem, so it gets no warning colour.
 				'background-color': (n) => n.data('root') ? p.rootNode : p.node,
-				'border-color': p.nodeBorder,
-				'border-width': (n) => n.data('lazy') ? 1 : 2.2,
+				// The warning colour outranks everything: a node missing what it
+				// needs is the one thing worth finding at a glance, and the
+				// border is the only channel loud enough to say so.
+				'border-color': (n) => n.data('incomplete') ? p.warn : p.nodeBorder,
+				'border-width': (n) => n.data('incomplete') ? 2.6 : (n.data('lazy') ? 1 : 2.2),
 				'border-style': (n) => n.data('kind') === 'service' && !n.data('shared') ? 'dashed' : 'solid',
 				label: 'data(label)',
 				color: p.text,
@@ -684,6 +690,8 @@ function apply() {
 		shownEdges + ' of ' + data.edges.length + ' edges',
 		roots + (roots === 1 ? ' root' : ' roots'),
 	];
+	const incomplete = cy.nodes(':childless:visible').filter((n) => n.data('incomplete')).length;
+	if (incomplete) counts.push(incomplete + ' incomplete');
 	if (notices.length) counts.push(notices.length + ' warnings');
 	$('counts').textContent = counts.join(' · ');
 	$('counts').title = notices.join('\n');
@@ -701,12 +709,15 @@ function showSnapshot() {
 	const snap = data.snapshot;
 	if (!snap) return;
 
-	const note = [snap.caveat[0].toUpperCase() + snap.caveat.slice(1)];
-	if (snap.done && snap.done.length) note.push('Passes run: ' + snap.done.join(', '));
-
+	const strip = $('snapshot');
 	$('snapshot-label').textContent = 'Snapshot: ' + snap.label + '.';
-	$('snapshot-note').textContent = note.join('. ') + '.';
-	$('snapshot').hidden = false;
+	strip.hidden = false;
+	// Read once and dismissed: it says the same thing all session, and the
+	// canvas is what the reader came for.
+	$('snapshot-close').addEventListener('click', () => {
+		strip.hidden = true;
+		cy.resize();
+	});
 }
 
 // ------------------------------------------------------------------ legend ---
@@ -1019,6 +1030,8 @@ function showPanel(id) {
 	if (!n.autowired) badges.append(badge('not autowired'));
 	if (n.instantiated) badges.append(badge('instantiated'));
 	if (n.root) badges.append(badge('root', 'root'));
+	// Last, so it reads as the answer to the border rather than as another flag.
+	if (n.incomplete) badges.append(badge('incomplete', 'incomplete'));
 	parts.push(badges);
 	parts.push(copyIDButton(n.id));
 

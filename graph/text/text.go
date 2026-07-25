@@ -108,7 +108,6 @@ func (p *printer) snapshot(g *graph.Graph) {
 	}
 
 	p.line(0, "snapshot: %s", g.Snapshot.Label())
-	p.line(1, "%s", g.Snapshot.Caveat())
 	if len(g.Snapshot.Done) > 0 {
 		p.line(1, "passes run: %s", strings.Join(g.Snapshot.Done, ", "))
 	}

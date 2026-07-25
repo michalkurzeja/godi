@@ -110,10 +110,11 @@
 	     like a finished one with dependencies missing. Only this says which. -->
 	<div id="snapshot" role="status" hidden>
 		<svg class="i"><use href="#i-snapshot"/></svg>
-		<span>
-			<b id="snapshot-label"></b>
-			<span id="snapshot-note"></span>
-		</span>
+		<span id="snapshot-label"></span>
+		<span class="grow"></span>
+		<button id="snapshot-close" type="button" title="Hide this">
+			<svg class="i"><use href="#i-clear"/></svg>
+		</button>
 	</div>
 
 	<main>

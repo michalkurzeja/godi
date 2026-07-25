@@ -1776,16 +1776,48 @@ await test('a graph taken mid-build says so across the top', async () => {
 	})()`);
 
 	if (strip.hidden) return 'the strip stayed hidden on a snapshot';
-	if (!strip.text.includes('taken during the autowiring pass')) return strip.text;
-	if (!strip.text.includes('Passes run: interface binding')) return strip.text;
-	return strip.text.includes('reads as a root') || strip.text;
+	return strip.text.includes('taken during the autowiring pass') || strip.text;
 });
+
+await test('and the strip can be dismissed, because it takes room', async () =>
+	await ev(`(() => {
+		document.getElementById('snapshot-close').click();
+		return document.getElementById('snapshot').hidden;
+	})()`) === true || 'the strip stayed after its close button was clicked');
+
+// The whole point of the mark: find the service that stopped the build without
+// reading every argument of every service.
+await test('a node missing something it needs is drawn in the warning colour', async () => {
+    const style = await ev(`(() => {
+        const hex = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim();
+        const rgb = 'rgb(' + [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',') + ')';
+        const broken = godi.cy.getElementById('root/svc:app.(*Metrics)');
+        const sound = godi.cy.getElementById('root/svc:app.(*Config)');
+        return {
+            warn: rgb,
+            border: broken.style('border-color'),
+            other: sound.style('border-color'),
+            width: parseFloat(broken.style('border-width')),
+            label: broken.data('label').split('\\n')[0],
+        };
+    })()`);
+
+    if (style.border !== style.warn) return `border is ${style.border}, want the warning colour ${style.warn}`;
+    if (style.other === style.warn) return 'a node with nothing wrong with it is drawn as a warning';
+    if (!(style.width > 2.2)) return `border width ${style.width} does not stand out`;
+    return style.label.startsWith('\u26a0') || `the box does not lead with the warning mark: ${style.label}`;
+});
+
+await test('the footer counts what is incomplete', async () =>
+    (await ev(`document.getElementById('counts').textContent`)).includes('1 incomplete') ||
+        await ev(`document.getElementById('counts').textContent`));
 
 await test('an argument nothing has wired yet says so, rather than saying none', async () => {
 	await tapNode('root/svc:app.(*Metrics)');
 	const text = await panelText();
 
 	if (!text.includes('Not wired')) return text;
+	if (!text.includes('Incomplete')) return 'the panel does not say the service is incomplete';
 	return !/\bnone\b/i.test(text) || 'the panel called an unwired argument "none"';
 });
 

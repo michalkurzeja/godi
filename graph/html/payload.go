@@ -33,9 +33,8 @@ type payload struct {
 // has to tell the reader is the same in every format, so it is written once, in
 // the model.
 type viewSnapshot struct {
-	Label  string   `json:"label"`
-	Caveat string   `json:"caveat"`
-	Done   []string `json:"done,omitzero"`
+	Label string   `json:"label"`
+	Done  []string `json:"done,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -83,6 +82,9 @@ type viewNode struct {
 	Autowired    bool `json:"autowired"`
 	Instantiated bool `json:"instantiated"`
 	Root         bool `json:"root"`
+	// Incomplete is what the red border and the warning mark are drawn from:
+	// something this node needs is not there.
+	Incomplete bool `json:"incomplete,omitzero"`
 	// Elided is how many neighbours a filter cut off, so the page can say the
 	// graph carries on where it stops.
 	Elided int `json:"elided,omitzero"`
@@ -170,11 +172,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 		p.Notices = append(p.Notices, d.Message)
 	}
 	if g.Partial() {
-		p.Snapshot = &viewSnapshot{
-			Label:  g.Snapshot.Label(),
-			Caveat: g.Snapshot.Caveat(),
-			Done:   g.Snapshot.Done,
-		}
+		p.Snapshot = &viewSnapshot{Label: g.Snapshot.Label(), Done: g.Snapshot.Done}
 	}
 
 	return p
@@ -198,6 +196,7 @@ func newViewNode(node *graph.Node) viewNode {
 		Autowired:    node.Autowired,
 		Instantiated: node.Instantiated,
 		Root:         node.Root,
+		Incomplete:   node.Incomplete,
 		Elided:       node.Elided,
 		Registered:   newViewLocation(node.Registered),
 		Defined:      newViewLocation(node.Defined),

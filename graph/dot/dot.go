@@ -469,7 +469,7 @@ func (p *printer) notices(g *graph.Graph) {
 	// A half-wired picture looks exactly like a finished one with dependencies
 	// missing, so the drawing has to say which it is.
 	if g.Partial() {
-		lines = append(lines, esc("snapshot: "+g.Snapshot.Label()), esc(g.Snapshot.Caveat()))
+		lines = append(lines, esc("snapshot: "+g.Snapshot.Label()))
 		if len(g.Snapshot.Done) > 0 {
 			lines = append(lines, esc("passes run: "+strings.Join(g.Snapshot.Done, ", ")))
 		}

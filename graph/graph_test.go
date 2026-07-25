@@ -352,7 +352,7 @@ func TestASnapshotSaysWhenItWasTaken(t *testing.T) {
 		{
 			"where it stopped, which beats both",
 			&graph.Snapshot{Stage: "validation", Failed: "argument validation"},
-			"taken where compilation stopped: the argument validation pass failed",
+			"taken where the argument validation pass failed",
 		},
 	}
 

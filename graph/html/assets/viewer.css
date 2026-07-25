@@ -105,18 +105,19 @@ body {
    and a graph that stops short without saying so reads as the whole story. */
 #snapshot {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	gap: .5rem;
-	padding: .4rem .7rem;
+	padding: .3rem .7rem;
 	font-size: 12px;
+	font-weight: 600;
 	color: var(--warn);
 	background: color-mix(in srgb, var(--warn) 8%, var(--chrome));
 	border-bottom: 1px solid var(--border);
 }
 #snapshot[hidden] { display: none; }
-#snapshot .i { flex: none; margin-top: .1rem; }
-#snapshot b { font-weight: 600; }
-#snapshot-note { color: var(--muted); }
+#snapshot .i { flex: none; }
+#snapshot-close { padding: .1rem; border: 0; background: none; color: inherit; line-height: 0; }
+#snapshot-close:hover { color: var(--text); }
 
 #brand { font-weight: 600; white-space: nowrap; }
 
@@ -554,6 +555,7 @@ kbd {
 .badge.origin-autowiring { color: var(--auto); border-color: var(--auto); }
 .badge.origin-compiler-pass { color: var(--pass); border-color: var(--pass); }
 .badge.origin-none { color: var(--warn); border-color: var(--warn); }
+.badge.incomplete { color: var(--warn); border-color: var(--warn); }
 
 .method {
 	font-family: var(--mono);
