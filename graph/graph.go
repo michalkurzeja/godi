@@ -151,6 +151,15 @@ type Node struct {
 	// an exclusion the caller named, because the point of it is to say that the
 	// graph carries on where the picture stops.
 	Elided int `json:"elided,omitzero"`
+	// Incomplete reports that this node is missing something it needs: an
+	// argument naming a dependency the container does not have, or one nothing
+	// has wired and nothing is going to. It is what a build that failed looks
+	// like from here, and the reason is on the argument itself.
+	//
+	// An argument not wired *yet* does not count: before autowiring has run,
+	// that is work outstanding rather than anything wrong. A built container
+	// never has either, since validation would have rejected it.
+	Incomplete bool `json:"incomplete,omitzero"`
 }
 
 // TypeShort is Type without the package path, for labels.

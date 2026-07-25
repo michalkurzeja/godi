@@ -17,7 +17,12 @@ import (
 type extractor struct {
 	container *Container
 	cfg       graph.Config
-	out       *graph.Graph
+	// snapshot says how far compilation had got, and is nil for a container
+	// that finished building. It decides what counts as missing: before
+	// autowiring runs, an unwired argument is work outstanding rather than a
+	// fault.
+	snapshot *graph.Snapshot
+	out      *graph.Graph
 
 	scopeIDs map[*Scope]graph.ScopeID
 	svcIDs   map[*ServiceDefinition]graph.NodeID
@@ -26,11 +31,12 @@ type extractor struct {
 	minted   map[string]int      // Node ID collision counters.
 }
 
-func newExtractor(c *Container, cfg graph.Config) *extractor {
+func newExtractor(c *Container, cfg graph.Config, snapshot *graph.Snapshot) *extractor {
 	return &extractor{
 		container: c,
 		cfg:       cfg,
-		out:       &graph.Graph{Schema: graph.Schema},
+		snapshot:  snapshot,
+		out:       &graph.Graph{Schema: graph.Schema, Snapshot: snapshot},
 		scopeIDs:  make(map[*Scope]graph.ScopeID),
 		svcIDs:    make(map[*ServiceDefinition]graph.NodeID),
 		funIDs:    make(map[*FunctionDefinition]graph.NodeID),
@@ -45,6 +51,7 @@ func (x *extractor) extract() *graph.Graph {
 	x.markCollected()
 	x.buildBindings()
 	x.markCycles()
+	x.markIncomplete()
 	x.countDegrees()
 	x.sortAll()
 	x.trimSourceRoot()
@@ -703,6 +710,26 @@ func (x *extractor) markCycles() {
 		err := g.AddEdge(edge.From, edge.To)
 		if errors.Is(err, dbgraph.ErrEdgeCreatesCycle) {
 			edge.Cycle = true
+		}
+	}
+}
+
+// markIncomplete flags the nodes something is wrong with, so a reader can find
+// them without reading every argument of every service.
+//
+// Two things count: an argument naming a dependency the container does not
+// have, and one nothing has wired once nothing is going to. Before autowiring
+// runs, the second is simply work outstanding - every argument is unwired then,
+// and marking every node would say nothing at all.
+func (x *extractor) markIncomplete() {
+	wired := x.snapshot == nil || x.snapshot.Autowired
+
+	for _, node := range x.out.Nodes {
+		for _, p := range node.Params {
+			if p.Unresolved || (wired && p.Origin == graph.ArgOriginNone) {
+				node.Incomplete = true
+				break
+			}
 		}
 	}
 }

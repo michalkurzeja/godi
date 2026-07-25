@@ -71,15 +71,15 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 // that missing wiring reads as work still to do rather than as a broken
 // container.
 //
-// Build nils out the builder's container, so this only works during compilation.
+// A successful Build nils out the builder's container and this then returns
+// nil. A failed one does not, which is deliberate: the graph of where the
+// compiler stopped is the one worth looking at.
 func (b *ContainerBuilder) Graph(cfg graph.Config) *graph.Graph {
 	if b.container == nil {
 		return nil
 	}
 
-	g := b.container.Graph(cfg)
-	g.Snapshot = b.compiler.snapshot()
-	return g
+	return newExtractor(b.container, cfg, b.compiler.snapshot()).extract()
 }
 
 func (b *ContainerBuilder) Compiler() *Compiler {

@@ -716,6 +716,56 @@ func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
 	require.True(t, p.Unresolved, "the argument that stopped the build says so")
 }
 
+// Finding the service that failed by reading every argument of every service is
+// the work the graph is supposed to save.
+func TestTheNodeThatStoppedTheBuildIsMarkedIncomplete(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+	)
+	_, err := b.Build()
+	require.Error(t, err)
+
+	g := extract(t, b)
+
+	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete,
+		"the service missing a dependency is the one to find")
+	require.False(t, nodeOf(t, g, "v2_test.EnGreeter").Incomplete,
+		"a service with nothing wrong with it must not be flagged")
+}
+
+// Before autowiring runs every argument is unwired, so marking each of them
+// would point at everything, which is the same as pointing at nothing.
+func TestNothingIsIncompleteBeforeAutowiringHasRun(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+	)
+
+	for _, n := range extract(t, b).Nodes {
+		require.False(t, n.Incomplete, "%s is only waiting to be wired", n.ID)
+	}
+}
+
+func TestABuiltContainerHasNothingIncompleteInIt(t *testing.T) {
+	t.Parallel()
+
+	c, err := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+		godi.Svc(NewStore),
+	).Build()
+	require.NoError(t, err)
+
+	for _, n := range extract(t, c).Nodes {
+		require.False(t, n.Incomplete, "%s", n.ID)
+	}
+}
+
 func TestABuilderIsAGraphSourceBeforeItIsBuilt(t *testing.T) {
 	t.Parallel()
 

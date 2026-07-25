@@ -96,7 +96,7 @@ func (c *Container) Print(w io.Writer) {
 //
 // Prefer graph.Extract, which takes the options rather than a built Config.
 func (c *Container) Graph(cfg graph.Config) *graph.Graph {
-	return newExtractor(c, cfg).extract()
+	return newExtractor(c, cfg, nil).extract()
 }
 
 // scopesSeq yields every scope in the container, in the order they were created.
