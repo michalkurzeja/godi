@@ -1,10 +1,7 @@
 package html
 
 import (
-	"strings"
-
 	"github.com/michalkurzeja/godi/v2/graph"
-	"github.com/michalkurzeja/godi/v2/graph/internal/render"
 )
 
 // The payload is the model as the page's script wants it: flat, pre-shortened,
@@ -71,10 +68,6 @@ type viewNode struct {
 
 	Registered *viewLocation `json:"registered,omitzero"`
 	Defined    *viewLocation `json:"defined,omitzero"`
-
-	// Search is every searchable string of the node, lowercased and joined, so
-	// that filtering as the reader types is one substring test per node.
-	Search string `json:"search"`
 }
 
 type viewParam struct {
@@ -140,7 +133,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 			ID:     scope.ID,
 			Parent: scope.Parent,
 			Depth:  scope.Depth,
-			Label:  scopeLabel(scope),
+			Label:  scope.Label(),
 		})
 	}
 	for _, node := range g.Nodes {
@@ -178,9 +171,6 @@ func newViewNode(node *graph.Node) viewNode {
 	for _, param := range node.Params {
 		out.Params = append(out.Params, newViewParam(param))
 	}
-
-	terms := append([]string{node.Type, node.Name, string(node.Scope)}, node.Labels...)
-	out.Search = strings.ToLower(strings.Join(terms, " "))
 
 	return out
 }
@@ -258,17 +248,4 @@ func literalText(lit graph.Literal) string {
 	default:
 		return lit.Value
 	}
-}
-
-// scopeLabel names a scope for a reader. A child scope's own name is the uuid
-// of the definition that declared it, which says nothing.
-func scopeLabel(scope *graph.Scope) string {
-	if scope.Owner == "" {
-		return string(scope.ID)
-	}
-	owner := render.Short(string(scope.Owner))
-	if _, name, ok := strings.Cut(owner, ":"); ok {
-		owner = name
-	}
-	return "children of " + owner
 }

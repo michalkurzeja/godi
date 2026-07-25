@@ -133,10 +133,9 @@ const headings = () => ev(`[...document.querySelectorAll('#panel h3')].map(h => 
 
 async function toggle(name, on) {
 	await ev(`(() => {
-		const box = document.querySelector('[data-show=${JSON.stringify(name)}]')
-			|| document.querySelector('[data-flag=${JSON.stringify(name)}]');
-		box.checked = ${on};
-		box.dispatchEvent(new Event('change'));
+		const button = document.querySelector('[data-show=${JSON.stringify(name)}], [data-flag=${JSON.stringify(name)}]');
+		if ((button.getAttribute('aria-pressed') === 'true') !== ${on}) button.click();
+		return true;
 	})()`);
 	await settle();
 }
@@ -191,6 +190,67 @@ await test('graphviz placed the nodes', async () => {
 
 // --- reported: the method calls filter did not hide anything ---------------
 
+// --- the node box reads as sections -----------------------------------------
+
+await test('the label leaves a blank row between sections', async () => {
+	const lines = await rows(SERVER);
+	const blanks = lines.map((l, i) => l.trim() === '' ? i : -1).filter((i) => i >= 0);
+	return eq(blanks, [2, 5], `blank rows in ${JSON.stringify(lines)}`);
+});
+
+// A label is one colour throughout, so the rules are drawn as an image instead
+// of typed into it.
+await test('and a rule is drawn across each one', async () => {
+	const uri = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).data('rules')`);
+	const svg = decodeURIComponent(uri.replace(/^data:image\/svg\+xml;charset=utf-8,/, ''));
+	return (uri.startsWith('data:image/svg+xml;charset=utf-8,') && (svg.match(/<line /g) || []).length === 2)
+		|| `the rules image is ${uri.slice(0, 60)}`;
+});
+
+// The image is stretched over the box, so a guess at the box's size slides the
+// lines - and slides the lower ones furthest.
+await test('the rules image is sized to the box it is stretched over', async () => {
+	const [uri, w, h] = await ev(`(() => {
+		const n = godi.cy.getElementById(${JSON.stringify(SERVER)});
+		return [n.data('rules'), n.outerWidth(), n.outerHeight()];
+	})()`);
+	const svg = decodeURIComponent(uri.replace(/^data:image\/svg\+xml;charset=utf-8,/, ''));
+	const box = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+	return (Math.abs(Number(box[1]) - w) < 0.01 && Math.abs(Number(box[2]) - h) < 0.01)
+		|| `viewBox ${box[1]}x${box[2]} against a box of ${w}x${h}`;
+});
+
+await test('and the rules stop short of the border', async () => {
+	const uri = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).data('rules')`);
+	const svg = decodeURIComponent(uri.replace(/^data:image\/svg\+xml;charset=utf-8,/, ''));
+	const x1 = Number(svg.match(/x1="([\d.]+)"/)[1]);
+	// The same margin the text keeps.
+	return Math.abs(x1 - 7) < 0.01 || `a rule starts ${x1}px from the edge`;
+});
+
+// The ports are read off the line each argument lands on, so a blank row for a
+// rule has to push them down with it.
+await test('the ports follow the rules down the box', async () => {
+	const lines = await rows(SERVER);
+	const edges = await ev(`(() => {
+		const node = godi.data.nodes.find((x) => x.id === ${JSON.stringify(SERVER)});
+		return godi.data.edges.filter((e) => e.from === node.id).map((e) => {
+			const p = node.params.find((q) => q.id === e.param);
+			return {
+				head: (p.method ? p.method + ' ' : '') + p.index + ' ',
+				offset: godi.cy.getElementById(e.id).data('offset'),
+			};
+		});
+	})()`);
+
+	const LINE = 11 * 1.3;
+	const adrift = edges.filter(({ head, offset }) => {
+		const row = lines.findIndex((l) => l.startsWith(head));
+		return row < 0 || Math.abs(offset - (row + 0.5 - lines.length / 2) * LINE) > 0.01;
+	});
+	return adrift.length === 0 || `edges no longer leaving their own row: ${JSON.stringify(adrift)}`;
+});
+
 await test('method rows are in the node box', async () => {
 	const lines = await rows(SERVER);
 	return (lines.some((l) => l.startsWith('SetLogger')) && lines.some((l) => l.startsWith('SetTimeout')))
@@ -209,10 +269,10 @@ await test('unticking method calls hides the edge one carries', async () =>
 	(await visibleEdges()).every((id) => !id.includes('SetLogger'))
 	|| 'the SetLogger edge is still drawn');
 
-await test('the box shrinks by exactly the two rows removed', async () => {
+await test('the box shrinks by the rows removed, and their rule', async () => {
 	const now = await height(SERVER);
 	const shrunk = withMethods - now;
-	return Math.abs(shrunk - 2 * 14.3) < 1 || `shrank by ${shrunk}px, expected ${2 * 14.3}`;
+	return Math.abs(shrunk - 3 * 14.3) < 1 || `shrank by ${shrunk}px, expected ${3 * 14.3}`;
 });
 
 await test('the node the method call fed goes with it', async () =>
@@ -358,7 +418,7 @@ await test('the icon sprite takes up no room', async () =>
 await test('every control label starts with a capital', async () => {
 	const labels = await ev(`(() => {
 		const text = [];
-		for (const el of document.querySelectorAll('#bar button, #bar option, #filters .chk, #filters .glabel, #status button')) {
+		for (const el of document.querySelectorAll('#bar button, #bar option, #filters button, #filters .glabel, #status button, #status option')) {
 			const t = el.textContent.trim();
 			if (t) text.push(t);
 		}
@@ -370,13 +430,31 @@ await test('every control label starts with a capital', async () => {
 });
 
 await test('the compiler pass filter is not called "a compiler pass"', async () =>
-	eq(await ev(`document.querySelector('[data-show="compiler-pass"]').parentElement.textContent.trim()`),
+	eq(await ev(`document.querySelector('[data-show="compiler-pass"]').textContent.trim()`),
 		'Compiler pass', 'the filter label'));
+
+// Filters are toggles rather than a one-of-many choice, so they say "on" by
+// standing out of the bar rather than by filling with the accent.
+await test('the filters are grouped toggle buttons', async () =>
+	eq(await ev(`[...document.querySelectorAll('#filters .seg')].map(g =>
+		[g.classList.contains('toggles'), [...g.querySelectorAll('button')].map(b => b.dataset.show || b.dataset.flag)])`),
+		[
+			[true, ['manual', 'autowiring', 'compiler-pass']],
+			[true, ['method', 'args', 'isolate', 'rootsOnly']],
+		], 'the filter groups'));
+
+await test('a filter button carries its state', async () => {
+	const before = await ev(`document.querySelector('[data-show="method"]').getAttribute('aria-pressed')`);
+	await toggle('method', false);
+	const after = await ev(`document.querySelector('[data-show="method"]').getAttribute('aria-pressed')`);
+	await toggle('method', true);
+	return eq([before, after], ['true', 'false'], 'the pressed state');
+});
 
 await test('every top bar control carries an icon', async () =>
 	eq(await ev(`(() => {
 		const missing = [];
-		for (const el of document.querySelectorAll('#bar button, #bar label')) {
+		for (const el of document.querySelectorAll('#bar > button, #bar > label, #bar > .seg button')) {
 			if (!el.querySelector('svg use')) missing.push(el.id || el.textContent.trim());
 		}
 		return missing;
@@ -392,29 +470,551 @@ await test('the icons resolve to symbols that exist', async () =>
 		return broken;
 	})()`), [], 'dangling icon references'));
 
-await test('the shortcuts link fills the panel', async () => {
-	await ev(`(() => { document.getElementById('shortcuts').click(); return true; })()`);
-	const headings = await ev(`[...document.querySelectorAll('#panel h2, #panel h3')].map(h => h.textContent)`);
-	return eq(headings, ['Shortcuts', 'Keyboard', 'Mouse'], 'the shortcuts panel');
+// --- edge routing ----------------------------------------------------------
+
+const routeAs = (style) => ev(`(() => {
+	const s = document.getElementById('routing'); s.value = ${JSON.stringify(style)};
+	s.dispatchEvent(new Event('change'));
+	return godi.cy.edges()[0].style('curve-style');
+})()`);
+
+await test('the routing selector starts curved', async () =>
+	eq(await ev(`[document.getElementById('routing').value, godi.cy.edges()[0].style('curve-style')]`),
+		['unbundled-bezier', 'unbundled-bezier'], 'the default routing'));
+
+await test('every routing the selector offers reaches the edges', async () => {
+	const offered = await ev(`[...document.querySelectorAll('#routing option')].map(o => o.value)`);
+	for (const style of offered) {
+		const got = await routeAs(style);
+		if (got !== style) return `${style} did not take: edges are ${got}`;
+	}
+	await routeAs('unbundled-bezier');
+	return eq(offered, ['unbundled-bezier', 'straight', 'segments', 'taxi'], 'the routings offered');
 });
 
-await test('keys wear keycaps and gestures do not', async () =>
-	eq(await ev(`[
-		[...document.querySelectorAll('#panel kbd')].map(k => k.textContent),
-		[...document.querySelectorAll('#panel .gesture')].length,
-	]`), [['/', 'Enter', 'Esc', 'f', 'r', 't', '?'], 5], 'keys and gestures'));
+// A curve has to actually bend: a plain bezier is drawn straight for an edge
+// that has no siblings between the same pair of nodes.
+await test('curved edges are not straight ones', async () => {
+	const bowed = await ev(`(() => {
+		const e = godi.cy.edges()[0];
+		const mid = e.midpoint();
+		const s = e.sourceEndpoint(), t = e.targetEndpoint();
+		return Math.hypot(mid.x - (s.x + t.x) / 2, mid.y - (s.y + t.y) / 2);
+	})()`);
+	return bowed > 2 || `the midpoint sits ${bowed.toFixed(2)}px off the straight line`;
+});
+
+// --- what search looks at ---------------------------------------------------
+
+const scopeState = () => ev(`[...document.querySelectorAll('[data-scope]')].map(b =>
+	[b.dataset.scope, b.getAttribute('aria-pressed') === 'true'])`);
+
+const setScope = async (name, on) => {
+	await ev(`(() => {
+		const b = document.querySelector('[data-scope=${JSON.stringify(name)}]');
+		if ((b.getAttribute('aria-pressed') === 'true') !== ${on}) b.click();
+		return true;
+	})()`);
+	await sleep(60);
+};
+
+const searchFor = async (text) => {
+	await ev(`(() => {
+		const s = document.getElementById('search');
+		s.value = ${JSON.stringify(text)}; s.dispatchEvent(new Event('input'));
+		return true;
+	})()`);
+	await sleep(220);
+	return ev(`godi.cy.nodes('.match').map(n => n.id()).sort()`);
+};
+
+await test('the scope panel is hidden until the box is focused', async () => {
+	const before = await ev(`getComputedStyle(document.getElementById('search-scopes')).display`);
+	await ev(`(() => { document.getElementById('search').focus(); return true; })()`);
+	const after = await ev(`getComputedStyle(document.getElementById('search-scopes')).display`);
+	return (before === 'none' && after !== 'none') || `display went ${before} -> ${after}`;
+});
+
+await test('the type and the factory are searched, the rest are not', async () =>
+	eq(await scopeState(), [
+		['type', true], ['factory', true], ['args', false], ['literals', false],
+		['methods', false], ['scope', false], ['labels', false],
+	], 'the scopes out of the box'));
+
+await test('a literal is not searched until literals are', async () => {
+	const before = await searchFor('127.0.0.1');
+	await setScope('literals', true);
+	const after = await searchFor('127.0.0.1');
+	await setScope('literals', false);
+	return (before.length === 0 && after.includes('root/svc:app.(*Server)'))
+		|| `found ${JSON.stringify(before)} then ${JSON.stringify(after)}`;
+});
+
+// Method arguments are only in reach once method calls are.
+await test('argument types reach method arguments only with method calls on', async () => {
+	await setScope('args', true);
+	const withoutMethods = await searchFor('app.logger');
+	await setScope('methods', true);
+	const withMethods = await searchFor('app.logger');
+	await setScope('args', false);
+	await setScope('methods', false);
+	await searchFor('');
+
+	// Only the Server takes a Logger, and only through a method call.
+	return (!withoutMethods.includes('root/svc:app.(*Server)') && withMethods.includes('root/svc:app.(*Server)'))
+		|| `without ${JSON.stringify(withoutMethods)}, with ${JSON.stringify(withMethods)}`;
+});
+
+// --- the legend ------------------------------------------------------------
+
+const legendShown = () => ev(`document.getElementById('app').classList.contains('legend-open')`);
+
+await test('the legend starts closed', async () =>
+	await legendShown() === false || 'it started open');
+
+await test('its tab reads Legend', async () =>
+	eq(await ev(`document.getElementById('legend-tab').textContent.trim()`), 'Legend', 'the tab'));
+
+await test('the tab opens it and it stays', async () => {
+	await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+	await sleep(80);
+	return (await legendShown() === true && await ev(`document.getElementById('legend').offsetWidth > 0`))
+		|| 'the tab did not open the legend';
+});
+
+await test('it covers all three channels an edge is drawn with', async () =>
+	eq(await ev(`[...document.querySelectorAll('#legend .legend-head')].map(h => h.firstChild.textContent)`),
+		['Head', 'Cycle', 'Colour', 'Line'], 'the legend sections'));
+
+await test('and every variation within them', async () =>
+	eq(await ev(`[...document.querySelectorAll('#legend .legend-row')].map(r => r.textContent)`), [
+		'Exact type', 'Interface binding', 'Loops back',
+		'You', 'godi', 'A compiler pass',
+		'You', 'godi', 'A compiler pass',
+	], 'the legend rows'));
+
+// The samples read the same custom properties the canvas does, so the legend
+// cannot come to disagree with the graph it explains.
+await test('the samples are the colours the graph actually uses', async () => {
+	const pairs = await ev(`(() => {
+		const flat = (c) => c.replace(/\\s/g, '');
+		const of = (decided) => {
+			const e = godi.cy.edges().filter(x => x.data('decidedBy') === decided)[0];
+			return e ? flat(e.style('line-color')) : null;
+		};
+		return {
+			manual: [flat(getComputedStyle(document.querySelector('#legend .sample.manual')).color), of('manual')],
+			auto: [flat(getComputedStyle(document.querySelector('#legend .sample.auto')).color), of('autowiring')],
+			pass: [flat(getComputedStyle(document.querySelector('#legend .sample.pass')).color), of('compiler-pass')],
+		};
+	})()`);
+	const wrong = Object.entries(pairs).filter(([, [a, b]]) => b !== null && a !== b);
+	return wrong.length === 0 || `legend and graph disagree: ${JSON.stringify(wrong)}`;
+});
+
+// The tab rides on the panel's edge rather than the window's, so it has to move
+// when the panel opens.
+// Only the Head section is about heads; elsewhere an arrow would draw the eye
+// to the wrong channel.
+await test('only the head section draws arrowheads', async () =>
+	eq(await ev(`[...document.querySelectorAll('#legend .legend-group')].map(g =>
+		[g.querySelector('.legend-head').firstChild.textContent, g.querySelectorAll('.sample .head').length])`),
+		[['Head', 2], ['Cycle', 0], ['Colour', 0], ['Line', 0]], 'arrowheads per section'));
+
+await test('the tab travels with the panel', async () => {
+	const openAt = await ev(`document.getElementById('legend-tab').getBoundingClientRect().left`);
+	await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+	await sleep(80);
+	const shutAt = await ev(`document.getElementById('legend-tab').getBoundingClientRect().left`);
+	await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+	await sleep(80);
+	return (openAt > shutAt + 50) || `tab sat at ${shutAt} closed and ${openAt} open`;
+});
+
+await test('and sits against the window edge when closed', async () => {
+	await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+	await sleep(80);
+	return eq(await ev(`Math.round(document.getElementById('legend-tab').getBoundingClientRect().left)`), 0,
+		'the closed tab');
+});
+
+await test('the tab closes it again', async () => {
+	if (await legendShown() === false) {
+		await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+		await sleep(80);
+	}
+	await ev(`(() => { document.getElementById('legend-tab').click(); return true; })()`);
+	return await legendShown() === false || 'the tab did not close it';
+});
+
+// --- the panel gets out of the way -----------------------------------------
+
+const panelShown = () => ev(`!document.getElementById('app').classList.contains('panel-hidden')`);
+
+await test('the panel starts open', async () => await panelShown() === true || 'it started hidden');
+
+await test('the tab hides it', async () => {
+	await ev(`(() => { document.getElementById('panel-tab').click(); return true; })()`);
+	return await panelShown() === false || 'the tab did not hide it';
+});
+
+await test('the canvas takes the room', async () =>
+	await ev(`document.getElementById('panel').offsetWidth === 0`)
+	|| 'the panel is hidden but still occupying its column');
+
+// The whole point: a stray click must not cost the reader the space they asked
+// for, but it must not silently swallow the change either.
+await test('selecting a node while hidden does not take it back', async () => {
+	await selectNode('root/svc:app.(*Router)');
+	return await panelShown() === false || 'a click reopened the panel';
+});
+
+await test('it flashes the tab instead', async () =>
+	await ev(`document.getElementById('panel-tab').classList.contains('flash')`)
+	|| 'nothing signalled that the panel had changed');
+
+await test('the panel filled itself anyway, ready for its return', async () =>
+	eq(await ev(`document.querySelector('#panel h2').textContent`), 'app.(*Router)', 'the hidden panel'));
+
+await test('the bottom row brings it back', async () => {
+	await ev(`(() => { document.getElementById('help').click(); return true; })()`);
+	return (await panelShown() === true && (await panelText()).includes('Two-finger swipe'))
+		|| 'Controls did not restore the panel';
+});
+
+await test('and so does the ? key', async () => {
+	await ev(`(() => { document.getElementById('panel-tab').click(); return true; })()`);
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: '?', bubbles: true})); return true; })()`);
+	return await panelShown() === true || 'the ? key left the panel hidden';
+});
+
+await selectNode(SERVER);
+
+// --- navigation: panning, zooming, and who is holding the wheel -------------
+
+const MOD_BIT = 4; // Meta, in the protocol's modifier mask. Macs only here.
+// cy.pan() returns a live object rather than a snapshot, so it has to be
+// copied before anything is compared against it.
+const view = () => ev(`({ pan: {...godi.cy.pan()}, zoom: godi.cy.zoom() })`);
+const nodeAt = () => ev(`(() => {
+	const bb = godi.cy.getElementById(${JSON.stringify(SERVER)}).renderedBoundingBox();
+	const r = document.getElementById('cy').getBoundingClientRect();
+	return { x: Math.round(r.left + (bb.x1 + bb.x2) / 2), y: Math.round(r.top + (bb.y1 + bb.y2) / 2) };
+})()`);
+
+async function dragFrom(at, { button = 'left', modifiers = 0 } = {}) {
+	const buttons = button === 'middle' ? 4 : 1;
+	await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button, buttons, modifiers, clickCount: 1 });
+	for (let i = 1; i <= 4; i++) {
+		await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + i * 16, y: at.y + i * 9, button, buttons, modifiers });
+		await sleep(25);
+	}
+	await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + 64, y: at.y + 36, button, buttons: 0, modifiers, clickCount: 1 });
+	await sleep(150);
+}
+
+const moved = (a, b) => Math.round(a.x - b.x) !== 0 || Math.round(a.y - b.y) !== 0;
+
+await test('a plain drag on a node still moves the node', async () => {
+	const at = await nodeAt();
+	const before = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const pan = (await view()).pan;
+	await dragFrom(at);
+	const after = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const panAfter = (await view()).pan;
+	return (moved(after, before) && !moved(panAfter, pan)) || 'a plain drag no longer moves the node';
+});
+
+await test('the modifier turns a drag on a node into a pan', async () => {
+	const at = await nodeAt();
+	const before = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const pan = (await view()).pan;
+
+	// The mode is armed by the key, so the key has to be down first.
+	await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: MOD_BIT, key: 'Meta', code: 'MetaLeft', windowsVirtualKeyCode: 91 });
+	await dragFrom(at, { modifiers: MOD_BIT });
+	await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 0, key: 'Meta', code: 'MetaLeft', windowsVirtualKeyCode: 91 });
+
+	const after = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const panAfter = (await view()).pan;
+	return (moved(panAfter, pan) && !moved(after, before))
+		|| `pan moved: ${moved(panAfter, pan)}, node moved: ${moved(after, before)}`;
+});
+
+await test('and releasing it hands the node back', async () =>
+	eq(await ev(`godi.cy.autoungrabify()`), false, 'grabbing after the modifier is released'));
+
+await test('losing the window releases it too', async () => {
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Meta', metaKey: true})); return true; })()`);
+	const armed = await ev(`godi.cy.autoungrabify()`);
+	await ev(`(() => { window.dispatchEvent(new Event('blur')); return true; })()`);
+	return (armed === true && await ev(`godi.cy.autoungrabify()`) === false)
+		|| 'the pan mode survives losing focus, so the graph would stay stuck';
+});
+
+await test('the middle button pans from on top of a node', async () => {
+	const at = await nodeAt();
+	const before = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const pan = (await view()).pan;
+	await dragFrom(at, { button: 'middle' });
+	const after = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
+	const panAfter = (await view()).pan;
+	return (moved(panAfter, pan) && !moved(after, before))
+		|| `pan moved: ${moved(panAfter, pan)}, node moved: ${moved(after, before)}`;
+});
+
+const wheel = (opts) => ev(`(() => {
+	const before = { pan: {...godi.cy.pan()}, zoom: godi.cy.zoom() };
+	document.getElementById('cy').dispatchEvent(new WheelEvent('wheel', Object.assign(
+		{ clientX: 600, clientY: 400, bubbles: true, cancelable: true }, ${JSON.stringify(opts)})));
+	const after = { pan: {...godi.cy.pan()}, zoom: godi.cy.zoom() };
+	return {
+		zoomed: Math.abs(after.zoom - before.zoom) > 1e-6,
+		panned: Math.round(after.pan.x - before.pan.x) !== 0 || Math.round(after.pan.y - before.pan.y) !== 0,
+	};
+})()`);
+
+const setWheel = (mode) => ev(`(() => {
+	const s = document.getElementById('wheel'); s.value = ${JSON.stringify(mode)};
+	s.dispatchEvent(new Event('change')); return true; })()`);
+
+await test('a trackpad swipe pans and does not zoom', async () =>
+	eq(await wheel({ deltaX: 14, deltaY: 23 }), { zoomed: false, panned: true }, 'a fractional two-finger swipe'));
+
+await test('a pinch zooms, because the browser flags it', async () =>
+	(await wheel({ deltaY: 18, ctrlKey: true })).zoomed || 'a pinch did not zoom');
+
+await test('a notched mouse wheel zooms', async () =>
+	(await wheel({ deltaY: 120 })).zoomed || 'a 120-step wheel did not zoom');
+
+await test('the modifier zooms whatever the wheel is', async () =>
+	(await wheel({ deltaX: 3, deltaY: 7, metaKey: true })).zoomed || 'the modifier did not zoom');
+
+await test('shift pans sideways', async () =>
+	eq(await wheel({ deltaY: 40, shiftKey: true }), { zoomed: false, panned: true }, 'shift and wheel'));
+
+// A trackpad swipe already carries both axes, so shift must not flatten it.
+await test('shift leaves a two-axis swipe alone', async () => {
+	const got = await ev(`(() => {
+		const before = {...godi.cy.pan()};
+		document.getElementById('cy').dispatchEvent(new WheelEvent('wheel',
+			{ deltaX: 12, deltaY: 30, shiftKey: true, clientX: 600, clientY: 400, bubbles: true, cancelable: true }));
+		const after = {...godi.cy.pan()};
+		return { dx: Math.round(after.x - before.x), dy: Math.round(after.y - before.y) };
+	})()`);
+	return eq(got, { dx: -12, dy: -30 }, 'a shifted swipe with both axes');
+});
+
+await test('shift still pans sideways with the switch forced to mouse', async () => {
+	await setWheel('mouse');
+	const got = await wheel({ deltaY: 40, shiftKey: true });
+	await setWheel('auto');
+	return eq(got, { zoomed: false, panned: true }, 'shift and wheel in mouse mode');
+});
+
+await test('the modifier still zooms with the switch forced to trackpad', async () => {
+	await setWheel('trackpad');
+	const got = await wheel({ deltaX: 5, deltaY: 9, metaKey: true });
+	await setWheel('auto');
+	return got.zoomed || 'the modifier did not zoom in trackpad mode';
+});
+
+await test('forcing trackpad makes a notched wheel pan', async () => {
+	await setWheel('trackpad');
+	const got = await wheel({ deltaY: 120 });
+	await setWheel('auto');
+	return eq(got, { zoomed: false, panned: true }, 'a 120-step wheel with the switch on trackpad');
+});
+
+await test('forcing mouse makes a fractional swipe zoom', async () => {
+	await setWheel('mouse');
+	const got = await wheel({ deltaX: 14, deltaY: 23 });
+	await setWheel('auto');
+	return got.zoomed || 'a swipe did not zoom with the switch forced to mouse';
+});
+
+// --- the help panel documents all of it -------------------------------------
+
+await test('the help link opens the panel', async () => {
+	await ev(`(() => { document.getElementById('help').click(); return true; })()`);
+	const headings = await ev(`[...document.querySelectorAll('#panel h2, #panel h3')].map(h => h.textContent)`);
+	return eq(headings, ['Help', 'Search', 'Keyboard', 'Mouse', 'Trackpad'], 'the help panel');
+});
+
+// Search is the one thing here that cannot be worked out by trying it, so it
+// leads, and the wheel preamble goes: the rows below already say it.
+await test('it explains what search matches, first', async () => {
+	const text = await ev(`document.getElementById('panel').textContent`);
+	const missing = ['ignores case', 'Every word has to match', 'Type', 'Factory', 'Scope', 'Labels']
+		.filter((w) => !text.includes(w));
+	return missing.length === 0 || `search is not explained: ${JSON.stringify(missing)}`;
+});
+
+await test('and drops the wheel preamble', async () =>
+	!(await ev(`document.getElementById('panel').textContent`)).includes('guesses which you are using')
+	|| 'the preamble is still there');
+
+await test('it names every way to pan and zoom', async () => {
+	const text = await ev(`document.getElementById('panel').textContent`);
+	const want = ['Middle-drag', 'Two-finger swipe', 'Pinch', 'Shift + wheel'];
+	const missing = want.filter((w) => !text.includes(w));
+	return missing.length === 0 || `undocumented: ${JSON.stringify(missing)}`;
+});
+
+// The list is for what you would not guess by trying. Clicking a node to select
+// it does not need saying, and saying it buries what does.
+await test('it leaves out what needs no telling', async () => {
+	const text = await ev(`document.getElementById('panel').textContent`);
+	const gone = ['Click a node', 'Click a scope', 'Drag a node', 'Drag the background', 'Legend tab'];
+	const kept = gone.filter((g) => text.includes(g));
+	return kept.length === 0 || `still explained: ${JSON.stringify(kept)}`;
+});
+
+await test('the modifier is spelled for this platform', async () => {
+	const text = await ev(`document.getElementById('panel').textContent`);
+	const mac = await ev(`/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)`);
+	return text.includes(mac ? '⌘ + drag' : 'Ctrl + drag')
+		|| `no modifier row for ${mac ? 'macOS' : 'this platform'}`;
+});
+
+await test('the search box has a clear button, once there is something to clear', async () => {
+	const before = await ev(`document.getElementById('search-clear').hidden`);
+	await ev(`(() => {
+		const s = document.getElementById('search');
+		s.value = 'handler'; s.dispatchEvent(new Event('input'));
+		return true;
+	})()`);
+	await sleep(200);
+	return (before === true && await ev(`document.getElementById('search-clear').hidden`) === false)
+		|| 'the clear button did not appear';
+});
+
+await test('and it empties the box and the matches', async () => {
+	await ev(`(() => { document.getElementById('search-clear').click(); return true; })()`);
+	await sleep(200);
+	return eq(await ev(`[document.getElementById('search').value, document.getElementById('found').textContent,
+		godi.cy.nodes('.match').length, document.getElementById('search-clear').hidden]`),
+		['', '', 0, true], 'after clearing');
+});
+
+await test('c clears the selection, like Esc', async () => {
+	await selectNode(SERVER);
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'c', bubbles: true})); return true; })()`);
+	return eq(await ev(`godi.cy.nodes('.sel').length`), 0, 'the selection after pressing c');
+});
+
+await test('typing c in the search box does not clear it', async () => {
+	await selectNode(SERVER);
+	await ev(`(() => {
+		const s = document.getElementById('search');
+		s.dispatchEvent(new KeyboardEvent('keydown', {key: 'c', bubbles: true}));
+		return true;
+	})()`);
+	return eq(await ev(`godi.cy.nodes('.sel').length`), 1, 'the selection while typing');
+});
+
+await test('the controls list names both keys', async () => {
+	await ev(`(() => { document.getElementById('help').click(); return true; })()`);
+	return eq(await ev(`(() => {
+		const rows = [...document.querySelectorAll('#panel dl.keys dt')];
+		const row = rows.find(r => [...r.querySelectorAll('kbd')].some(k => k.textContent === 'Esc'));
+		return [...row.querySelectorAll('kbd')].map(k => k.textContent);
+	})()`), ['Esc', 'c'], 'the keys on the clear row');
+});
+
+const pressQuestion = () => ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: '?', bubbles: true})); return true; })()`);
 
 await test('the ? key opens it too', async () => {
 	await selectNode(SERVER);
-	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: '?', bubbles: true})); return true; })()`);
-	return (await panelText()).includes('Focus the search box') || 'the ? key did not open the shortcuts';
+	await pressQuestion();
+	return (await panelText()).includes('Focus the search box') || 'the ? key did not open the controls';
+});
+
+await test('and pressing it again puts them away', async () => {
+	await pressQuestion();
+	return await panelShown() === false || 'the panel stayed open';
+});
+
+await test('while ? on a node view opens the controls rather than closing', async () => {
+	await selectNode(SERVER);
+	await pressQuestion();
+	return ((await panelText()).includes('Focus the search box') && await panelShown() === true)
+		|| 'the controls did not come back';
+});
+
+// --- the chrome, where the eye notices before a test does -------------------
+
+const box = (sel) => ev(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+	return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; })()`);
+
+await test('the legend keeps the edge its tab does not cover', async () => {
+	await ev(`(() => { if (!document.getElementById('app').classList.contains('legend-open'))
+		document.getElementById('legend-tab').click(); return true; })()`);
+	await sleep(80);
+	// The tab is shorter than the panel, so without this the edge above it is
+	// simply missing.
+	return eq(await ev(`getComputedStyle(document.getElementById('legend')).borderRightStyle`),
+		'solid', 'the legend right edge');
+});
+
+await test('the legend rests on the bottom bar', async () => {
+	const [legend, status] = [await box('#legend'), await box('#status')];
+	return Math.abs(legend.bottom - status.top) < 1
+		|| `legend bottom ${legend.bottom}, bar top ${status.top}`;
+});
+
+await test('and hides its bottom border behind that bar', async () =>
+	eq(await ev(`getComputedStyle(document.getElementById('legend')).borderBottomWidth`), '0px',
+		'the legend bottom border'));
+
+await test('the detail panel tab covers the edge behind it', async () => {
+	const [tab, panel] = [await box('#panel-tab'), await box('#panel')];
+	// Overlapping, not merely touching: a seam of exactly zero still shows the
+	// panel's own border running behind the tab.
+	return tab.right > panel.left
+		|| `tab ends at ${tab.right}, panel starts at ${panel.left}`;
+});
+
+// The segmented buttons overlap by a pixel to share a border, so a highlighted
+// one has to come forward or its neighbour paints over the edge.
+await test('a hovered segmented button comes forward', async () => {
+	const at = await box('[data-dir="down"]');
+	await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round((at.left + at.right) / 2), y: Math.round((at.top + at.bottom) / 2) });
+	await sleep(80);
+	const z = await ev(`getComputedStyle(document.querySelector('[data-dir="down"]')).zIndex`);
+	await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 500 });
+	return z === '2' || `the hovered button sits at z-index ${z}`;
+});
+
+await test('holding the canvas draws no disc under the pointer', async () =>
+	await ev(`godi.cy.style().json().some(r => r.selector === 'core'
+		&& Number(r.style['active-bg-opacity']) === 0)`)
+	|| "cytoscape's active background is still on");
+
+// Two groups, one meaning of "active".
+await test('a pressed toggle looks like a pressed choice', async () => {
+	const [toggle, choice] = await ev(`[
+		getComputedStyle(document.querySelector('[data-show="method"][aria-pressed=true]')).backgroundColor,
+		getComputedStyle(document.querySelector('[data-dir="both"][aria-pressed=true]')).backgroundColor,
+	]`);
+	return toggle === choice || `toggle ${toggle}, choice ${choice}`;
+});
+
+await test('the bottom bar menus point their arrows the way they open', async () => {
+	const arrow = await ev(`(() => {
+		const style = getComputedStyle(document.querySelector('#status .ctl'), '::after');
+		return { up: style.borderBottomWidth, down: style.borderTopWidth,
+			native: getComputedStyle(document.getElementById('routing')).appearance };
+	})()`);
+	return (arrow.native === 'none' && arrow.up !== '0px' && arrow.down === '0px')
+		|| `arrow was ${JSON.stringify(arrow)}`;
 });
 
 // --- colour scheme ---------------------------------------------------------
 
 const scheme = () => ev(`(() => ({
 	cls: document.documentElement.className,
-	label: document.getElementById('theme-label').textContent,
+	label: document.getElementById('theme').value,
 	icon: document.getElementById('theme-icon').getAttribute('href'),
 	node: godi.cy.getElementById(${JSON.stringify(SERVER)}).style('background-color'),
 }))()`);
@@ -424,33 +1024,50 @@ await test('the page starts on the scheme it was built with', async () => {
 	return s.cls === 'theme-auto' || `started on ${s.cls}`;
 });
 
-await test('the toggle cycles auto to light', async () => {
-	await ev(`(() => { document.getElementById('theme').click(); return true; })()`);
+await test('the menu switches to light', async () => {
+	await ev(`(() => { const t = document.getElementById('theme'); t.value = 'light'; t.dispatchEvent(new Event('change')); return true; })()`);
 	const s = await scheme();
-	return (s.cls === 'theme-light' && s.label === 'Light') || JSON.stringify(s);
+	return (s.cls === 'theme-light' && s.label === 'light') || JSON.stringify(s);
 });
 
 await test('and the canvas is restyled, not just the chrome', async () => {
 	const light = await scheme();
-	await ev(`(() => { document.getElementById('theme').click(); return true; })()`);
+	await ev(`(() => { const t = document.getElementById('theme'); t.value = 'dark'; t.dispatchEvent(new Event('change')); return true; })()`);
 	const dark = await scheme();
 	return (dark.cls === 'theme-dark' && dark.node !== light.node)
 		|| `node colour stayed ${light.node} going from light to dark`;
 });
 
-await test('dark cycles back round to auto', async () => {
-	await ev(`(() => { document.getElementById('theme').click(); return true; })()`);
+await test('and back to auto', async () => {
+	await ev(`(() => { const t = document.getElementById('theme'); t.value = 'auto'; t.dispatchEvent(new Event('change')); return true; })()`);
 	const s = await scheme();
-	return (s.cls === 'theme-auto' && s.label === 'Auto') || JSON.stringify(s);
+	return (s.cls === 'theme-auto' && s.label === 'auto') || JSON.stringify(s);
 });
 
+await test('d hides and shows the detail panel', async () => {
+	const before = await panelShown();
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd', bubbles: true})); return true; })()`);
+	const after = await panelShown();
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd', bubbles: true})); return true; })()`);
+	return before !== after || 'd did nothing';
+});
+
+await test('l shows and hides the legend', async () => {
+	const before = await legendShown();
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'l', bubbles: true})); return true; })()`);
+	const after = await legendShown();
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'l', bubbles: true})); return true; })()`);
+	return before !== after || 'l did nothing';
+});
+
+// The key still cycles: there is no menu to open from the keyboard.
 await test('the t key cycles it too', async () => {
 	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 't', bubbles: true})); return true; })()`);
 	const s = await scheme();
 	return s.cls === 'theme-light' || `t left it on ${s.cls}`;
 });
 
-await ev(`(() => { document.getElementById('theme').click(); document.getElementById('theme').click(); return true; })()`);
+await ev(`(() => { const t = document.getElementById('theme'); t.value = 'auto'; t.dispatchEvent(new Event('change')); return true; })()`);
 
 // --- source locations ------------------------------------------------------
 
@@ -602,6 +1219,38 @@ await test('"all" lights the whole subgraph the selection reaches', async () => 
 	return !dim.includes('root/svc:app.(*Config)') || 'Config is dim even at unlimited hops';
 });
 
+// The direction control is pressed constantly, so it is buttons rather than a
+// menu, and exactly one of them is on at a time.
+// Grouped because they all act on the view as a whole, and grouping them says
+// so without a word of explanation.
+await test('the whole-view actions are grouped', async () =>
+	eq(await ev(`[...document.querySelectorAll('#bar > .seg')].map(g =>
+		[...g.querySelectorAll('button')].map(b => b.id || b.dataset.dir))`),
+		[['both', 'down', 'up'], ['relayout', 'fit', 'clear']], 'the button groups'));
+
+await test('the direction group starts on Both', async () =>
+	eq(await ev(`[...document.querySelectorAll('[data-dir]')].map(b => [b.dataset.dir, b.getAttribute('aria-pressed')])`),
+		[['both', 'true'], ['down', 'false'], ['up', 'false']], 'the direction buttons'));
+
+await test('pressing one switches the direction and the pressed state', async () => {
+	await ev(`(() => { document.querySelector('[data-dir="down"]').click(); return true; })()`);
+	await sleep(120);
+	return eq(await ev(`[godi.state.dir, [...document.querySelectorAll('[data-dir][aria-pressed=true]')].map(b => b.dataset.dir)]`),
+		['down', ['down']], 'after pressing Dependencies');
+});
+
+await test('following dependencies only lights what the selection needs', async () => {
+	await selectNode('root/svc:app.(*Config)');
+	await setHops(1);
+	const dim = await dimmed();
+	await ev(`(() => { document.querySelector('[data-dir="both"]').click(); return true; })()`);
+	await sleep(120);
+	// Config depends on nothing, so following downstream lights only itself.
+	return dim.includes('root/svc:app.(*Repo)') || 'a consumer stayed lit while following dependencies';
+});
+
+await selectNode(SERVER);
+
 await test('one hop lights only the immediate neighbours', async () => {
 	await setHops(1);
 	const dim = await dimmed();
@@ -613,6 +1262,50 @@ await test('the hop limit follows the wiring, not the drawing', async () => {
 	const dim = await dimmed();
 	return !dim.includes('root/svc:app.(*Config)') || 'Config is still dim at two hops';
 });
+
+// --- remembered preferences -------------------------------------------------
+//
+// These reload the page, so they come last: everything above runs against the
+// first load.
+
+async function reload() {
+	await ev(`(() => { location.reload(); return true; })()`);
+	await sleep(400);
+	await settle();
+}
+
+// A restored choice has to reach the derived state, not just the button that
+// shows it. The text a search looks at is built once and kept, so a scope
+// restored after it was built is a button that says one thing and a search that
+// does another.
+await test('a remembered search scope is searched after a reload', async () => {
+	await ev(`(() => {
+		localStorage.setItem('godi.searchScopes', JSON.stringify({
+			type: true, factory: true, args: false, literals: true,
+			methods: false, scope: false, labels: false,
+		}));
+		return true;
+	})()`);
+	await reload();
+
+	const pressed = await ev(`document.querySelector('[data-scope="literals"]').getAttribute('aria-pressed')`);
+	const hits = await searchFor('127.0.0.1');
+	return (pressed === 'true' && hits.includes(SERVER))
+		|| `the button says ${pressed} and the search found ${JSON.stringify(hits)}`;
+});
+
+// Same shape of mistake, in the other direction: the canvas is styled before
+// the stored choice is read, so the edges have to be restyled once it is.
+await test('and a remembered line routing is drawn after one', async () => {
+	await ev(`(() => { localStorage.setItem('godi.routing', 'taxi'); return true; })()`);
+	await reload();
+
+	const drawn = await ev(`godi.cy.edges()[0].style('curve-style')`);
+	const shown = await ev(`document.getElementById('routing').value`);
+	return (drawn === 'taxi' && shown === 'taxi') || `the menu says ${shown} and the edges are drawn ${drawn}`;
+});
+
+await ev(`(() => { localStorage.clear(); return true; })()`);
 
 // --------------------------------------------------------------------- done ---
 

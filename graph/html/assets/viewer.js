@@ -45,7 +45,6 @@ function scopePath(id) {
 	const parts = [];
 	for (let s = scopes.get(id); s; s = s.parent ? scopes.get(s.parent) : null) {
 		parts.unshift(s.label);
-		if (!s.parent) break;
 	}
 	return parts.join(' › ') || id;
 }
@@ -53,7 +52,6 @@ function scopePath(id) {
 // Only an extension is worth naming. godi's own automation runs under a pass
 // too, but "autowiring (autowiring)" tells the reader nothing.
 const named = (origin, pass) => origin === 'compiler-pass' && pass ? origin + ': ' + pass : origin;
-const wiredBy = (e) => named(e.origin, e.originPass);
 const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 
 // A service is known by the type it provides; a function by its name, since a
@@ -82,8 +80,67 @@ const state = {
 	rootsOnly: false,
 	args: true,
 	layout: 'layered',
+	routing: 'unbundled-bezier',
+	wheel: 'auto',
 	show: { manual: true, autowiring: true, 'compiler-pass': true, method: true },
+	// What a search looks at. A type and a factory name are what people reach
+	// for; the rest widen the net when they need to, and would only add noise
+	// by default.
+	scopes: {
+		type: true, factory: true, args: false, literals: false,
+		methods: false, scope: false, labels: false,
+	},
 };
+
+const ROUTINGS = ['unbundled-bezier', 'straight', 'segments', 'taxi'];
+const WHEELS = ['auto', 'mouse', 'trackpad'];
+
+// What the reader chose last time, read before anything is derived from it. The
+// text a search looks at and the style the canvas is drawn with are both built
+// from state, and neither is rebuilt on its own: a preference restored after the
+// fact leaves a control saying one thing while the page does another.
+//
+// The colour scheme is not here because it is not just state - it is classes on
+// the page and a restyle - so installTheme applies it whole.
+function restorePreferences() {
+	const oneOf = (key, allowed, fallback) => {
+		const stored = recall(key);
+		return allowed.includes(stored) ? stored : fallback;
+	};
+	state.routing = oneOf('godi.routing', ROUTINGS, state.routing);
+	state.wheel = oneOf('godi.wheel', WHEELS, state.wheel);
+
+	try {
+		// null parses to null, and assigning that changes nothing.
+		Object.assign(state.scopes, JSON.parse(recall('godi.searchScopes')));
+	} catch { /* keep the defaults */ }
+}
+
+restorePreferences();
+
+// The text of a node, in whichever parts are being searched. Built once per
+// node and kept until the scopes change: it is read on every keystroke.
+let haystacks = new Map();
+
+function rebuildHaystacks() {
+	const looksAt = state.scopes;
+
+	haystacks = new Map(data.nodes.map((n) => {
+		const parts = [];
+		if (looksAt.type) parts.push(n.type);
+		if (looksAt.factory) parts.push(n.name);
+		if (looksAt.scope) parts.push(String(n.scope));
+		if (looksAt.labels) parts.push(...(n.labels || []));
+
+		// Method arguments are only in reach once method calls are.
+		const reachable = (n.params || []).filter((p) => looksAt.methods || !isMethod(p));
+		if (looksAt.methods) parts.push(...reachable.filter(isMethod).map((p) => p.method));
+		if (looksAt.args) parts.push(...reachable.map((p) => p.short));
+		if (looksAt.literals) parts.push(...reachable.flatMap((p) => p.literals || []));
+
+		return [n.id, parts.join(' ').toLowerCase()];
+	}));
+}
 
 // ------------------------------------------------------------------ labels ---
 
@@ -106,18 +163,35 @@ function rows(n) {
 	lines.push(clip(head + heading));
 	if (sub && sub !== heading) lines.push(clip(sub));
 
-	const headerLines = lines.length;
 	const paramLine = new Map();
+	const rules = [];
 
-	for (const p of n.params || []) {
-		if (!shownParam(p)) continue;
-		paramLine.set(p.id, lines.length);
+	const paramText = (p) => {
 		let text = (p.method ? p.method + ' ' : '') + p.index + ' ◂ ' + p.short;
 		if (p.literals && p.literals.length) text += ' = ' + p.literals.join(', ');
-		lines.push(clip(text, MAX_CHARS + 6));
-	}
+		return clip(text, MAX_CHARS + 6);
+	};
 
-	return { text: lines.join('\n'), count: lines.length, headerLines, paramLine };
+	// A rule between the header, the constructor arguments and the method calls.
+	// It goes in the label because a Cytoscape node has nowhere else to draw -
+	// and the ports follow on their own, since each one is read off the line its
+	// argument ends up on.
+	const section = (params) => {
+		const shown = params.filter(shownParam);
+		if (!shown.length) return;
+
+		rules.push(lines.length);
+		lines.push('');
+		for (const p of shown) {
+			paramLine.set(p.id, lines.length);
+			lines.push(paramText(p));
+		}
+	};
+
+	section((n.params || []).filter((p) => !isMethod(p)));
+	section((n.params || []).filter(isMethod));
+
+	return { text: lines.join('\n'), count: lines.length, paramLine, rules };
 }
 
 // rowOffset is how far the argument's row sits from the middle of the box.
@@ -130,6 +204,62 @@ function rowOffset(layout, paramID) {
 
 const layouts = new Map();
 
+// The rules, drawn rather than typed, so they can take the border's colour
+// instead of the text's. One image per node, sized to that node's own box.
+//
+// The box is measured rather than assumed: the image is stretched over whatever
+// Cytoscape actually laid out, so a guess that is off by a few pixels does not
+// slide the lines - and slides the lower ones furthest.
+function ruleImage(layout, colour, width, height) {
+	if (!layout.rules.length) return 'none';
+
+	// The label block is centred in the box, so the first line starts here.
+	const top = (height - layout.count * LINE) / 2;
+	const inset = PAD; // The same margin the text keeps from the border.
+
+	const drawn = layout.rules
+		.map((i) => {
+			const y = (top + (i + 0.5) * LINE).toFixed(2);
+			return `<line x1="${inset}" x2="${(width - inset).toFixed(2)}" y1="${y}" y2="${y}"/>`;
+		})
+		.join('');
+
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(2)}"` +
+		` height="${height.toFixed(2)}" viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}">` +
+		`<g stroke="${colour}" stroke-width="1">${drawn}</g></svg>`;
+
+	// charset, not ";utf8": the latter is not a valid data URI parameter and the
+	// browser refuses the image outright.
+	return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+// Drawn after the boxes exist, because it takes their measurements. Runs again
+// whenever the rows or the colours change.
+function paintRules() {
+	const colour = palette().nodeBorder;
+
+	cy.batch(() => {
+		for (const n of data.nodes) {
+			const el = cy.getElementById(n.id);
+			const layout = layouts.get(n.id);
+			if (layout) el.data('rules', ruleImage(layout, colour, el.outerWidth(), el.outerHeight()));
+		}
+	});
+}
+
+// Everything about a node's box that depends on its rows, in one place: the
+// three callers are the first build, a change of what is shown, and a change of
+// colour scheme.
+function boxOf(n) {
+	const layout = rows(n);
+	layouts.set(n.id, layout);
+	return {
+		label: layout.text,
+		height: layout.count * LINE + 2 * PAD,
+		rules: 'none', // paintRules fills this in, once there is a box to measure.
+	};
+}
+
 function buildElements() {
 	const els = [];
 
@@ -138,13 +268,11 @@ function buildElements() {
 	}
 
 	for (const n of data.nodes) {
-		const layout = rows(n);
-		layouts.set(n.id, layout);
 		els.push({
 			data: {
-				id: n.id, parent: 'scope:' + n.scope, label: layout.text,
+				id: n.id, parent: 'scope:' + n.scope,
 				kind: n.kind, shared: n.shared, lazy: n.lazy, root: n.root,
-				height: layout.count * LINE + 2 * PAD,
+				...boxOf(n),
 			},
 		});
 	}
@@ -223,6 +351,12 @@ function stylesheet() {
 				width: 'label',
 				height: 'data(height)',
 				padding: PAD,
+				'background-image': 'data(rules)',
+				'background-fit': 'none',
+				'background-width': '100%',
+				'background-height': '100%',
+				'background-position-x': '0%',
+				'background-position-y': '0%',
 			},
 		},
 		{
@@ -236,7 +370,15 @@ function stylesheet() {
 		},
 		{
 			selector: 'edge', style: {
-				'curve-style': state.layout === 'layered' ? 'taxi' : 'bezier',
+				// Curved by default. Boxy routes from the node's centre and then
+				// joins the argument row with a stub, which draws a spike back
+				// up the box; the others leave the row directly.
+				'curve-style': state.routing,
+				// A plain bezier is drawn straight unless the edge is one of
+				// several between the same pair, so a curve has to be asked for
+				// with control points of its own.
+				'control-point-distances': 34,
+				'control-point-weights': 0.5,
 				'taxi-direction': 'rightward',
 				'taxi-turn': 24,
 				'taxi-turn-min-distance': 8,
@@ -258,6 +400,9 @@ function stylesheet() {
 				'text-background-padding': 1,
 			},
 		},
+		// Cytoscape marks a held background with a grey disc under the pointer,
+		// which reads as something having gone wrong.
+		{ selector: 'core', style: { 'active-bg-opacity': 0, 'active-bg-size': 0 } },
 		{ selector: '.dim', style: { opacity: 0.12, 'text-opacity': 0 } },
 		{ selector: 'node.match', style: { 'border-color': p.accent, 'border-width': 2.4 } },
 		{ selector: 'node.sel', style: { 'border-color': p.accent, 'border-width': 3.4 } },
@@ -271,8 +416,10 @@ const cy = cytoscape({
 	elements: buildElements(),
 	style: stylesheet(),
 	layout: { name: 'preset' },
-	wheelSensitivity: 0.25,
 	boxSelectionEnabled: false,
+	// The wheel is handled below: what it should do depends on whether the
+	// hand on it is holding a mouse or resting on a trackpad.
+	userZoomingEnabled: false,
 });
 
 // ------------------------------------------------------------------ layout ---
@@ -380,7 +527,8 @@ function found() {
 	if (!terms.length) return null;
 	const hit = new Set();
 	for (const n of data.nodes) {
-		if (terms.every((t) => n.search.includes(t))) hit.add(n.id);
+		const text = haystacks.get(n.id);
+		if (text && terms.every((t) => text.includes(t))) hit.add(n.id);
 	}
 	return hit;
 }
@@ -480,17 +628,115 @@ function apply() {
 	const shownEdges = cy.edges(':visible').length;
 	$('found').textContent = hits === null ? '' : hits.size + (hits.size === 1 ? ' match' : ' matches');
 
+	const notices = data.notices || [];
 	const counts = [
 		shownNodes + ' of ' + data.nodes.length + ' nodes',
 		shownEdges + ' of ' + data.edges.length + ' edges',
 		roots + (roots === 1 ? ' root' : ' roots'),
 	];
-	if (data.notices && data.notices.length) counts.push(data.notices.length + ' warnings');
+	if (notices.length) counts.push(notices.length + ' warnings');
 	$('counts').textContent = counts.join(' · ');
-	if (data.notices && data.notices.length) $('counts').title = data.notices.join('\n');
+	$('counts').title = notices.join('\n');
 
 	return changed;
 }
+
+// ------------------------------------------------------------------ legend ---
+
+// Every way an edge can be drawn, in the three channels it is drawn with. The
+// samples take their colour from the same variables the canvas does, so the
+// legend cannot drift from the graph it explains.
+// Three channels, in columns. A cycle is not an answer to who chose an edge -
+// it overrides the colour outright - so it gets a section of its own rather
+// than sitting among the three that are.
+const LEGEND = [
+	[
+		{
+			title: 'Head', hint: 'how it matched', rows: [
+				{ head: 'filled', text: 'Exact type' },
+				{ head: 'hollow', text: 'Interface binding' },
+			],
+		},
+		{
+			title: 'Cycle', hint: 'overrides the colour', rows: [
+				{ tint: 'warn', text: 'Loops back' },
+			],
+		},
+	],
+	[
+		{
+			title: 'Colour', hint: 'who chose it', rows: [
+				{ tint: 'manual', text: 'You' },
+				{ tint: 'auto', text: 'godi' },
+				{ tint: 'pass', text: 'A compiler pass' },
+			],
+		},
+	],
+	[
+		{
+			title: 'Line', hint: 'who wired the argument', rows: [
+				{ text: 'You' },
+				{ dash: '4 3', text: 'godi' },
+				{ dash: '4 3', width: 2.6, text: 'A compiler pass' },
+			],
+		},
+	],
+];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function edgeSample({ tint = 'muted', head = 'none', dash = '', width = 1.4 }) {
+	const svg = document.createElementNS(SVG_NS, 'svg');
+	svg.setAttribute('viewBox', '0 0 46 12');
+	svg.setAttribute('class', 'sample ' + tint);
+
+	const line = document.createElementNS(SVG_NS, 'path');
+	line.setAttribute('class', 'line');
+	line.setAttribute('d', head === 'none' ? 'M1 6h44' : 'M1 6h32');
+	line.setAttribute('stroke-width', String(width));
+	if (dash) line.setAttribute('stroke-dasharray', dash);
+	svg.append(line);
+
+	if (head !== 'none') {
+		const arrow = document.createElementNS(SVG_NS, 'path');
+		arrow.setAttribute('class', 'head ' + head);
+		arrow.setAttribute('d', head === 'hollow' ? 'M34 6l5-4.2 5 4.2-5 4.2z' : 'M34 1.8l10 4.2-10 4.2z');
+		svg.append(arrow);
+	}
+
+	return svg;
+}
+
+function buildLegend() {
+	const parts = [];
+	for (const sections of LEGEND) {
+		const column = make('div', 'legend-col');
+
+		for (const section of sections) {
+			const group = make('div', 'legend-group');
+			const head = make('div', 'legend-head', section.title);
+			head.append(make('span', 'hint', section.hint));
+			group.append(head);
+
+			for (const row of section.rows) {
+				const line = make('div', 'legend-row');
+				line.append(edgeSample(row), make('span', null, row.text));
+				group.append(line);
+			}
+			column.append(group);
+		}
+		parts.push(column);
+	}
+	$('legend').replaceChildren(...parts);
+}
+
+function setLegend(open) {
+	$('app').classList.toggle('legend-open', open);
+	$('legend-tab').title = open ? 'Hide the legend' : 'What the arrows mean';
+	remember('godi.legend', open ? 'open' : 'closed');
+}
+
+const legendOpen = () => $('app').classList.contains('legend-open');
 
 // -------------------------------------------------------------- side panel ---
 
@@ -535,11 +781,34 @@ function locationCell(loc) {
 	return cell;
 }
 
+// The panel can be sent away for more canvas. It still fills itself while
+// hidden - building it costs nothing - so bringing it back shows the current
+// selection rather than whatever was there when it went.
+function setPanel(open) {
+	$('app').classList.toggle('panel-hidden', !open);
+	$('panel-tab').title = open ? 'Hide the detail panel' : 'Show the detail panel';
+	remember('godi.panel', open ? 'open' : 'hidden');
+}
+
+const panelOpen = () => !$('app').classList.contains('panel-hidden');
+
+// A selection made while the panel is away says so on the tab rather than
+// taking the space back: an accidental click must not cost the reader the room
+// they asked for.
+function flashTab() {
+	const tab = $('panel-tab');
+	tab.classList.remove('flash');
+	void tab.offsetWidth; // Restart the animation rather than let it be ignored.
+	tab.classList.add('flash');
+}
+
 function showPanel(id) {
 	const panel = $('panel');
 	const n = nodes.get(id);
+	if (n && !panelOpen()) flashTab();
 	if (!n) {
 		panel.replaceChildren(make('p', 'empty', 'Pick a node to see how it is wired.'));
+		panel.dataset.view = 'empty';
 		return;
 	}
 
@@ -549,7 +818,7 @@ function showPanel(id) {
 
 	const badges = make('div', 'badges');
 	badges.append(badge(n.kind));
-	if (n.kind === 'service') badges.append(badge(n.shared ? 'shared' : 'not shared'));
+	if (service) badges.append(badge(n.shared ? 'shared' : 'not shared'));
 	badges.append(badge(n.lazy ? 'lazy' : 'eager'));
 	if (!n.autowired) badges.append(badge('not autowired'));
 	if (n.instantiated) badges.append(badge('instantiated'));
@@ -615,6 +884,7 @@ function showPanel(id) {
 	}
 
 	panel.replaceChildren(...parts);
+	panel.dataset.view = 'node';
 	panel.scrollTop = 0;
 }
 
@@ -652,46 +922,99 @@ function resolutionText(e) {
 const paramLabel = (p, e) => p ? (p.method ? p.method + ' ' : '') + '#' + p.index + ' ' + p.short : e.type;
 
 // Keys wear keycaps; gestures do not, because "Drag the canvas" in a keycap
-// reads as something you could press.
-const SHORTCUTS = [
+// reads as something you could press. The modifier is spelled for the platform
+// the reader is on rather than for both.
+const CONTROLS = () => [
 	{
 		title: 'Keyboard', keys: true, rows: [
 			['/', 'Focus the search box'],
 			['Enter', 'Jump to the first match, from the search box'],
-			['Esc', 'Drop the selection and the search'],
+			[['Esc', 'c'], 'Drop the selection and the search'],
 			['f', 'Fit the whole graph'],
 			['r', 'Lay the graph out again'],
 			['t', 'Cycle the colour scheme'],
-			['?', 'Show this list'],
+			['d', 'Show or hide the detail panel'],
+			['l', 'Show or hide the legend'],
+			['?', 'Show or hide this panel'],
 		],
 	},
 	{
 		title: 'Mouse', keys: false, rows: [
-			['Click a node', 'Select it, or clear it if it is already selected'],
-			['Click a scope', 'Clear the selection'],
-			['Drag a node', 'Move it; it stays where you put it'],
-			['Drag the canvas', 'Pan'],
-			['Scroll', 'Zoom'],
+			[MOD_LABEL + ' + drag', 'Pan from anywhere, over nodes and scopes alike'],
+			['Middle-drag', 'Pan from anywhere, the same way'],
+			['Wheel', 'Zoom'],
+			[MOD_LABEL + ' + wheel', 'Zoom, whatever the wheel is set to do'],
+			['Shift + wheel', 'Pan sideways'],
+		],
+	},
+	{
+		title: 'Trackpad', keys: false, rows: [
+			['Two-finger swipe', 'Pan'],
+			['Pinch', 'Zoom'],
+			[MOD_LABEL + ' + swipe', 'Zoom'],
 		],
 	},
 ];
 
-function showShortcuts() {
-	const parts = [make('h2', null, 'Shortcuts')];
+// What search does is the one thing here that cannot be worked out by trying
+// it, so it leads.
+const SEARCHES = [
+	['Type', 'The full path, github.com/acme/app/http.(*Server)'],
+	['Factory', 'The constructor, or the function itself'],
+	['Argument types', 'What a factory or function asks for'],
+	['Literals', 'The constants passed in, where values were included'],
+	['Method calls', 'Their names, and it lets the two above reach their arguments'],
+	['Scope', 'root, or the node a child scope belongs to'],
+	['Labels', 'Anything given to Labels()'],
+];
 
-	for (const section of SHORTCUTS) {
+function showHelp() {
+	const parts = [
+		make('h2', null, 'Help'),
+		make('h3', null, 'Search'),
+		make('p', 'via',
+			'Matches anywhere in the text and ignores case. Every word has to match, in any order, ' +
+			'so "http server" finds a server in the http package. Enter jumps to the first match, ' +
+			'and everything that does not match dims. Focus the box to choose what it looks at: ' +
+			'the type and the factory to begin with.'),
+	];
+
+	const where = make('dl', 'keys');
+	for (const [field, what] of SEARCHES) {
+		const dt = make('dt');
+		dt.append(make('span', 'gesture', field));
+		where.append(dt, make('dd', null, what));
+	}
+	parts.push(where);
+
+	for (const section of CONTROLS()) {
 		parts.push(make('h3', null, section.title));
 
 		const dl = make('dl', 'keys');
 		for (const [action, what] of section.rows) {
 			const dt = make('dt');
-			dt.append(make(section.keys ? 'kbd' : 'span', section.keys ? null : 'gesture', action));
+			for (const key of [action].flat()) {
+				if (dt.children.length) dt.append(make('span', 'or', 'or'));
+				dt.append(make(section.keys ? 'kbd' : 'span', section.keys ? null : 'gesture', key));
+			}
 			dl.append(dt, make('dd', null, what));
 		}
 		parts.push(dl);
 	}
 
 	$('panel').replaceChildren(...parts);
+	$('panel').dataset.view = 'help';
+}
+
+// ? put the controls there, so pressing it again takes them away rather than
+// leaving the reader to find the tab.
+function toggleHelp() {
+	if (panelOpen() && $('panel').dataset.view === 'help') {
+		setPanel(false);
+		return;
+	}
+	setPanel(true);
+	showHelp();
 }
 
 function showAbout() {
@@ -715,6 +1038,120 @@ function showAbout() {
 		'point or wiring nothing uses, and the container cannot tell the two apart.'));
 
 	$('panel').replaceChildren(...parts);
+	$('panel').dataset.view = 'about';
+}
+
+// -------------------------------------------------------------- navigation ---
+
+// Command on a Mac, Control everywhere else. Not interchangeable: Control and
+// click is the secondary click on macOS, so Control-dragging would open a menu
+// instead of panning.
+const APPLE = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+const MOD = APPLE ? 'metaKey' : 'ctrlKey';
+const MOD_LABEL = APPLE ? '⌘' : 'Ctrl';
+
+const canvasEl = () => $('cy');
+
+// While the modifier is down, dragging pans instead of moving what is under the
+// pointer. Cytoscape reads grabbability when the button goes down, so the mode
+// is armed on the key rather than the press - which also lets the cursor say so
+// before anything is dragged.
+let panArmed = false;
+
+function armPan(on) {
+	if (panArmed === on) return;
+	panArmed = on;
+	cy.autoungrabify(on);
+	canvasEl().classList.toggle('pan-armed', on);
+}
+
+function installPanning() {
+	document.addEventListener('keydown', (ev) => { if (ev[MOD]) armPan(true); });
+	document.addEventListener('keyup', (ev) => { if (!ev[MOD]) armPan(false); });
+
+	// Tabbing away eats the keyup, and a graph stuck in pan mode looks broken.
+	window.addEventListener('blur', () => armPan(false));
+	document.addEventListener('visibilitychange', () => { if (document.hidden) armPan(false); });
+
+	// The middle button and the modifier start the same gesture. Cytoscape hands
+	// a drag on an ungrabbable scope back as a pan but not one on a node, so the
+	// viewport is driven from here rather than left to it.
+	//
+	// Captured on the way down and stopped there, so Cytoscape never sees the
+	// press: were it to pan as well, the graph would move twice as far.
+	let from = null;
+	canvasEl().addEventListener('mousedown', (ev) => {
+		if (ev.button !== 1 && !(ev.button === 0 && ev[MOD])) return;
+		ev.preventDefault();
+		ev.stopPropagation();
+		from = { x: ev.clientX, y: ev.clientY };
+		canvasEl().classList.add('panning');
+	}, { capture: true });
+
+	window.addEventListener('mousemove', (ev) => {
+		if (!from) return;
+		cy.panBy({ x: ev.clientX - from.x, y: ev.clientY - from.y });
+		from = { x: ev.clientX, y: ev.clientY };
+	});
+	window.addEventListener('mouseup', () => {
+		if (!from) return;
+		from = null;
+		canvasEl().classList.remove('panning');
+	});
+
+	// Otherwise the middle button scrolls, or pastes.
+	canvasEl().addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+}
+
+// A notched mouse wheel reports whole multiples of 120, and Firefox reports
+// lines rather than pixels for one. A trackpad sends small or fractional steps,
+// usually with a sideways component. It is a good guess rather than a fact,
+// which is why the reader can override it.
+function fromAMouse(ev) {
+	if (state.wheel !== 'auto') return state.wheel === 'mouse';
+	if (ev.deltaMode !== 0) return true;
+	if (ev.wheelDeltaY !== undefined) {
+		return ev.wheelDeltaY !== 0 && Math.abs(ev.wheelDeltaY) % 120 === 0;
+	}
+	return ev.deltaX === 0 && Math.abs(ev.deltaY) >= 100 && Number.isInteger(ev.deltaY);
+}
+
+function zoomAt(ev, by) {
+	const box = canvasEl().getBoundingClientRect();
+	cy.zoom({
+		level: cy.zoom() * Math.pow(2, -by / 300),
+		renderedPosition: { x: ev.clientX - box.left, y: ev.clientY - box.top },
+	});
+}
+
+function installWheel() {
+	canvasEl().addEventListener('wheel', (ev) => {
+		ev.preventDefault();
+
+		// What the reader asked for outranks what the hardware looks like, so
+		// the modifiers are read first. A trackpad pinch arrives as a wheel with
+		// ctrlKey set, whoever the browser thinks pressed it; the modifier means
+		// the same thing by hand.
+		if (ev.ctrlKey || ev.metaKey) {
+			zoomAt(ev, ev.deltaY);
+			return;
+		}
+		// A mouse wheel has only a vertical axis, so shift is how you scroll
+		// sideways with one. A trackpad already has both, and shift must not
+		// take the vertical one away, so it only redirects a purely vertical
+		// gesture.
+		if (ev.shiftKey) {
+			cy.panBy(ev.deltaX === 0
+				? { x: -ev.deltaY, y: 0 }
+				: { x: -ev.deltaX, y: -ev.deltaY });
+			return;
+		}
+		if (fromAMouse(ev)) {
+			zoomAt(ev, ev.deltaY);
+			return;
+		}
+		cy.panBy({ x: -ev.deltaX, y: -ev.deltaY });
+	}, { passive: false });
 }
 
 // ----------------------------------------------------------------- actions ---
@@ -733,6 +1170,7 @@ function reset() {
 	state.focus = null;
 	state.query = '';
 	$('search').value = '';
+	$('search-clear').hidden = true;
 	showPanel(null);
 	apply();
 	cy.animate({ fit: { eles: cy.elements(':visible'), padding: 30 }, duration: 200 });
@@ -751,7 +1189,6 @@ async function refresh({ resize = false } = {}) {
 // ------------------------------------------------------------------ themes ---
 
 const THEMES = ['auto', 'light', 'dark'];
-const THEME_LABELS = { auto: 'Auto', light: 'Light', dark: 'Dark' };
 
 const currentTheme = () =>
 	THEMES.find((t) => document.documentElement.classList.contains('theme-' + t)) || 'auto';
@@ -760,13 +1197,15 @@ function setTheme(theme) {
 	const root = document.documentElement;
 	root.classList.remove(...THEMES.map((t) => 'theme-' + t));
 	root.classList.add('theme-' + theme);
-	$('theme-label').textContent = THEME_LABELS[theme];
+	$('theme').value = theme;
 	$('theme-icon').setAttribute('href', '#i-' + theme);
 	remember('godi.theme', theme);
 
 	// Cytoscape draws to a canvas, which cannot read CSS variables, so the
-	// stylesheet has to be rebuilt from the ones now in force.
+	// stylesheet has to be rebuilt from the ones now in force - and the rules
+	// are images with a colour baked in, so they have to be redrawn too.
 	cy.style(stylesheet());
+	paintRules();
 }
 
 // A page opened from disk may have no storage to speak of, depending on the
@@ -789,9 +1228,10 @@ function installTheme() {
 		if (currentTheme() === 'auto') cy.style(stylesheet());
 	});
 
-	$('theme').addEventListener('click', cycleTheme);
+	$('theme').addEventListener('change', () => setTheme($('theme').value));
 }
 
+// The keyboard still cycles: there is no menu to open from a key.
 function cycleTheme() {
 	setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]);
 }
@@ -800,11 +1240,20 @@ function cycleTheme() {
 
 function installControls() {
 	const search = $('search');
+	const searchClear = $('search-clear');
 	let pending = 0;
 	search.addEventListener('input', () => {
 		state.query = search.value;
+		searchClear.hidden = search.value === '';
 		clearTimeout(pending);
 		pending = setTimeout(apply, 90);
+	});
+	searchClear.addEventListener('click', () => {
+		search.value = '';
+		state.query = '';
+		searchClear.hidden = true;
+		search.focus();
+		apply();
 	});
 	search.addEventListener('keydown', (ev) => {
 		if (ev.key !== 'Enter') return;
@@ -823,7 +1272,41 @@ function installControls() {
 		refresh();
 	});
 
-	$('dir').addEventListener('change', (ev) => { state.dir = ev.target.value; refresh(); });
+	const dirs = [...document.querySelectorAll('[data-dir]')];
+	for (const button of dirs) {
+		button.addEventListener('click', () => {
+			state.dir = button.dataset.dir;
+			for (const other of dirs) other.setAttribute('aria-pressed', String(other === button));
+			refresh();
+		});
+	}
+
+	const routing = $('routing');
+	routing.value = state.routing;
+	routing.addEventListener('change', () => {
+		state.routing = routing.value;
+		remember('godi.routing', state.routing);
+		cy.style(stylesheet());
+	});
+
+	for (const button of document.querySelectorAll('[data-scope]')) {
+		const key = button.dataset.scope;
+		button.setAttribute('aria-pressed', String(!!state.scopes[key]));
+		button.addEventListener('click', () => {
+			state.scopes[key] = !state.scopes[key];
+			button.setAttribute('aria-pressed', String(state.scopes[key]));
+			remember('godi.searchScopes', JSON.stringify(state.scopes));
+			rebuildHaystacks();
+			apply();
+		});
+	}
+
+	const wheel = $('wheel');
+	wheel.value = state.wheel;
+	wheel.addEventListener('change', () => {
+		state.wheel = wheel.value;
+		remember('godi.wheel', state.wheel);
+	});
 
 	$('layout').addEventListener('change', (ev) => {
 		state.layout = ev.target.value;
@@ -835,34 +1318,40 @@ function installControls() {
 	// two change the geometry rather than just what is on show.
 	const resizes = new Set(['method', 'args']);
 
-	for (const box of document.querySelectorAll('[data-show]')) {
-		box.addEventListener('change', () => {
-			state.show[box.dataset.show] = box.checked;
-			refresh({ resize: resizes.has(box.dataset.show) });
-		});
-	}
-	for (const box of document.querySelectorAll('[data-flag]')) {
-		box.addEventListener('change', () => {
-			state[box.dataset.flag] = box.checked;
-			refresh({ resize: resizes.has(box.dataset.flag) });
+	for (const button of document.querySelectorAll('[data-show], [data-flag]')) {
+		button.addEventListener('click', () => {
+			const on = button.getAttribute('aria-pressed') !== 'true';
+			button.setAttribute('aria-pressed', String(on));
+
+			const key = button.dataset.show || button.dataset.flag;
+			if (button.dataset.show) state.show[key] = on;
+			else state[key] = on;
+
+			refresh({ resize: resizes.has(key) });
 		});
 	}
 
 	$('relayout').addEventListener('click', relayout);
 	$('fit').addEventListener('click', () => cy.fit(cy.elements(':visible'), 30));
 	$('clear').addEventListener('click', reset);
-	$('about').addEventListener('click', showAbout);
-	$('shortcuts').addEventListener('click', showShortcuts);
+	$('about').addEventListener('click', () => { setPanel(true); showAbout(); });
+	$('help').addEventListener('click', () => { setPanel(true); showHelp(); });
+	$('panel-tab').addEventListener('click', () => setPanel(!panelOpen()));
+	$('legend-tab').addEventListener('click', () => setLegend(!legendOpen()));
 
 	// Tapping the selection again drops it. On a large graph the empty canvas
 	// can be a long way off, or off screen entirely, so the node has to be its
 	// own way out. A scope's own area counts as empty space for this.
 	cy.on('tap', 'node', (ev) => {
+		if (panArmed || (ev.originalEvent && ev.originalEvent[MOD])) return;
 		const node = ev.target;
 		if (node.isParent()) { select(null, false); return; }
 		select(node.id() === state.focus ? null : node.id(), false);
 	});
-	cy.on('tap', (ev) => { if (ev.target === cy) select(null, false); });
+	cy.on('tap', (ev) => {
+		if (panArmed || (ev.originalEvent && ev.originalEvent[MOD])) return;
+		if (ev.target === cy) select(null, false);
+	});
 
 	document.addEventListener('keydown', (ev) => {
 		if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') {
@@ -870,11 +1359,13 @@ function installControls() {
 			return;
 		}
 		if (ev.key === '/') { ev.preventDefault(); $('search').focus(); }
-		else if (ev.key === 'Escape') reset();
+		else if (ev.key === 'Escape' || ev.key === 'c') reset();
 		else if (ev.key === 'f') cy.fit(cy.elements(':visible'), 30);
 		else if (ev.key === 'r') relayout();
 		else if (ev.key === 't') cycleTheme();
-		else if (ev.key === '?') showShortcuts();
+		else if (ev.key === 'd') setPanel(!panelOpen());
+		else if (ev.key === 'l') setLegend(!legendOpen());
+		else if (ev.key === '?') toggleHelp();
 	});
 }
 
@@ -882,22 +1373,27 @@ function installControls() {
 // edge anchors have to be rebuilt before the graph is laid out again.
 function rebuildLabels() {
 	cy.batch(() => {
-		for (const n of data.nodes) {
-			const layout = rows(n);
-			layouts.set(n.id, layout);
-			cy.getElementById(n.id).data({ label: layout.text, height: layout.count * LINE + 2 * PAD });
-		}
+		for (const n of data.nodes) cy.getElementById(n.id).data(boxOf(n));
 		for (const e of data.edges) {
 			cy.getElementById(e.id).data('offset', rowOffset(layouts.get(e.from), e.param));
 		}
 	});
+	paintRules();
 }
 
 // A handle on the graph, for anyone who wants to poke at their own wiring from
 // the console: godi.cy is the Cytoscape instance, godi.data the model.
 window.godi = { cy, data, state, apply, relayout };
 
+setPanel(recall('godi.panel') !== 'hidden');
+rebuildHaystacks();
+paintRules();
+buildLegend();
+setLegend(recall('godi.legend') === 'open');
+
 installControls();
+installPanning();
+installWheel();
 installTheme();
 apply();
 relayout();

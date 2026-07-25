@@ -313,8 +313,10 @@ func commonDir(paths []string) string {
 		}
 	}
 
+	// Nothing, the filesystem root, and "the current directory" are all prefixes
+	// that would be recorded without shortening a single path.
 	root := strings.Join(shared, "/")
-	if root == "" || root == "/" {
+	if root == "" || root == "/" || root == "." {
 		return ""
 	}
 	return root

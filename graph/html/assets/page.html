@@ -15,12 +15,17 @@
 	<symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></symbol>
 	<symbol id="i-hops" viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.7"/><circle cx="13" cy="8" r="1.7"/><path d="M5.1 8h5.8"/></symbol>
 	<symbol id="i-dir" viewBox="0 0 16 16"><path d="M2 5.5h12M11 2.5l3 3-3 3M14 10.5H2M5 13.5l-3-3 3-3"/></symbol>
+	<symbol id="i-down" viewBox="0 0 16 16"><path d="M2 8h11M9.5 4.5L13 8l-3.5 3.5"/></symbol>
+	<symbol id="i-up" viewBox="0 0 16 16"><path d="M14 8H3M6.5 4.5L3 8l3.5 3.5"/></symbol>
 	<symbol id="i-layout" viewBox="0 0 16 16"><rect x="1.5" y="2" width="5.5" height="4.5" rx="1"/><rect x="9" y="2" width="5.5" height="4.5" rx="1"/><rect x="1.5" y="9.5" width="13" height="4.5" rx="1"/></symbol>
 	<symbol id="i-relayout" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.9 2.2v3.2h-3.2"/></symbol>
 	<symbol id="i-fit" viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></symbol>
 	<symbol id="i-clear" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
 	<symbol id="i-auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2"/><path d="M8 2.8a5.2 5.2 0 0 0 0 10.4z" fill="currentColor" stroke="none"/></symbol>
 	<symbol id="i-light" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.05 1.05M11.9 11.9l1.05 1.05M12.95 3.05L11.9 4.1M4.1 11.9l-1.05 1.05"/></symbol>
+	<symbol id="i-chevron" viewBox="0 0 16 16"><path d="M6 3l5 5-5 5"/></symbol>
+	<symbol id="i-route" viewBox="0 0 16 16"><path d="M1 12c3.5 0 3.5-8 7-8s3.5 8 7 8"/></symbol>
+	<symbol id="i-input" viewBox="0 0 16 16"><rect x="4.5" y="1.5" width="7" height="13" rx="3.5"/><path d="M8 4.3v2.6"/></symbol>
 	<symbol id="i-dark" viewBox="0 0 16 16"><path d="M13.2 9.7A5.6 5.6 0 0 1 6.3 2.8a5.6 5.6 0 1 0 6.9 6.9z"/></symbol>
 </svg>
 
@@ -30,6 +35,21 @@
 		<label id="find" title="Find a type, factory or label (/)">
 			<svg class="i"><use href="#i-search"/></svg>
 			<input id="search" type="search" placeholder="Find a type, factory or label" autocomplete="off" spellcheck="false">
+			<button id="search-clear" type="button" title="Clear the search" hidden>
+				<svg class="i"><use href="#i-clear"/></svg>
+			</button>
+			<div id="search-scopes" role="group" aria-label="What search looks at">
+				<span class="glabel">Look in</span>
+				<div class="seg toggles">
+					<button type="button" data-scope="type" aria-pressed="true">Type</button>
+					<button type="button" data-scope="factory" aria-pressed="true">Factory</button>
+					<button type="button" data-scope="args" aria-pressed="false">Argument types</button>
+					<button type="button" data-scope="literals" aria-pressed="false">Literals</button>
+					<button type="button" data-scope="methods" aria-pressed="false" title="Also lets the argument scopes reach method arguments">Method calls</button>
+					<button type="button" data-scope="scope" aria-pressed="false">Scope</button>
+					<button type="button" data-scope="labels" aria-pressed="false">Labels</button>
+				</div>
+			</div>
 		</label>
 		<span id="found"></span>
 		<span class="grow"></span>
@@ -39,14 +59,63 @@
 			<input id="hops" type="range" min="1" max="7" step="1" value="1">
 			<output id="hops-out">1</output>
 		</label>
-		<label class="ctl" title="Which way to follow the wiring from the selection">
-			<svg class="i"><use href="#i-dir"/></svg>
-			<select id="dir">
-				<option value="both">Both ways</option>
-				<option value="down">Dependencies</option>
-				<option value="up">Consumers</option>
-			</select>
-		</label>
+		<div class="seg radio" role="group" aria-label="Which way to follow the wiring from the selection">
+			<button type="button" data-dir="both" aria-pressed="true" title="Follow the wiring both ways">
+				<svg class="i"><use href="#i-dir"/></svg>Both
+			</button>
+			<button type="button" data-dir="down" aria-pressed="false" title="Follow what the selection depends on">
+				<svg class="i"><use href="#i-down"/></svg>Dependencies
+			</button>
+			<button type="button" data-dir="up" aria-pressed="false" title="Follow what depends on the selection">
+				<svg class="i"><use href="#i-up"/></svg>Consumers
+			</button>
+		</div>
+		<div class="seg" role="group" aria-label="The view as a whole">
+			<button id="relayout" type="button" title="Lay the graph out again (r)">
+				<svg class="i"><use href="#i-relayout"/></svg>Re-layout
+			</button>
+			<button id="fit" type="button" title="Fit the whole graph (f)">
+				<svg class="i"><use href="#i-fit"/></svg>Fit
+			</button>
+			<button id="clear" type="button" title="Drop the selection and the search (c or esc)">
+				<svg class="i"><use href="#i-clear"/></svg>Clear
+			</button>
+		</div>
+	</header>
+
+	<div id="filters">
+		<span class="group">
+			<span class="glabel">Wired by</span>
+			<div class="seg toggles" role="group" aria-label="Wired by">
+				<button type="button" data-show="manual" aria-pressed="true"><i class="swatch manual"></i>You</button>
+				<button type="button" data-show="autowiring" aria-pressed="true"><i class="swatch auto"></i>godi</button>
+				<button type="button" data-show="compiler-pass" aria-pressed="true"><i class="swatch pass"></i>Compiler pass</button>
+			</div>
+		</span>
+		<span class="group">
+			<span class="glabel">Show</span>
+			<div class="seg toggles" role="group" aria-label="Show">
+				<button type="button" data-show="method" aria-pressed="true">Method calls</button>
+				<button type="button" data-flag="args" aria-pressed="true">Arguments</button>
+				<button type="button" data-flag="isolate" aria-pressed="false">Isolate selection</button>
+				<button type="button" data-flag="rootsOnly" aria-pressed="false" title="Nodes nothing injects: the top of each dependency tree">Roots only</button>
+			</div>
+		</span>
+	</div>
+
+	<main>
+		<div id="canvas"><div id="cy"></div><div id="busy">Laying out…</div></div>
+		<button id="panel-tab" type="button" aria-controls="panel" title="Hide the detail panel">
+			<svg class="i"><use href="#i-chevron"/></svg>
+		</button>
+		<div id="legend-dock">
+			<div id="legend" aria-label="Legend"></div>
+			<button id="legend-tab" type="button" title="What the arrows mean"><span>Legend</span></button>
+		</div>
+		<aside id="panel"><p class="empty">Pick a node to see how it is wired.</p></aside>
+	</main>
+
+	<footer id="status"><span id="counts"></span><span class="grow"></span>
 		<label class="ctl" title="How the nodes are placed">
 			<svg class="i"><use href="#i-layout"/></svg>
 			<select id="layout">
@@ -57,42 +126,32 @@
 				<option value="grid">Grid</option>
 			</select>
 		</label>
-		<button id="relayout" type="button" title="Lay the graph out again (r)">
-			<svg class="i"><use href="#i-relayout"/></svg>Re-layout
-		</button>
-		<button id="theme" type="button" title="Colour scheme: follow the system, light, or dark (t)">
-			<svg class="i"><use id="theme-icon" href="#i-auto"/></svg><span id="theme-label">Auto</span>
-		</button>
-		<button id="fit" type="button" title="Fit the whole graph (f)">
-			<svg class="i"><use href="#i-fit"/></svg>Fit
-		</button>
-		<button id="clear" type="button" title="Drop the selection and the search (esc)">
-			<svg class="i"><use href="#i-clear"/></svg>Clear
-		</button>
-	</header>
-
-	<div id="filters">
-		<span class="group">
-			<span class="glabel">Wired by</span>
-			<label class="chk"><input type="checkbox" data-show="manual" checked><i class="swatch manual"></i>You</label>
-			<label class="chk"><input type="checkbox" data-show="autowiring" checked><i class="swatch auto"></i>godi</label>
-			<label class="chk"><input type="checkbox" data-show="compiler-pass" checked><i class="swatch pass"></i>Compiler pass</label>
-		</span>
-		<span class="group">
-			<span class="glabel">Show</span>
-			<label class="chk"><input type="checkbox" data-show="method" checked>Method calls</label>
-			<label class="chk"><input type="checkbox" data-flag="isolate">Isolate selection</label>
-			<label class="chk"><input type="checkbox" data-flag="args" checked>Arguments</label>
-			<label class="chk" title="Nodes nothing injects: the top of each dependency tree"><input type="checkbox" data-flag="rootsOnly">Roots only</label>
-		</span>
-	</div>
-
-	<main>
-		<div id="canvas"><div id="cy"></div><div id="busy">Laying out…</div></div>
-		<aside id="panel"><p class="empty">Pick a node to see how it is wired.</p></aside>
-	</main>
-
-	<footer id="status"><span id="counts"></span><span class="grow"></span><button id="shortcuts" type="button" class="link" title="Keyboard and mouse shortcuts (?)">Shortcuts</button><button id="about" type="button" class="link">About</button></footer>
+		<label class="ctl" title="How the edges are drawn between the nodes">
+			<svg class="i"><use href="#i-route"/></svg>
+			<select id="routing">
+				<option value="unbundled-bezier">Curved</option>
+				<option value="straight">Straight</option>
+				<option value="segments">Angled</option>
+				<option value="taxi">Boxy</option>
+			</select>
+		</label>
+		<label class="ctl" title="What the wheel does. Auto tells a notched mouse wheel from a trackpad by the size of its steps, which is right for most hardware but not all">
+			<svg class="i"><use href="#i-input"/></svg>
+			<select id="wheel">
+				<option value="auto">Auto</option>
+				<option value="mouse">Mouse</option>
+				<option value="trackpad">Trackpad</option>
+			</select>
+		</label>
+		<label class="ctl" title="Colour scheme: follow the system, light, or dark (t)">
+			<svg class="i"><use id="theme-icon" href="#i-auto"/></svg>
+			<select id="theme">
+				<option value="auto">Auto</option>
+				<option value="light">Light</option>
+				<option value="dark">Dark</option>
+			</select>
+		</label>
+		<button id="help" type="button" class="link" title="How search works, and everything you can press, click and swipe">Help (?)</button><button id="about" type="button" class="link">About</button></footer>
 </div>
 <script type="application/json" id="godi-data">{{.Data}}</script>
 {{range .Scripts}}<script>{{.}}</script>

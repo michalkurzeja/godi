@@ -122,6 +122,9 @@ func (e *Encoder) policy(page pageData) string {
 		// unsafe-inline and the page would not draw. Scripts stay hash-locked,
 		// which is where the risk actually is.
 		"style-src 'unsafe-inline'",
+		// The node separators are drawn as inline SVG images. Nothing is
+		// fetched: data: is the only source, so the page stays offline.
+		"img-src data:",
 		"script-src " + strings.Join(sources, " "),
 		"base-uri 'none'",
 		"form-action 'none'",

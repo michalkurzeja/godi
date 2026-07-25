@@ -100,10 +100,17 @@ func (p *printer) preamble() {
 }
 
 func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
+	// A child scope's label already reads as a sentence; a bare scope name does
+	// not, so it is said what it is.
+	label := scope.Label()
+	if scope.Owner == "" {
+		label = "scope: " + label
+	}
+
 	// Cluster names must start with "cluster" for Graphviz to draw the box.
 	p.printf("\tsubgraph %s {\n", quote("cluster_"+string(scope.ID)))
 	p.printf("\t\tgraph [label=%s, labeljust=l, style=\"rounded,filled\", fillcolor=%s, color=%s,\n",
-		quote(scopeLabel(scope)), quote(p.palette.clusterFill(scope.Depth)), quote(p.palette.clusterBorder))
+		quote(label), quote(p.palette.clusterFill(scope.Depth)), quote(p.palette.clusterBorder))
 	// A child scope is named after the definition that owns it, so the id needs
 	// the prefix: without it the cluster and its owner collide in the SVG.
 	p.printf("\t\t       fontcolor=%s, class=%s, id=%s];\n",
@@ -117,18 +124,6 @@ func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
 	}
 
 	p.printf("\t}\n")
-}
-
-func scopeLabel(scope *graph.Scope) string {
-	if scope.Owner == "" {
-		return "scope: " + string(scope.ID)
-	}
-	// A child scope's own name is a uuid; name it after what declared it.
-	owner := render.Short(string(scope.Owner))
-	if _, name, ok := strings.Cut(owner, ":"); ok {
-		owner = name
-	}
-	return "children of " + owner
 }
 
 func (p *printer) node(node *graph.Node) {

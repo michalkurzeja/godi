@@ -3,6 +3,7 @@ package graph
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/michalkurzeja/godi/v2/graph/internal/render"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
@@ -65,6 +66,21 @@ type Scope struct {
 	Depth  int     `json:"depth"`
 	Name   string  `json:"name"`           // The container's own name for it; a uuid for child scopes.
 	Owner  NodeID  `json:"owner,omitzero"` // The node that declared this scope.
+}
+
+// Label names a scope for a reader. A child scope's own name is the uuid of the
+// definition that declared it, which says nothing, so it is named after that
+// definition instead. Every encoder owes the reader the same answer, which is
+// why this is on the model rather than in each of them.
+func (s *Scope) Label() string {
+	if s.Owner == "" {
+		return string(s.ID)
+	}
+	owner := render.Short(string(s.Owner))
+	if _, name, ok := strings.Cut(owner, ":"); ok {
+		owner = name
+	}
+	return "children of " + owner
 }
 
 // NodeKind tells a service apart from a function.

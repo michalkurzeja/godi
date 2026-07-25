@@ -188,7 +188,7 @@ func run(format, theme, layout, link string, show bool, w io.Writer) error {
 	opts := []graph.Option{graph.WithLiteralValues(28)}
 
 	if show {
-		path, err := view.Open(c, enc, opts...)
+		path, err := openGraph(c, enc, opts...)
 		if err != nil {
 			return err
 		}
@@ -202,6 +202,11 @@ func run(format, theme, layout, link string, show bool, w io.Writer) error {
 	}
 	return g.Encode(w, enc)
 }
+
+// openGraph is a variable so a test can watch what it is handed: -open used to
+// extract without the options the stdout path used, and quietly drew a
+// different graph.
+var openGraph = view.Open
 
 func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 	switch format {

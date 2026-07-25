@@ -179,7 +179,6 @@ func TestPayloadCarriesTheWholeGraph(t *testing.T) {
 	var data struct {
 		Nodes []struct {
 			ID     string `json:"id"`
-			Search string `json:"search"`
 			Params []struct {
 				Origin string `json:"origin"`
 			} `json:"params"`
@@ -203,9 +202,6 @@ func TestPayloadCarriesTheWholeGraph(t *testing.T) {
 	require.Equal(t, "manual", data.Edges[0].Origin)
 	require.Equal(t, "ref", data.Edges[0].Resolution)
 	require.Equal(t, "manual", data.Nodes[0].Params[0].Origin)
-	require.Equal(t,
-		"github.com/acme/app.(*consumer) github.com/acme/app.newconsumer root",
-		data.Nodes[0].Search)
 }
 
 // An argument godi autowired, through a binding a compiler pass created, was

@@ -112,9 +112,85 @@ body {
 
 #found { color: var(--muted); font-size: 12px; }
 
+/* One clear button, ours, so it can be styled and reached from a test. */
+#search::-webkit-search-cancel-button { display: none; }
+#search-clear {
+	margin-left: -1.5rem;
+	padding: .1rem;
+	border: 0;
+	background: none;
+	color: var(--muted);
+	line-height: 0;
+}
+#search-clear:hover { color: var(--accent); }
+#search-clear .i { width: 11px; height: 11px; }
+
+/* What search looks at, offered where it is decided. The buttons are inside the
+   field, so clicking one keeps the focus that opened the panel. */
+#find { position: relative; }
+#search-scopes {
+	display: none;
+	position: absolute;
+	top: calc(100% + 6px);
+	left: 0;
+	z-index: 5;
+	align-items: center;
+	gap: .5rem;
+	padding: .4rem .5rem;
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-radius: 5px;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 14%);
+	white-space: nowrap;
+}
+#find:focus-within #search-scopes { display: flex; }
+
 .ctl { display: flex; align-items: center; gap: .35rem; color: var(--muted); white-space: nowrap; }
-.ctl input[type=range] { width: 5rem; }
 .ctl output { min-width: 1ch; color: var(--text); }
+
+/* Drawn by hand rather than left native, because the thumb is the part that
+   should light up on hover and a native one cannot be reached. */
+.ctl input[type=range] {
+	appearance: none;
+	width: 5rem;
+	height: 12px;
+	background: transparent;
+	cursor: pointer;
+}
+.ctl input[type=range]::-webkit-slider-runnable-track {
+	height: 3px;
+	border-radius: 2px;
+	background: var(--border);
+}
+.ctl input[type=range]::-webkit-slider-thumb {
+	appearance: none;
+	width: 11px;
+	height: 11px;
+	margin-top: -4px;
+	border-radius: 50%;
+	background: var(--accent);
+	transition: box-shadow .1s ease-out;
+}
+.ctl input[type=range]:hover::-webkit-slider-thumb,
+.ctl input[type=range]:focus-visible::-webkit-slider-thumb {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.ctl input[type=range]::-moz-range-track {
+	height: 3px;
+	border-radius: 2px;
+	background: var(--border);
+}
+.ctl input[type=range]::-moz-range-thumb {
+	width: 11px;
+	height: 11px;
+	border: 0;
+	border-radius: 50%;
+	background: var(--accent);
+}
+.ctl input[type=range]:hover::-moz-range-thumb,
+.ctl input[type=range]:focus-visible::-moz-range-thumb {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
 
 button, select {
 	font: inherit;
@@ -127,8 +203,34 @@ button, select {
 }
 button:hover, select:hover { border-color: var(--accent); }
 
-/* Fixed width so the bar does not jump as the label cycles. */
-#theme { min-width: 5.6rem; }
+/* One click to switch, rather than a menu to open: this one gets used a lot. */
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 5px 5px 0; }
+/* The buttons overlap by a pixel to share a border, so a highlighted one has to
+   come forward or its neighbour paints over the edge. */
+.seg button:hover,
+.seg button:focus-visible { z-index: 2; }
+/* Off: sunk into the bar. Declared before the pressed rule, which has the same
+   weight and would otherwise lose to it on source order alone. */
+.seg.toggles button { background: var(--chrome); color: var(--muted); padding: .12rem .4rem; }
+.seg.toggles button[aria-pressed="false"] .swatch { opacity: .4; }
+
+/* On: one highlight for the whole toolbar, whether the group is a choice of one
+   or a row of toggles. */
+.seg button[aria-pressed="true"] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--bg);
+	z-index: 1;
+}
+.seg button[aria-pressed="true"] .i { color: inherit; }
+/* The swatch would vanish into the accent, so it is drawn in the text colour
+   and keeps only its line style. The legend carries the colours. */
+.seg button[aria-pressed="true"] .swatch { border-color: currentColor; }
+
+
 
 .i {
 	width: 13px;
@@ -151,9 +253,6 @@ button:hover .i { color: var(--accent); }
 .group + .group { border-left: 1px solid var(--border); padding-left: .7rem; }
 .glabel { color: var(--muted); }
 
-.chk { display: flex; align-items: center; gap: .25rem; cursor: pointer; user-select: none; }
-.chk input { margin: 0; }
-
 .swatch { width: .8rem; height: 0; border-top: 2px solid var(--muted); display: inline-block; }
 .swatch.manual { border-color: var(--manual); }
 .swatch.auto { border-top-style: dashed; border-color: var(--auto); }
@@ -161,10 +260,15 @@ button:hover .i { color: var(--accent); }
 
 /* ------------------------------------------------------------ canvas --- */
 
-main { flex: 1; display: flex; min-height: 0; }
+main { flex: 1; display: flex; min-height: 0; position: relative; }
 
 #canvas { flex: 1; min-width: 0; position: relative; background: var(--bg); }
-#cy { position: absolute; inset: 0; }
+#cy { position: absolute; inset: 0; cursor: default; }
+
+/* Holding the modifier arms panning, so the cursor says so before anything is
+   dragged. */
+#cy.pan-armed { cursor: grab; }
+#cy.pan-armed:active, #cy.panning { cursor: grabbing; }
 
 #busy {
 	position: absolute;
@@ -178,7 +282,117 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #canvas.busy #busy { display: flex; }
 
+/* ------------------------------------------------------------ legend --- */
+
+/* Bottom left, out of the way of the graph, with a tab that reads bottom to
+   top the way an edge tab should. */
+/* The tab rides on the legend's edge, so it travels with it rather than
+   sitting at the window edge while the panel opens beside it. */
+#legend-dock {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	z-index: 3;
+	display: flex;
+	align-items: flex-end;
+}
+
+#legend-tab {
+	flex: none;
+	margin-bottom: 10px;
+	/* Overlaps the legend's edge, so the seam between them is one line and not
+	   two. The tab is shorter than the panel, so that edge has to stay drawn. */
+	margin-left: -1px;
+	width: 18px;
+	padding: .5rem 0;
+	border: 1px solid var(--muted);
+	border-left: 0;
+	border-radius: 0 5px 5px 0;
+	background: var(--chrome);
+	color: var(--text);
+	box-shadow: 1px 1px 3px rgb(0 0 0 / 12%);
+	font-size: 10.5px;
+	letter-spacing: .04em;
+	writing-mode: vertical-rl;
+}
+#legend-tab:hover { background: var(--panel); color: var(--accent); }
+
+#legend {
+	display: none;
+	gap: 1.1rem;
+	padding: .55rem .8rem .6rem;
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-left: 0;
+	/* It rests on the bottom bar, so that bar's top border is its own. */
+	border-bottom: 0;
+	box-shadow: 1px -1px 3px rgb(0 0 0 / 12%);
+	font-size: 11px;
+}
+#app.legend-open #legend { display: flex; }
+/* With the legend away there is no edge to overlap, and the pull would take the
+   tab a pixel off the window. */
+#app:not(.legend-open) #legend-tab { margin-left: 0; }
+
+.legend-col { display: flex; flex-direction: column; gap: .5rem; }
+.legend-group { display: flex; flex-direction: column; gap: .18rem; }
+.legend-head { font-weight: 600; margin-bottom: .12rem; white-space: nowrap; }
+.legend-head .hint { font-weight: 400; color: var(--muted); margin-left: .3rem; }
+.legend-row { display: flex; align-items: center; gap: .45rem; white-space: nowrap; }
+
+.sample { width: 46px; height: 12px; flex: none; color: var(--muted); }
+.sample .line { fill: none; stroke: currentColor; }
+.sample .head.filled { fill: currentColor; stroke: none; }
+.sample .head.hollow { fill: var(--chrome); stroke: currentColor; stroke-width: 1.3; }
+.sample.manual { color: var(--manual); }
+.sample.auto { color: var(--auto); }
+.sample.pass { color: var(--pass); }
+.sample.warn { color: var(--warn); }
+
 /* ------------------------------------------------------------- panel --- */
+
+/* A short handle on the panel's edge, so the panel can be sent away for more
+   room and fetched back without hunting for a control. It floats rather than
+   taking a column of its own, so hiding the panel gives the canvas all of it. */
+#panel-tab {
+	position: absolute;
+	top: 10px;
+	/* A pixel over the panel's edge, so the border does not run behind it. */
+	right: calc(23rem - 1px);
+	z-index: 3;
+	width: 16px;
+	height: 42px;
+	padding: 0;
+	border: 1px solid var(--muted);
+	border-right: 0;
+	border-radius: 5px 0 0 5px;
+	background: var(--chrome);
+	color: var(--text);
+	box-shadow: -1px 1px 3px rgb(0 0 0 / 12%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+/* The arrow points the way the panel will go: out to the right to hide, back
+   to the left to return. */
+#panel-tab .i { width: 10px; height: 10px; }
+#panel-tab:hover { background: var(--panel); color: var(--accent); }
+#app.panel-hidden #panel { display: none; }
+#app.panel-hidden #panel-tab { right: 0; }
+#app.panel-hidden #panel-tab .i { transform: rotate(180deg); }
+
+/* Something changed behind the tab. Says so without taking the space back:
+   an accidental click must not cost the reader their canvas. */
+#panel-tab.flash { animation: tab-flash 1s ease-out; }
+
+@keyframes tab-flash {
+	0%, 100% { background: var(--chrome); color: var(--muted); }
+	15%, 55% { background: var(--accent); color: var(--bg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#panel-tab.flash { animation-duration: 1ms; }
+}
 
 #panel {
 	width: 23rem;
@@ -186,7 +400,8 @@ main { flex: 1; display: flex; min-height: 0; }
 	overflow: auto;
 	padding: .8rem .9rem 2rem;
 	background: var(--panel);
-	border-left: 1px solid var(--border);
+	/* The same edge the tab is drawn with, so the two read as one piece. */
+	border-left: 1px solid var(--muted);
 }
 
 #panel h2 { font-size: 14px; margin: 0 0 .1rem; word-break: break-word; }
@@ -205,6 +420,8 @@ main { flex: 1; display: flex; min-height: 0; }
 #panel dt { color: var(--muted); }
 #panel dl.keys { grid-template-columns: auto 1fr; gap: .3rem .7rem; align-items: baseline; }
 #panel dl.keys dt { text-align: right; }
+
+#panel .or { color: var(--muted); font-size: 10px; margin: 0 .2rem; }
 
 .gesture { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 
@@ -283,3 +500,32 @@ kbd {
 	font-size: 11.5px;
 }
 #status .link { font-size: 11.5px; }
+
+/* The bottom bar holds the settings that are not about browsing the graph, so
+   they sit smaller than the toolbar's. */
+#status .ctl { color: var(--muted); }
+#status select,
+#status button:not(.link) {
+	font-size: 11.5px;
+	padding: .1rem .35rem;
+}
+#status .i { width: 11px; height: 11px; }
+
+
+/* The native arrow points down wherever the control is. This one sits at the
+   bottom of the window, so its menu opens upwards and the arrow should say so. */
+#status .ctl { position: relative; }
+#status select { appearance: none; padding-right: 1.1rem; }
+#status .ctl::after {
+	content: "";
+	position: absolute;
+	right: .4rem;
+	top: 50%;
+	margin-top: -2px;
+	width: 0;
+	height: 0;
+	border-left: 3.5px solid transparent;
+	border-right: 3.5px solid transparent;
+	border-bottom: 4px solid var(--muted);
+	pointer-events: none;
+}
