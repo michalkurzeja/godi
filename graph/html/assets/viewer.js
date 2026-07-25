@@ -190,10 +190,9 @@ const shownParam = (p) => state.args && (state.show.method || !isMethod(p));
 function rows(n) {
 	const lines = [];
 	// A root is the top of a tree, and a function is a function; a root
-	// function wears both. A node missing something it needs leads with the
-	// warning, because that is the one you are looking for.
-	const head = (n.incomplete ? '⚠ ' : '') + (n.root ? '▲ ' : '') +
-		(n.kind === 'function' ? 'ƒ ' : '');
+	// function wears both. A node missing something it needs wears nothing: the
+	// red border says it, and a second mark in the title only crowds it.
+	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
 	const heading = displayName(n);
 	const sub = displaySub(n);
 	lines.push(clip(head + heading));

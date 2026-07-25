@@ -1798,14 +1798,13 @@ await test('a node missing something it needs is drawn in the warning colour', a
             border: broken.style('border-color'),
             other: sound.style('border-color'),
             width: parseFloat(broken.style('border-width')),
-            label: broken.data('label').split('\\n')[0],
+            otherWidth: parseFloat(sound.style('border-width')),
         };
     })()`);
 
     if (style.border !== style.warn) return `border is ${style.border}, want the warning colour ${style.warn}`;
     if (style.other === style.warn) return 'a node with nothing wrong with it is drawn as a warning';
-    if (!(style.width > 2.2)) return `border width ${style.width} does not stand out`;
-    return style.label.startsWith('\u26a0') || `the box does not lead with the warning mark: ${style.label}`;
+    return style.width > style.otherWidth || `border width ${style.width} does not stand out`;
 });
 
 await test('the footer counts what is incomplete', async () =>
