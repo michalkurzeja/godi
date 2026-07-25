@@ -149,6 +149,82 @@ func (n *Node) TypeShort() string { return render.Short(n.Type) }
 // NameShort is Name without the package path, for labels.
 func (n *Node) NameShort() string { return render.Short(n.Name) }
 
+// Anonymous reports whether this node is a function literal.
+//
+// Those have no name of their own, so what the graph carries is what the
+// runtime calls them: the function that encloses them and a counter, as in
+// "main.build.func1", with a further counter for each level of nesting. Worth
+// knowing because a name like that identifies a function without describing it,
+// and its signature is the only thing that does.
+// "func1" on its own is a name someone can perfectly well choose, so the marker
+// alone is not enough to go on. What settles it is that a literal is named
+// after whatever encloses it: inside its own package there is always a
+// qualifier in front of the counter, and a function of one's own has nothing in
+// front of it at all.
+//
+// The one case this cannot separate is a method someone called "func1", which
+// is spelled exactly as a literal inside a method called anything else. Nothing
+// in the name distinguishes them, and the cost of being wrong is a line of
+// signature shown or not shown.
+func (n *Node) Anonymous() bool {
+	if n.Kind != NodeFunction {
+		return false
+	}
+
+	// What the name says within its own package: "build.func1" for a literal
+	// declared inside build, "migrate" for a function of its own.
+	local := strings.TrimPrefix(n.Name, render.Package(n.Name)+".")
+
+	for {
+		dot := strings.LastIndexByte(local, '.')
+		if dot < 0 {
+			return false
+		}
+
+		part := local[dot+1:]
+		if counter, ok := strings.CutPrefix(part, "func"); ok && digits(counter) {
+			return true
+		}
+		// A nested literal adds a bare counter of its own; walk back past those
+		// to reach the marker.
+		if !digits(part) {
+			return false
+		}
+		local = local[:dot]
+	}
+}
+
+func digits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// Package is the import path this node belongs to.
+//
+// It is worth having on its own because the qualified type is not: a generic
+// names its type arguments in full, so the one line that would tell you where a
+// service lives is the one line nobody can read. The package answers that
+// question and nothing else.
+//
+// A function's type is only a signature, and a service can be of a builtin
+// type; either way the factory that made it has a package when the type does
+// not.
+func (n *Node) Package() string {
+	if n.Kind == NodeService {
+		if pkg := render.Package(n.Type); pkg != "" {
+			return pkg
+		}
+	}
+	return render.Package(n.Name)
+}
+
 // Location is a place in the source. Paths are relative to the graph's
 // SourceRoot when it has one.
 //

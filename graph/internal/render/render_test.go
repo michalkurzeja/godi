@@ -106,3 +106,33 @@ func TestWrap(t *testing.T) {
 func join(lines []string) string {
 	return strings.Join(lines, "")
 }
+
+func TestPackage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"a qualified type", "github.com/acme/app/http.(*Server)", "github.com/acme/app/http"},
+		{"a factory", "github.com/acme/app.NewServer", "github.com/acme/app"},
+		{"the standard library", "time.Duration", "time"},
+		{"package main", "main.Config", "main"},
+		{"a slice", "[]github.com/acme/app.T", "github.com/acme/app"},
+		// The first qualified name is the type; the ones after it are its type
+		// arguments, which may live anywhere.
+		{"a generic", "github.com/acme/app.Handler[github.com/other/x.Req]", "github.com/acme/app"},
+		{"a map, whose key comes first in the text", "map[string]github.com/acme/app.Entry", "github.com/acme/app"},
+		{"a builtin", "string", ""},
+		{"a bare func type", "func() error", ""},
+		{"empty", "", ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, render.Package(test.in))
+		})
+	}
+}

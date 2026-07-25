@@ -11,7 +11,7 @@
 // one JSON object per line; anything else is a diagnostic.
 
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const [, , pagePath, chromePath, profileDir] = process.argv;
 const PAGE = 'file://' + pagePath;
@@ -195,7 +195,52 @@ await test('graphviz placed the nodes', async () => {
 await test('the label leaves a blank row between sections', async () => {
 	const lines = await rows(SERVER);
 	const blanks = lines.map((l, i) => l.trim() === '' ? i : -1).filter((i) => i >= 0);
-	return eq(blanks, [2, 5], `blank rows in ${JSON.stringify(lines)}`);
+	return eq(blanks, [1, 4], `blank rows in ${JSON.stringify(lines)}`);
+});
+
+// A service is named by the type it provides. The factory used to sit under it
+// in every box in the graph, saying little the type did not, and it is in the
+// panel with a link to its source.
+await test('a service box does not name its factory', async () => {
+	const lines = await rows(SERVER);
+	return (lines[0] === '▲ app.(*Server)' && !lines.some((l) => l.includes('NewServer')))
+		|| `the box reads ${JSON.stringify(lines.slice(0, 2))}`;
+});
+
+// A function is named by what it is called. The fixture has no function in it,
+// so one is borrowed.
+const borrowAsFunction = (props) => ev(`(() => {
+	const n = godi.data.nodes.find((x) => x.id === ${JSON.stringify(SERVER)});
+	Object.assign(n, ${JSON.stringify(props)});
+	return true;
+})()`);
+
+const rebuildBoxes = async () => { await toggle('args', false); await toggle('args', true); };
+
+await test('a function box is its name and nothing else', async () => {
+	await borrowAsFunction({ kind: 'function' });
+	await rebuildBoxes();
+	const lines = await rows(SERVER);
+
+	await borrowAsFunction({ kind: 'service' });
+	await rebuildBoxes();
+
+	return (lines[0] === '▲ ƒ app.NewServer' && lines[1].trim() === '')
+		|| `the box reads ${JSON.stringify(lines.slice(0, 2))}`;
+});
+
+// The runtime's name for a literal - the enclosing function and a counter -
+// identifies it without describing it, so the signature is the one thing that
+// says what it is.
+await test('unless it is a literal, which has only a signature to go on', async () => {
+	await borrowAsFunction({ kind: 'function', anonymous: true });
+	await rebuildBoxes();
+	const lines = await rows(SERVER);
+
+	await borrowAsFunction({ kind: 'service', anonymous: false });
+	await rebuildBoxes();
+
+	return eq(lines.slice(0, 2), ['▲ ƒ app.NewServer', 'app.(*Server)'], 'the first two rows');
 });
 
 // A label is one colour throughout, so the rules are drawn as an image instead
@@ -364,14 +409,39 @@ await test('a service is headed by the type it provides', async () => {
 		'app.(*Server)', 'the heading');
 });
 
-await test('the qualified forms sit in labelled rows, not loose under it', async () =>
+// The qualified type and factory used to sit here. A generic names its type
+// arguments in full, so those rows ran to several lines to say what the heading
+// already said plus where it lives - which is all the package says, on one line.
+await test('the package sits in a labelled row under the heading', async () =>
 	eq(await ev(`(() => {
 		const dl = document.querySelector('#panel dl');
 		return [...dl.children].slice(0, 4).map(el => el.textContent);
 	})()`), [
-		'Type', 'github.com/acme/app.(*Server)',
-		'Factory', 'github.com/acme/app.NewServer',
+		'Package', 'github.com/acme/app',
+		'Scope', 'root',
 	], 'the first rows'));
+
+await test('and the qualified forms are gone from it', async () => {
+	const text = await panelText();
+	return (!text.includes('github.com/acme/app.(*Server)') && !text.includes('github.com/acme/app.NewServer'))
+		|| 'a fully qualified name is still in the panel';
+});
+
+// Every path in it, not just the last: a generic names its type arguments, and
+// leaving those qualified is what made the old rows unreadable.
+await test('the signature is shortened throughout', async () => {
+	const shown = await ev(`document.querySelector('#panel .sig').textContent`);
+	return shown === 'func(app.Handler[app.Request], app.Logger) app.(*Server)'
+		|| `the signature reads ${JSON.stringify(shown)}`;
+});
+
+// Shortening is for reading; the qualified form is still the answer to "which
+// app package", so it stays a hover away.
+await test('and the whole of it is still there on hover', async () => {
+	const full = await ev(`document.querySelector('#panel .sig').title`);
+	return full === 'func(github.com/acme/app.Handler[github.com/acme/app.Request], app.Logger) github.com/acme/app.(*Server)'
+		|| `the tooltip reads ${JSON.stringify(full)}`;
+});
 
 await test('nothing under the heading repeats it', async () => {
 	await selectNode(SERVER);
@@ -392,10 +462,6 @@ await test('the panel leads with the signature', async () => {
 	return eq(headings.slice(0, 3), ['Factory signature', 'Factory arguments', 'Method calls'],
 		'the panel sections, in order');
 });
-
-await test('the signature is the one the model carries', async () =>
-	eq(await ev(`document.querySelector('#panel .sig').textContent`),
-		'func(*app.Router, app.Logger) github.com/acme/app.(*Server)', 'the signature'));
 
 // --- reported: the panel ran method calls in with constructor arguments ----
 
@@ -1093,6 +1159,112 @@ await test('the t key cycles it too', async () => {
 
 await ev(`(() => { const t = document.getElementById('theme'); t.value = 'auto'; t.dispatchEvent(new Event('change')); return true; })()`);
 
+// --- the panel can be resized ----------------------------------------------
+
+const gripAt = () => ev(`(() => {
+	const r = document.getElementById('panel-grip').getBoundingClientRect();
+	return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 120) };
+})()`);
+
+const panelWidth = () => ev(`document.getElementById('panel').getBoundingClientRect().width`);
+
+// Dragged with real pointer events, because that is the whole of the feature:
+// the grip captures the pointer so the edge keeps up with it even once it is
+// out over the canvas.
+async function dragGrip(by) {
+	const at = await gripAt();
+	await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+	for (let i = 1; i <= 4; i++) {
+		await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + (by * i) / 4, y: at.y, button: 'left', buttons: 1 });
+		await sleep(20);
+	}
+	await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + by, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
+	await sleep(120);
+}
+
+await test('dragging the grip widens the panel', async () => {
+	const before = await panelWidth();
+	await dragGrip(-150);
+	const after = await panelWidth();
+	return Math.abs(after - (before + 150)) < 3
+		|| `the panel went from ${before} to ${after}, wanted ${before + 150}`;
+});
+
+// Cytoscape measures its container once and then watches only the window, so
+// without being told, the canvas keeps the width it had and everything on it
+// lands in the wrong place.
+// Cytoscape watches its own container, so nothing here has to tell it - but if
+// that ever stopped being true the graph would be drawn at the wrong size, and
+// this is the only place it would show.
+await test('and the drawing follows the space it has', async () => {
+	// The drawing surface, not the element around it: cy.width() reads the
+	// container live and so agrees either way, while the <canvas> layers keep
+	// whatever pixel size they were last given.
+	const gap = await ev(`(() => {
+		const box = document.getElementById('cy').getBoundingClientRect();
+		const layer = document.querySelector('#cy canvas');
+		return Math.round(Math.abs(layer.width / (window.devicePixelRatio || 1) - box.width));
+	})()`);
+	return gap <= 1 || `the drawing surface is ${gap}px out from the space it fills`;
+});
+
+await test('dragging it back narrows the panel again', async () => {
+	const before = await panelWidth();
+	await dragGrip(150);
+	const after = await panelWidth();
+	return Math.abs(after - (before - 150)) < 3 || `the panel went from ${before} to ${after}`;
+});
+
+// A panel dragged past the window edge would leave no canvas at all, and one
+// dragged shut is what the tab is for.
+await test('it cannot be dragged away entirely', async () => {
+	await dragGrip(2000);
+	const narrow = await panelWidth();
+	await dragGrip(-4000);
+	const wide = await panelWidth();
+	const room = await ev(`window.innerWidth`);
+
+	return (narrow >= 220 && narrow < 260 && wide <= room * 0.8 + 1)
+		|| `it clamped to ${narrow} and ${wide} in a window of ${room}`;
+});
+
+await test('double-clicking the grip puts the default back', async () => {
+	const at = await gripAt();
+	for (let i = 1; i <= 2; i++) {
+		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: i });
+		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: i });
+	}
+	await sleep(120);
+
+	const [width, rem] = await ev(`[
+		document.getElementById('panel').getBoundingClientRect().width,
+		parseFloat(getComputedStyle(document.documentElement).fontSize) * 23,
+	]`);
+	return Math.abs(width - rem) < 1 || `the panel came back at ${width}, not the ${rem} the stylesheet declares`;
+});
+
+// Reachable without a pointer at all.
+await test('the arrow keys resize it too', async () => {
+	const before = await panelWidth();
+	await ev(`(() => {
+		const g = document.getElementById('panel-grip');
+		g.focus();
+		g.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+		return true;
+	})()`);
+	const after = await panelWidth();
+	return after === before + 16 || `left arrow took it from ${before} to ${after}`;
+});
+
+await test('the grip goes away with the panel', async () => {
+	await ev(`(() => { document.getElementById('panel-tab').click(); return true; })()`);
+	await sleep(80);
+	const hidden = await ev(`getComputedStyle(document.getElementById('panel-grip')).display`);
+	await ev(`(() => { document.getElementById('panel-tab').click(); return true; })()`);
+	await sleep(80);
+	return hidden === 'none' || `the grip was ${hidden} with nothing to resize`;
+});
+
 // --- source locations ------------------------------------------------------
 
 await test('the panel shows where a service was registered and defined', async () => {
@@ -1230,6 +1402,17 @@ await test('the count is in the status bar', async () =>
 
 // --- reported: the hop slider had no way to say "all" ----------------------
 
+// Selecting a node and seeing only its immediate neighbours hides the thing you
+// selected it to look at. Narrowing from the whole tree is the easier direction
+// to work in, and the slider is right there.
+await test('the hop slider starts at "all"', async () => {
+	return eq(await ev(`[
+		document.getElementById('hops').value === document.getElementById('hops').max,
+		document.getElementById('hops-out').textContent,
+		godi.state.hops === Infinity,
+	]`), [true, 'all', true], 'the slider, its label and the state on a fresh page');
+});
+
 await test('the hop slider tops out at "all"', async () => {
 	await selectNode(SERVER);
 	await setHops(await ev(`document.getElementById('hops').max`));
@@ -1340,6 +1523,37 @@ await test('and a remembered line routing is drawn after one', async () => {
 	const drawn = await ev(`godi.cy.edges()[0].style('curve-style')`);
 	const shown = await ev(`document.getElementById('routing').value`);
 	return (drawn === 'taxi' && shown === 'taxi') || `the menu says ${shown} and the edges are drawn ${drawn}`;
+});
+
+// A browser puts back what was typed and dragged when a page is reloaded,
+// whether or not the page asked it to, and then the controls hold values the
+// page never derived anything from. Headless Chrome does not do it, so the same
+// situation is set up by hand: the slider is moved off its default and the
+// search box filled in the markup, while the label beside the slider still reads
+// what it always did - which is exactly what restoration leaves behind, since an
+// <output> is not a form control and does not come back with the rest.
+await test('the controls are read at load rather than assumed', async () => {
+	const restored = pagePath.replace(/\.html$/, '-restored.html');
+	const before = readFileSync(pagePath, 'utf8');
+	const after = before
+		.replace('id="hops" type="range" min="1" max="7" step="1" value="7"',
+			'id="hops" type="range" min="1" max="7" step="1" value="3"')
+		.replace('<input id="search" type="search"', '<input id="search" value="router" type="search"');
+	if (after === before) return 'the markup this test rewrites has moved';
+	writeFileSync(restored, after);
+
+	await ev(`location.href = ${JSON.stringify('file://' + restored)}`);
+	await sleep(500);
+	await settle();
+
+	return eq(await ev(`[
+		document.getElementById('hops-out').textContent,
+		godi.state.hops === Infinity ? 'all' : String(godi.state.hops),
+		godi.state.query,
+		document.getElementById('search-clear').hidden,
+		godi.cy.nodes('.match').length > 0,
+	]`), ['3', '3', 'router', false, true],
+		'the hop label, the hop state, the query, the clear button and the matches');
 });
 
 await ev(`(() => { localStorage.clear(); return true; })()`);

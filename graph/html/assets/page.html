@@ -56,8 +56,8 @@
 		<label class="ctl" title="How many injection steps from the selection stay lit; the last stop is the whole subgraph">
 			<svg class="i"><use href="#i-hops"/></svg>
 			Hops
-			<input id="hops" type="range" min="1" max="7" step="1" value="1">
-			<output id="hops-out">1</output>
+			<input id="hops" type="range" min="1" max="7" step="1" value="7">
+			<output id="hops-out">all</output>
 		</label>
 		<div class="seg radio" role="group" aria-label="Which way to follow the wiring from the selection">
 			<button type="button" data-dir="both" aria-pressed="true" title="Follow the wiring both ways">
@@ -112,6 +112,8 @@
 			<div id="legend" aria-label="Legend"></div>
 			<button id="legend-tab" type="button" title="What the arrows mean"><span>Legend</span></button>
 		</div>
+		<div id="panel-grip" role="separator" aria-orientation="vertical" aria-controls="panel" tabindex="0"
+			title="Drag to resize the panel, or double-click to put it back"></div>
 		<aside id="panel"><p class="empty">Pick a node to see how it is wired.</p></aside>
 	</main>
 

@@ -54,10 +54,12 @@ type viewNode struct {
 	Type      string `json:"type"`
 	Short     string `json:"short"`
 	Name      string `json:"name"`
+	Package   string `json:"package,omitzero"`
 	Signature string `json:"signature,omitzero"`
 
 	Labels []string `json:"labels,omitzero"`
 
+	Anonymous    bool `json:"anonymous,omitzero"`
 	Lazy         bool `json:"lazy"`
 	Shared       bool `json:"shared"`
 	Autowired    bool `json:"autowired"`
@@ -160,8 +162,10 @@ func newViewNode(node *graph.Node) viewNode {
 		Type:         node.Type,
 		Short:        node.TypeShort(),
 		Name:         node.Name,
+		Package:      node.Package(),
 		Signature:    node.Signature,
 		Labels:       node.Labels,
+		Anonymous:    node.Anonymous(),
 		Lazy:         node.Lazy,
 		Shared:       node.Shared,
 		Autowired:    node.Autowired,

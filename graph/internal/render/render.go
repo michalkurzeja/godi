@@ -47,6 +47,36 @@ func Short(signature string) string {
 	return sb.String()
 }
 
+// Package is the import path of the first qualified name in a signature:
+// "[]github.com/acme/app.(*Server)" gives "github.com/acme/app".
+//
+// The first, because that is the type itself - the ones after it belong to a
+// generic's type arguments, or to a map's key. Anything unqualified, a builtin
+// or a bare func type, has no package and gives "".
+func Package(signature string) string {
+	for i := 0; i < len(signature); {
+		if !isPathByte(signature[i]) {
+			i++
+			continue
+		}
+
+		start := i
+		for i < len(signature) && isPathByte(signature[i]) {
+			i++
+		}
+
+		// The path ends at its last slash; the name it qualifies starts at the
+		// first dot after that. Everything before is the package - dots and all,
+		// since "github.com" has one of its own.
+		run := signature[start:i]
+		slash := strings.LastIndexByte(run, '/')
+		if dot := strings.IndexByte(run[slash+1:], '.'); dot >= 0 {
+			return run[:slash+1+dot]
+		}
+	}
+	return ""
+}
+
 // isPathByte reports whether b can appear in a Go import path, or in the
 // qualified name that follows one. Import paths are ASCII, so scanning by byte
 // is safe.

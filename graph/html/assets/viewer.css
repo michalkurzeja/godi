@@ -78,7 +78,14 @@ body {
 	background: var(--bg);
 }
 
-#app { display: flex; flex-direction: column; height: 100vh; }
+#app {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	/* The panel's width lives here because three things follow it: the panel,
+	   the tab pinned to its edge, and the grip that resizes it. */
+	--panel-w: 23rem;
+}
 
 /* ----------------------------------------------------------- top bar --- */
 
@@ -358,7 +365,7 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 	position: absolute;
 	top: 10px;
 	/* A pixel over the panel's edge, so the border does not run behind it. */
-	right: calc(23rem - 1px);
+	right: calc(var(--panel-w) - 1px);
 	z-index: 3;
 	width: 16px;
 	height: 42px;
@@ -394,8 +401,32 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 	#panel-tab.flash { animation-duration: 1ms; }
 }
 
+/* A grab strip over the panel's edge. It sits on top of the border rather than
+   taking width of its own, so the panel is exactly as wide as it says it is. */
+#panel-grip {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: calc(var(--panel-w) - 3px);
+	width: 7px;
+	z-index: 2;
+	cursor: col-resize;
+	background: transparent;
+	transition: background .1s ease-out;
+}
+#panel-grip:hover, #panel-grip:focus-visible, #panel-grip.dragging {
+	background: color-mix(in srgb, var(--accent) 45%, transparent);
+	outline: none;
+}
+#app.panel-hidden #panel-grip { display: none; }
+
+/* While a drag is on, the pointer is often over the canvas rather than the
+   grip, and Cytoscape would read the movement as its own. */
+#app.resizing #cy { pointer-events: none; }
+#app.resizing { cursor: col-resize; user-select: none; }
+
 #panel {
-	width: 23rem;
+	width: var(--panel-w);
 	flex: none;
 	overflow: auto;
 	padding: .8rem .9rem 2rem;

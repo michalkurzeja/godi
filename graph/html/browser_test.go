@@ -163,7 +163,9 @@ func regressionModel() *graph.Graph {
 			ID: graph.NodeID("root/svc:app." + name), Kind: graph.NodeService, Scope: "root",
 			Type: pkg + "." + name, Name: pkg + ".New" + strings.Trim(name, "(*)"),
 			Shared: true, Lazy: true, Autowired: true,
-			Signature: "func(*app.Router, app.Logger) " + pkg + "." + name,
+			// Several qualified names, one of them a generic with a qualified
+			// type argument: the shape that makes a full signature unreadable.
+			Signature: "func(" + pkg + ".Handler[" + pkg + ".Request], app.Logger) " + pkg + "." + name,
 			Params:    params,
 		}
 	}

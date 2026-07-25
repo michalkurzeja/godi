@@ -180,3 +180,123 @@ func TestTheLookupsFindWhatIsThere(t *testing.T) {
 	require.Len(t, g.ChildScopes("root"), 1)
 	require.Len(t, g.ScopeNodes(childScope), 1)
 }
+
+// The qualified type is what the detail panel used to show, and a generic makes
+// it unreadable. The package is the part of it worth keeping.
+func TestANodeKnowsWhichPackageItBelongsTo(t *testing.T) {
+	t.Parallel()
+
+	const pkg = "github.com/acme/app"
+
+	tests := []struct {
+		name string
+		node graph.Node
+		want string
+	}{
+		{
+			"a service, from its type",
+			graph.Node{Kind: graph.NodeService, Type: pkg + ".(*Server)", Name: pkg + ".NewServer"},
+			pkg,
+		},
+		{
+			"a generic service, from the type rather than its arguments",
+			graph.Node{Kind: graph.NodeService, Type: pkg + ".Cache[github.com/other/x.Key]", Name: pkg + ".NewCache"},
+			pkg,
+		},
+		{
+			// A service can be of a builtin type; the factory that made it
+			// still lives somewhere.
+			"a service of no package, from its factory",
+			graph.Node{Kind: graph.NodeService, Type: "string", Name: pkg + ".NewGreeting"},
+			pkg,
+		},
+		{
+			// A function's type is only a signature, so it never has one.
+			"a function, from its name",
+			graph.Node{Kind: graph.NodeFunction, Type: "func() error", Name: pkg + ".migrate"},
+			pkg,
+		},
+		{"nothing to go on", graph.Node{Kind: graph.NodeService, Type: "string", Name: "closure"}, ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, test.node.Package())
+		})
+	}
+}
+
+// A function literal has no name of its own, so what the graph carries is what
+// the runtime calls it. That identifies it without describing it, which is why
+// it is worth telling apart.
+func TestAFunctionLiteralIsRecognisedByItsRuntimeName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		node graph.Node
+		want bool
+	}{
+		{
+			"a literal",
+			graph.Node{Kind: graph.NodeFunction, Name: "main.build.func1"},
+			true,
+		},
+		{
+			"one nested in another",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.wire.func2.1"},
+			true,
+		},
+		{
+			"one inside a method",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.(*Builder).build.func1"},
+			true,
+		},
+		{
+			"a named function",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.migrate"},
+			false,
+		},
+		{
+			// Nothing stops someone naming a function this way themselves. What
+			// separates them is that a literal is named after whatever encloses
+			// it, so it always has a qualifier in front of the counter.
+			"a function someone called func1",
+			graph.Node{Kind: graph.NodeFunction, Name: "main.func1"},
+			false,
+		},
+		{
+			"the same, in a package with a path",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.func1"},
+			false,
+		},
+		{
+			"a function whose name merely contains the marker",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.myfunc2"},
+			false,
+		},
+		{
+			"a named function whose name only looks like one",
+			graph.Node{Kind: graph.NodeFunction, Name: "github.com/acme/app.functional"},
+			false,
+		},
+		{
+			"a bare name",
+			graph.Node{Kind: graph.NodeFunction, Name: "func1"},
+			false,
+		},
+		{
+			"a service, whatever it is called",
+			graph.Node{Kind: graph.NodeService, Name: "main.build.func1"},
+			false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, test.node.Anonymous())
+		})
+	}
+}

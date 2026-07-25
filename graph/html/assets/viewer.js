@@ -59,12 +59,36 @@ const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 // a poor heading. This is the same swap graph/dot makes in its node labels.
 const displayName = (n) => n.kind === 'function' ? short(n.name) : n.short;
 
-// The line under the heading: the other half of the same pair.
-const displaySub = (n) => n.kind === 'function' ? n.short : short(n.name);
+// The line under the heading, which only a function literal has. A name is
+// enough for everything else: a service is named by the type it provides and a
+// function by what it is called, and both are on the line above. But the
+// runtime's name for a literal - the enclosing function and a counter - only
+// identifies it, so its signature is the one thing that says what it is.
+const displaySub = (n) => n.anonymous ? n.short : '';
+
+// short drops the package path from every qualified name in a signature,
+// keeping the last segment of each. The same rule graph/internal/render applies
+// in Go, and for the same reason: a signature can carry several paths - a
+// generic names its type arguments - and shortening around only the last slash
+// would leave the rest qualified, or cut away the type syntax in front of it.
+const PATH_BYTE = /[A-Za-z0-9./\-_~+]/;
 
 function short(sig) {
-	const i = sig.lastIndexOf('/');
-	return i < 0 ? sig : sig.slice(i + 1);
+	let out = '';
+	for (let i = 0; i < sig.length;) {
+		if (!PATH_BYTE.test(sig[i])) {
+			out += sig[i++];
+			continue;
+		}
+
+		const start = i;
+		while (i < sig.length && PATH_BYTE.test(sig[i])) i++;
+
+		const run = sig.slice(start, i);
+		const slash = run.lastIndexOf('/');
+		out += slash < 0 ? run : run.slice(slash + 1);
+	}
+	return out;
 }
 
 const clip = (s, max = MAX_CHARS) => s.length <= max ? s : s.slice(0, max - 1) + '…';
@@ -74,7 +98,9 @@ const clip = (s, max = MAX_CHARS) => s.length <= max ? s : s.slice(0, max - 1) +
 const state = {
 	query: '',
 	focus: null,
-	hops: 1,
+	// The whole subtree by default: a selection you cannot see the far end of
+	// is the more common disappointment, and the slider is right there.
+	hops: Infinity,
 	dir: 'both',
 	isolate: false,
 	rootsOnly: false,
@@ -808,6 +834,79 @@ function setPanel(open) {
 
 const panelOpen = () => !$('app').classList.contains('panel-hidden');
 
+// The default width is the one the stylesheet declares, so the two cannot drift:
+// double-clicking the grip puts back whatever the page was built with.
+const DEFAULT_PANEL_WIDTH = getComputedStyle($('app')).getPropertyValue('--panel-w').trim();
+
+// Narrow enough that a signature still wraps somewhere sensible, and never so
+// wide that the canvas is squeezed out of existence.
+const MIN_PANEL_WIDTH = 220;
+
+const panelWidth = () => $('panel').getBoundingClientRect().width;
+const maxPanelWidth = () => Math.max(MIN_PANEL_WIDTH, window.innerWidth * 0.8);
+
+// setPanelWidth takes a CSS length, or a number of pixels to be clamped.
+//
+// Nothing has to be told: the panel, the tab and the grip all follow the one
+// property, and Cytoscape watches its own container for size changes.
+function setPanelWidth(width) {
+	if (typeof width === 'number') {
+		width = Math.round(Math.min(Math.max(width, MIN_PANEL_WIDTH), maxPanelWidth())) + 'px';
+	}
+	$('app').style.setProperty('--panel-w', width);
+}
+
+function installPanelResize() {
+	const grip = $('panel-grip');
+	const app = $('app');
+
+	const stored = recall('godi.panelWidth');
+	if (stored) setPanelWidth(Number(stored) || stored);
+
+	// The width is measured from the right edge of the window rather than from
+	// where the drag started, so the panel edge stays under the pointer however
+	// far it has travelled.
+	const widthAt = (ev) => window.innerWidth - ev.clientX;
+
+	grip.addEventListener('pointerdown', (ev) => {
+		ev.preventDefault();
+		grip.setPointerCapture(ev.pointerId);
+		grip.classList.add('dragging');
+		app.classList.add('resizing');
+	});
+
+	grip.addEventListener('pointermove', (ev) => {
+		if (!grip.hasPointerCapture(ev.pointerId)) return;
+		setPanelWidth(widthAt(ev));
+	});
+
+	const stop = (ev) => {
+		if (!grip.hasPointerCapture(ev.pointerId)) return;
+		grip.releasePointerCapture(ev.pointerId);
+		grip.classList.remove('dragging');
+		app.classList.remove('resizing');
+		remember('godi.panelWidth', String(Math.round(panelWidth())));
+	};
+	grip.addEventListener('pointerup', stop);
+	grip.addEventListener('pointercancel', stop);
+
+	grip.addEventListener('dblclick', () => {
+		setPanelWidth(DEFAULT_PANEL_WIDTH);
+		remember('godi.panelWidth', DEFAULT_PANEL_WIDTH);
+	});
+
+	// Reachable without a pointer at all. The arrows read the way the edge
+	// moves, so left widens the panel.
+	grip.addEventListener('keydown', (ev) => {
+		const step = { ArrowLeft: 16, ArrowRight: -16 }[ev.key];
+		if (step === undefined) return;
+		ev.preventDefault();
+		setPanelWidth(panelWidth() + step);
+		remember('godi.panelWidth', String(Math.round(panelWidth())));
+	});
+}
+
+
 // A selection made while the panel is away says so on the tab rather than
 // taking the space back: an accidental click must not cost the reader the room
 // they asked for.
@@ -842,17 +941,13 @@ function showPanel(id) {
 	for (const label of n.labels || []) badges.append(badge(label));
 	parts.push(badges);
 
-	// Every value gets a label, so nothing floats loose under the heading. The
-	// qualified forms are what these rows are for, so a row whose value is the
-	// heading again - which happens in package main, where there is no import
-	// path to qualify with - has nothing to add and is left out.
+	// The package rather than the qualified type and factory those rows used to
+	// carry. A generic names its type arguments in full, so the qualified forms
+	// run to several lines and say, at length, what the heading already said
+	// plus where it lives. This is the "where it lives" on its own; the factory
+	// is a click away on the line below.
 	const dl = make('dl');
-	if (service && n.type !== heading) {
-		dl.append(make('dt', null, 'Type'), make('dd', 'mono', n.type));
-	}
-	if (n.name !== heading) {
-		dl.append(make('dt', null, service ? 'Factory' : 'Func'), make('dd', 'mono', n.name));
-	}
+	if (n.package) dl.append(make('dt', null, 'Package'), make('dd', 'mono', n.package));
 	dl.append(make('dt', null, 'Scope'), make('dd', null, scopePath(n.scope)));
 	if (n.registered) dl.append(make('dt', null, 'Registered'), locationCell(n.registered));
 	if (n.defined) dl.append(make('dt', null, 'Defined'), locationCell(n.defined));
@@ -863,7 +958,12 @@ function showPanel(id) {
 	// to the service itself, and the headings say so.
 	if (n.signature) {
 		parts.push(make('h3', null, service ? 'Factory signature' : 'Signature'));
-		parts.push(make('div', 'mono sig', n.signature));
+		// Shortened for the same reason the qualified rows above it went: a
+		// generic names its type arguments in full, and a signature carrying
+		// several of those is unreadable. The whole thing is a hover away.
+		const sig = make('div', 'mono sig', short(n.signature));
+		if (sig.textContent !== n.signature) sig.title = n.signature;
+		parts.push(sig);
 	}
 
 	const outgoing = out.get(n.id) || [];
@@ -966,6 +1066,7 @@ const CONTROLS = () => [
 			['Wheel', 'Zoom'],
 			[MOD_LABEL + ' + wheel', 'Zoom, whatever the wheel is set to do'],
 			['Shift + wheel', 'Pan sideways'],
+			['Drag the panel edge', 'Make the detail panel wider or narrower; double-click it to put it back'],
 		],
 	},
 	{
@@ -1259,16 +1360,26 @@ function cycleTheme() {
 
 // ------------------------------------------------------------------ wiring ---
 
+// Every native control below is read once as it is wired up, not just listened
+// to. A browser puts back what was typed and dragged when a page is reloaded,
+// whether or not the page asked it to, so the markup's value is a starting
+// point rather than a fact: without the read, the slider comes back where it
+// was left while its label and the graph still hold the default. It is the same
+// rule as for a stored preference, applied to the one store that is not ours.
 function installControls() {
 	const search = $('search');
 	const searchClear = $('search-clear');
 	let pending = 0;
-	search.addEventListener('input', () => {
+	const readSearch = () => {
 		state.query = search.value;
 		searchClear.hidden = search.value === '';
+	};
+	search.addEventListener('input', () => {
+		readSearch();
 		clearTimeout(pending);
 		pending = setTimeout(apply, 90);
 	});
+	readSearch();
 	searchClear.addEventListener('click', () => {
 		search.value = '';
 		state.query = '';
@@ -1286,10 +1397,14 @@ function installControls() {
 	// what you want as soon as you are chasing a chain rather than a neighbour.
 	const hops = $('hops');
 	const unlimited = Number(hops.max);
-	hops.addEventListener('input', () => {
+	const readHops = () => {
 		const value = Number(hops.value);
 		state.hops = value === unlimited ? Infinity : value;
 		$('hops-out').textContent = value === unlimited ? 'all' : hops.value;
+	};
+	readHops();
+	hops.addEventListener('input', () => {
+		readHops();
 		refresh();
 	});
 
@@ -1329,8 +1444,10 @@ function installControls() {
 		remember('godi.wheel', state.wheel);
 	});
 
-	$('layout').addEventListener('change', (ev) => {
-		state.layout = ev.target.value;
+	const layout = $('layout');
+	state.layout = layout.value;
+	layout.addEventListener('change', () => {
+		state.layout = layout.value;
 		cy.style(stylesheet()); // The edge style follows the layout.
 		relayout();
 	});
@@ -1413,6 +1530,7 @@ buildLegend();
 setLegend(recall('godi.legend') === 'open');
 
 installControls();
+installPanelResize();
 installPanning();
 installWheel();
 installTheme();
