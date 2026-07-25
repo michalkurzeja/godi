@@ -829,7 +829,7 @@ func TestExtractAppliesFilters(t *testing.T) {
 	t.Run("a focus narrows the graph to what surrounds the selection", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t), graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Upstream(1)))
+		g := extract(t, build(t), graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Consumers(1)))
 
 		require.ElementsMatch(t, []string{"v2_test.(*Store)", "v2_test.(*Server)"}, nodeTypes(g))
 	})

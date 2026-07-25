@@ -242,7 +242,7 @@ func TestFocusFollowsBothDirectionsAsFarAsTheyGo(t *testing.T) {
 func TestAHopNeverTurnsAround(t *testing.T) {
 	t.Parallel()
 
-	got := model().Select(graph.Focus(graph.ByType("*Repo)"), graph.Downstream(5), graph.Upstream(5)))
+	got := model().Select(graph.Focus(graph.ByType("*Repo)"), graph.Dependencies(5), graph.Consumers(5)))
 
 	require.ElementsMatch(t, []string{repo, config}, ids(got),
 		"the Router turned up, and it only shares the Config")
@@ -251,27 +251,27 @@ func TestAHopNeverTurnsAround(t *testing.T) {
 func TestNamingOneDirectionTakesTheOtherOut(t *testing.T) {
 	t.Parallel()
 
-	down := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Downstream(1)))
-	require.ElementsMatch(t, []string{router, config}, ids(down), "downstream reached a consumer")
+	deps := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Dependencies(1)))
+	require.ElementsMatch(t, []string{router, config}, ids(deps), "following dependencies reached a consumer")
 
-	up := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Upstream(1)))
-	require.ElementsMatch(t, []string{router, server}, ids(up), "upstream reached a dependency")
+	consumers := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Consumers(1)))
+	require.ElementsMatch(t, []string{router, server}, ids(consumers), "following consumers reached a dependency")
 }
 
 func TestHopsAreCountedInEdges(t *testing.T) {
 	t.Parallel()
 
-	one := model().Select(graph.Focus(graph.ByType("*Server)"), graph.Downstream(1)))
+	one := model().Select(graph.Focus(graph.ByType("*Server)"), graph.Dependencies(1)))
 	require.ElementsMatch(t, []string{server, router, conn, logger}, ids(one))
 
-	two := model().Select(graph.Focus(graph.ByType("*Server)"), graph.Downstream(2)))
+	two := model().Select(graph.Focus(graph.ByType("*Server)"), graph.Dependencies(2)))
 	require.ElementsMatch(t, []string{server, router, conn, logger, config}, ids(two))
 }
 
 func TestFocusSaysHowManyNeighboursItCutOff(t *testing.T) {
 	t.Parallel()
 
-	got := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Downstream(0), graph.Upstream(0)))
+	got := model().Select(graph.Focus(graph.ByType("*Router)"), graph.Dependencies(0), graph.Consumers(0)))
 
 	require.Equal(t, []string{router}, ids(got))
 	require.Equal(t, 2, node(t, got, router).Elided, "the Server above it and the Config below it")
@@ -374,7 +374,7 @@ func TestFiltersCompose(t *testing.T) {
 	t.Parallel()
 
 	got := model().Select(
-		graph.Focus(graph.ByType("*Server)"), graph.Downstream(1)),
+		graph.Focus(graph.ByType("*Server)"), graph.Dependencies(1)),
 		graph.HideMethodCalls(),
 	)
 
@@ -389,7 +389,7 @@ func TestFiltersCompose(t *testing.T) {
 func TestTheOrderFiltersAreGivenInDoesNotMatter(t *testing.T) {
 	t.Parallel()
 
-	focus := graph.Focus(graph.ByType("*Server)"), graph.Downstream(1))
+	focus := graph.Focus(graph.ByType("*Server)"), graph.Dependencies(1))
 
 	first := model().Select(graph.HideMethodCalls(), focus)
 	last := model().Select(focus, graph.HideMethodCalls())
@@ -445,7 +445,7 @@ func TestFilteringLeavesTheOriginalAlone(t *testing.T) {
 	g := model()
 	before := len(g.Nodes)
 
-	narrowed := g.Select(graph.Focus(graph.ByType("*Router)"), graph.Downstream(0), graph.Upstream(0)))
+	narrowed := g.Select(graph.Focus(graph.ByType("*Router)"), graph.Dependencies(0), graph.Consumers(0)))
 
 	require.Len(t, g.Nodes, before)
 	require.Len(t, narrowed.Nodes, 1)

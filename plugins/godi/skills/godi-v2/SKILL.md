@@ -349,7 +349,7 @@ past a hundred nodes a whole-graph picture is unreadable.
 
 ```go
 g, err := graph.Extract(c,
-	graph.Focus(graph.ByType("*app.(*Server)"), graph.Downstream(3)),
+	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
 	graph.ExcludeLabels("infrastructure"),
 	graph.HideMethodCalls(),
 )

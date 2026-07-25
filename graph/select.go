@@ -146,32 +146,32 @@ const (
 // FocusOption limits how far Focus follows the wiring.
 type FocusOption func(*reach)
 
-type reach struct{ up, down int }
+type reach struct{ consumers, dependencies int }
 
-// Upstream follows consumers - who asks for this - for at most hops edges.
-func Upstream(hops int) FocusOption { return func(r *reach) { r.up = hops } }
+// Dependencies follows what the selection asks for, for at most hops edges.
+func Dependencies(hops int) FocusOption { return func(r *reach) { r.dependencies = hops } }
 
-// Downstream follows dependencies - what this asks for - for at most hops edges.
-func Downstream(hops int) FocusOption { return func(r *reach) { r.down = hops } }
+// Consumers follows what asks for the selection, for at most hops edges.
+func Consumers(hops int) FocusOption { return func(r *reach) { r.consumers = hops } }
 
-// Focus keeps the selected nodes and what surrounds them, dropping the rest.
+// Focus keeps the matched nodes and what surrounds them, dropping the rest.
 //
 // With no options it follows the wiring as far as it goes in both directions,
 // which is the whole connected component. Naming one direction takes the other
-// out: Focus(sel, Downstream(3)) is "this and the three levels it is built
+// out: Focus(match, Dependencies(3)) is "this and the three levels it is built
 // from", not "and also everything that uses it".
 func Focus(match Matcher, opts ...FocusOption) Option {
-	r := reach{up: unset, down: unset}
+	r := reach{consumers: unset, dependencies: unset}
 	for _, opt := range opts {
 		opt(&r)
 	}
 	switch {
-	case r.up == unset && r.down == unset:
-		r.up, r.down = unlimited, unlimited
-	case r.up == unset:
-		r.up = 0
-	case r.down == unset:
-		r.down = 0
+	case r.consumers == unset && r.dependencies == unset:
+		r.consumers, r.dependencies = unlimited, unlimited
+	case r.consumers == unset:
+		r.consumers = 0
+	case r.dependencies == unset:
+		r.dependencies = 0
 	}
 
 	return withFilter(func(g *Graph, s *selection) {
@@ -404,8 +404,8 @@ func (s *selection) neighbourhood(g *Graph, seeds []NodeID, r reach) map[NodeID]
 		}
 	}
 
-	walk(r.down, g.OutEdges, func(e *Edge) NodeID { return e.To })
-	walk(r.up, g.InEdges, func(e *Edge) NodeID { return e.From })
+	walk(r.dependencies, g.OutEdges, func(e *Edge) NodeID { return e.To })
+	walk(r.consumers, g.InEdges, func(e *Edge) NodeID { return e.From })
 
 	return seen
 }

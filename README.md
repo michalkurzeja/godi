@@ -921,14 +921,14 @@ instead. Filters work on the model, which means every format gets them:
 
 ```go
 g, err := graph.Extract(c,
-	graph.Focus(graph.ByType("*app.(*Server)"), graph.Downstream(3)),
+	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
 	graph.ExcludeLabels("infrastructure"),
 	graph.HideMethodCalls(),
 )
 ```
 
 `Focus` follows the wiring outwards from what you select — both ways by default, or only the direction you
-name. It never turns a corner: a service that merely shares a dependency with your selection is not a
+name with `Dependencies(n)` or `Consumers(n)`. It never turns a corner: a service that merely shares a dependency with your selection is not a
 neighbour of it. Where a limit rather than a name cut the graph, the nodes at the edge say how many neighbours
 went with it, so a narrowed picture does not read as the whole one.
 
