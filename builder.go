@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/michalkurzeja/godi/v2/di"
+	"github.com/michalkurzeja/godi/v2/graph"
 )
 
 // New creates a new Builder.
@@ -23,7 +24,14 @@ type Builder struct {
 	functions []*FunctionDefinitionBuilder
 	bindings  []*InterfaceBindingBuilder
 	passes    []*di.CompilerPass
+
+	prepared bool
+	prepErr  error
 }
+
+// A Builder is a graph.Source too, so the wiring can be read before it is
+// compiled.
+var _ graph.Source = (*Builder)(nil)
 
 func (b *Builder) Services(services ...*ServiceDefinitionBuilder) *Builder {
 	b.services = append(b.services, services...)
@@ -46,42 +54,69 @@ func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {
 }
 
 func (b *Builder) Build() (Container, error) {
-	var joinedErr error
-
-	for _, builder := range b.services {
-		if err := builder.ParseFactory(); err != nil {
-			joinedErr = errors.Join(joinedErr, err)
-			continue
-		}
-	}
-
-	for _, builder := range b.services {
-		if err := builder.Build(b.cb.RootScope()); err != nil {
-			joinedErr = errors.Join(joinedErr, err)
-			continue
-		}
-	}
-
-	for _, builder := range b.functions {
-		if err := builder.Build(b.cb.RootScope()); err != nil {
-			joinedErr = errors.Join(joinedErr, err)
-			continue
-		}
-	}
-
-	for _, builder := range b.bindings {
-		if err := builder.Build(b.cb.RootScope()); err != nil {
-			joinedErr = errors.Join(joinedErr, err)
-			continue
-		}
-	}
+	prepErr := b.prepare()
 
 	for _, pass := range b.passes {
 		b.cb.Compiler().AddPass(pass)
 	}
 
 	container, err := b.cb.Build()
-	return container, errors.Join(joinedErr, err)
+	return container, errors.Join(prepErr, err)
+}
+
+// Graph returns the dependency graph of the container as it is configured so
+// far, before any of it is compiled: arguments you wrote are there, and the
+// ones godi would autowire are not yet. The graph says so - see graph.Snapshot.
+//
+// It is how you see what you have declared without building it, and the
+// counterpart to taking a graph from a compiler pass, which shows a later
+// moment. Building afterwards is unaffected.
+func (b *Builder) Graph(cfg graph.Config) *graph.Graph {
+	_ = b.prepare() // Whatever failed to build is missing from the graph, and Build reports it.
+	return b.cb.Graph(cfg)
+}
+
+// prepare turns the definition builders into definitions in the container
+// builder, collecting everything that went wrong rather than stopping at the
+// first.
+//
+// It runs once. The definitions it produces are the same objects Build
+// compiles, so preparing twice would fill their arguments twice.
+func (b *Builder) prepare() error {
+	if b.prepared {
+		return b.prepErr
+	}
+	b.prepared = true
+
+	for _, builder := range b.services {
+		if err := builder.ParseFactory(); err != nil {
+			b.prepErr = errors.Join(b.prepErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.services {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			b.prepErr = errors.Join(b.prepErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.functions {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			b.prepErr = errors.Join(b.prepErr, err)
+			continue
+		}
+	}
+
+	for _, builder := range b.bindings {
+		if err := builder.Build(b.cb.RootScope()); err != nil {
+			b.prepErr = errors.Join(b.prepErr, err)
+			continue
+		}
+	}
+
+	return b.prepErr
 }
 
 func newConfig(opts []BuilderOption) di.Config {

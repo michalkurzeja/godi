@@ -50,10 +50,10 @@ type Collector struct{ greeters []Greeter }
 
 func NewCollector(greeters ...Greeter) *Collector { return &Collector{greeters: greeters} }
 
-func extract(t *testing.T, c godi.Container, opts ...graph.Option) *graph.Graph {
+func extract(t *testing.T, src graph.Source, opts ...graph.Option) *graph.Graph {
 	t.Helper()
 
-	g, err := graph.Extract(c, opts...)
+	g, err := graph.Extract(src, opts...)
 	require.NoError(t, err)
 	return g
 }
@@ -688,6 +688,54 @@ func TestASnapshotSaysHowFarCompilationHadGot(t *testing.T) {
 		"the passes that had run are what says how much of the wiring is here")
 
 	require.False(t, extract(t, c).Partial(), "a built container is not a snapshot")
+}
+
+func TestABuilderIsAGraphSourceBeforeItIsBuilt(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+		godi.Svc(NewStore),
+	)
+
+	g := extract(t, b)
+
+	require.True(t, g.Partial())
+	require.Empty(t, g.Snapshot.Pass, "nothing is compiling yet")
+	require.ElementsMatch(t,
+		[]string{"v2_test.(*Server)", "v2_test.EnGreeter", "v2_test.(*Store)"}, nodeTypes(g))
+
+	// What the user wrote is there; what godi would have supplied is not.
+	require.Equal(t, graph.ArgOriginManual, paramOf(t, g, "v2_test.(*Server)", 2).Origin)
+	require.Equal(t, graph.ArgOriginNone, paramOf(t, g, "v2_test.(*Server)", 1).Origin)
+	require.Empty(t, g.Edges)
+}
+
+// The definitions the graph is read from are the ones Build compiles, so
+// reading has to leave them exactly as it found them.
+func TestReadingTheGraphDoesNotDisturbTheBuild(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+		godi.Svc(NewStore),
+	)
+
+	extract(t, b)
+	extract(t, b)
+
+	c, err := b.Build()
+	require.NoError(t, err)
+
+	server, err := godi.SvcByType[*Server](c)
+	require.NoError(t, err)
+	require.Equal(t, "localhost:8080", server.addr)
+
+	g := extract(t, c)
+	require.False(t, g.Partial())
+	require.Len(t, paramOf(t, g, "v2_test.(*Server)", 2).Literals, 1, "the argument was filled once")
 }
 
 func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
