@@ -827,23 +827,26 @@ function locationCell(loc) {
 	return cell;
 }
 
-// idCell shows a node's graph id with a way to take it away with you.
-function idCell(id) {
-	const cell = make('dd', 'mono idrow');
-	cell.append(make('code', null, id));
-
+// copyIDButton takes the node's graph id away with you. The id itself is not
+// shown: it is long enough to wrap over several lines and there is nothing to
+// read in it - what it is for is pasting somewhere else.
+function copyIDButton(id) {
 	const button = make('button', 'copy');
 	button.type = 'button';
-	button.title = 'Copy the id';
-	button.append(icon('i-copy'));
+	button.title = 'Copy this node\'s graph id, to paste into the go-to window or a message';
+	button.append(icon('i-copy'), make('span', null, 'Copy ID'));
+
 	button.addEventListener('click', async () => {
-		button.classList.toggle('done', await copy(id));
-		button.title = button.classList.contains('done') ? 'Copied' : 'Could not copy it';
-		setTimeout(() => { button.classList.remove('done'); button.title = 'Copy the id'; }, 1200);
+		const ok = await copy(id);
+		button.classList.toggle('done', ok);
+		button.lastChild.textContent = ok ? 'Copied' : 'Could not copy';
+		setTimeout(() => {
+			button.classList.remove('done');
+			button.lastChild.textContent = 'Copy ID';
+		}, 1200);
 	});
 
-	cell.append(button);
-	return cell;
+	return button;
 }
 
 function icon(name) {
@@ -994,8 +997,8 @@ function showPanel(id) {
 	if (!n.autowired) badges.append(badge('not autowired'));
 	if (n.instantiated) badges.append(badge('instantiated'));
 	if (n.root) badges.append(badge('root', 'root'));
-	for (const label of n.labels || []) badges.append(badge(label));
 	parts.push(badges);
+	parts.push(copyIDButton(n.id));
 
 	// The package rather than the qualified type and factory those rows used to
 	// carry. A generic names its type arguments in full, so the qualified forms
@@ -1005,9 +1008,14 @@ function showPanel(id) {
 	const dl = make('dl');
 	if (n.package) dl.append(make('dt', null, 'Package'), make('dd', 'mono', n.package));
 	dl.append(make('dt', null, 'Scope'), make('dd', null, scopePath(n.scope)));
-	// A node id names one node in one graph and is stable across builds, so it
-	// is what you paste to a colleague to point at the thing you are discussing.
-	dl.append(make('dt', null, 'ID'), idCell(n.id));
+	// A label is the reader's own word for a service. The badges above are
+	// godi's vocabulary, and running the two together made a label read as
+	// something the container had decided.
+	if (n.labels && n.labels.length) {
+		const cell = make('dd', 'badges');
+		for (const label of n.labels) cell.append(badge(label));
+		dl.append(make('dt', null, 'Labels'), cell);
+	}
 	if (n.registered) dl.append(make('dt', null, 'Registered'), locationCell(n.registered));
 	if (n.defined) dl.append(make('dt', null, 'Defined'), locationCell(n.defined));
 	parts.push(dl);

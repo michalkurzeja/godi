@@ -435,24 +435,20 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 	border-left: 1px solid var(--muted);
 }
 
-/* The id sits on its own line under a value that is often long enough to wrap,
-   so the button goes beside it rather than after it. */
-.idrow { display: flex; align-items: flex-start; gap: .3rem; }
-.idrow code { flex: 1; min-width: 0; word-break: break-all; }
-
 .copy {
-	flex: none;
-	padding: 1px 3px;
-	border: 1px solid transparent;
-	border-radius: 4px;
-	background: none;
+	display: inline-flex;
+	align-items: center;
+	gap: .3rem;
+	margin-top: .45rem;
+	padding: .15rem .45rem;
+	font-size: 11px;
 	color: var(--muted);
-	line-height: 0;
+	background: none;
 }
-.copy:hover { border-color: var(--border); color: var(--accent); }
+.copy:hover { border-color: var(--accent); color: var(--accent); }
 .copy .i { width: 12px; height: 12px; }
-/* Said rather than animated: the point is to know it worked. */
-.copy.done { color: var(--auto); border-color: transparent; }
+/* Said rather than animated: the point is to know whether it worked. */
+.copy.done { color: var(--auto); border-color: var(--auto); }
 
 /* ---------------------------------------------------------- go to node --- */
 

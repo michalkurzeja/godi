@@ -1314,15 +1314,15 @@ await test('a factory-built service keeps its own heading and no name', async ()
 
 // --- the graph id, and getting back to it -----------------------------------
 
-const idRow = () => ev(`(() => {
-	const dl = document.querySelector('#panel dl');
-	const dt = [...dl.children].find(el => el.tagName === 'DT' && el.textContent === 'ID');
-	return dt ? dt.nextElementSibling.querySelector('code').textContent : null;
-})()`);
-
-await test('the panel carries the node id', async () => {
+// The id is long enough to wrap over several lines and there is nothing in it
+// to read: what it is for is pasting somewhere else.
+await test('the panel offers the id without showing it', async () => {
 	await selectNode(SERVER);
-	return await idRow() === SERVER || `the id row reads ${JSON.stringify(await idRow())}`;
+	const [label, shown] = await ev(`[
+		document.querySelector('#panel .copy').textContent,
+		document.querySelector('#panel').textContent.includes(${JSON.stringify(SERVER)}),
+	]`);
+	return (label.includes('Copy ID') && !shown) || `the button reads ${JSON.stringify(label)}, id shown: ${shown}`;
 });
 
 await test('and the copy button hands it to the clipboard', async () => {
@@ -1335,7 +1335,7 @@ await test('and the copy button hands it to the clipboard', async () => {
 		await new Promise((r) => setTimeout(r, 60));
 
 		navigator.clipboard.writeText = real;
-		return [copied, document.querySelector('#panel .copy').classList.contains('done')];
+		return [copied, document.querySelector('#panel .copy').textContent.includes('Copied')];
 	})()`);
 	return eq(got, [SERVER, true], 'what was copied, and whether it said so');
 });
@@ -1355,7 +1355,7 @@ await test('and falls back when the clipboard is refused', async () => {
 
 		navigator.clipboard.writeText = real;
 		document.execCommand = realExec;
-		return [viaExec, document.querySelector('#panel .copy').classList.contains('done')];
+		return [viaExec, document.querySelector('#panel .copy').textContent.includes('Copied')];
 	})()`);
 	return eq(got, [true, true], 'whether it fell back, and whether it still said it worked');
 });
@@ -1551,6 +1551,28 @@ await test('a root is tinted rather than warned about', async () => {
 		godi.cy.getElementById('root/svc:app.(*Router)').style('background-color'),
 	]`);
 	return root !== plain || `both nodes are ${root}, so a root is not distinguishable`;
+});
+
+await test('a label sits in a row of its own, not among the badges', async () => {
+	await selectNode('root/svc:app.(*Repo)');
+	const got = await ev(`(() => {
+		const dl = document.querySelector('#panel dl');
+		const dt = [...dl.children].find(el => el.tagName === 'DT' && el.textContent === 'Labels');
+		return [
+			dt ? [...dt.nextElementSibling.querySelectorAll('.badge')].map(b => b.textContent) : null,
+			[...document.querySelectorAll('#panel > .badges .badge')].map(b => b.textContent),
+		];
+	})()`);
+	await selectNode(SERVER);
+
+	return (eq(got[0], ['Data'], 'the labels row') === true && !got[1].some((b) => b === 'Data'))
+		|| `labels row ${JSON.stringify(got[0])}, badges ${JSON.stringify(got[1])}`;
+});
+
+await test('and a node with none grows no row for them', async () => {
+	await selectNode(SERVER);
+	const has = await ev(`[...document.querySelectorAll('#panel dt')].some(d => d.textContent === 'Labels')`);
+	return has === false || 'the panel invented a labels row for a node that has none';
 });
 
 await test('the panel badges it', async () => {

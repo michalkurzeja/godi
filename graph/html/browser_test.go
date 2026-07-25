@@ -220,6 +220,9 @@ func regressionModel() *graph.Graph {
 		svc("(*Metrics)"), // Wired to nothing, reached by nothing.
 	}
 	nodes[0].Lazy = false // Eager, so it is a root.
+	// A label of the reader's own, which is a different thing from the flags
+	// godi puts on a definition and has to read as one.
+	nodes[6].Labels = []string{"data"}
 	nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
 	nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
 
