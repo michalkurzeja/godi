@@ -15,7 +15,6 @@ type payload struct {
 	Scopes  []viewScope `json:"scopes"`
 	Nodes   []viewNode  `json:"nodes"`
 	Edges   []viewEdge  `json:"edges"`
-	Notices []string    `json:"notices,omitzero"`
 	Credits []credit    `json:"credits"`
 
 	// Snapshot is set when the graph was taken while the container was still
@@ -167,9 +166,6 @@ func newPayload(g *graph.Graph, cfg config) payload {
 	}
 	for _, edge := range g.Edges {
 		p.Edges = append(p.Edges, newViewEdge(edge))
-	}
-	for _, d := range g.Diagnostics {
-		p.Notices = append(p.Notices, d.Message)
 	}
 	if g.Partial() {
 		p.Snapshot = &viewSnapshot{Label: g.Snapshot.Label(), Done: g.Snapshot.Done}

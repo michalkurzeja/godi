@@ -683,17 +683,17 @@ function apply() {
 	const shownEdges = cy.edges(':visible').length;
 	$('found').textContent = hits === null ? '' : hits.size + (hits.size === 1 ? ' match' : ' matches');
 
-	const notices = data.notices || [];
 	const counts = [
 		shownNodes + ' of ' + data.nodes.length + ' nodes',
 		shownEdges + ' of ' + data.edges.length + ' edges',
 		roots + (roots === 1 ? ' root' : ' roots'),
 	];
+	// Every fault the extractor found is on the node it is about: a red border
+	// on the box, the reason on the argument row. A tally in the corner said
+	// how many without saying where, which is the half that is no use.
 	const incomplete = cy.nodes(':childless:visible').filter((n) => n.data('incomplete')).length;
 	if (incomplete) counts.push(incomplete + ' incomplete');
-	if (notices.length) counts.push(notices.length + ' warnings');
 	$('counts').textContent = counts.join(' · ');
-	$('counts').title = notices.join('\n');
 
 	return changed;
 }
