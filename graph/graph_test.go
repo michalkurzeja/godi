@@ -332,3 +332,40 @@ func TestAFunctionLiteralIsRecognisedByItsRuntimeName(t *testing.T) {
 		})
 	}
 }
+
+func TestASnapshotSaysWhenItWasTaken(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		given *graph.Snapshot
+		want  string
+	}{
+		{"nothing to say about a finished container", nil, ""},
+		{"before anything ran", &graph.Snapshot{}, "taken before the container was compiled"},
+		{"between stages", &graph.Snapshot{Stage: "validation"}, "taken before the validation stage"},
+		{
+			"inside a pass, which is the more precise answer",
+			&graph.Snapshot{Stage: "automation", Pass: "autowiring"},
+			"taken during the autowiring pass",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, test.want, test.given.Label())
+		})
+	}
+}
+
+func TestOnlyASnapshotMakesAGraphPartial(t *testing.T) {
+	t.Parallel()
+
+	var nilGraph *graph.Graph
+
+	require.False(t, nilGraph.Partial())
+	require.False(t, (&graph.Graph{}).Partial())
+	require.True(t, (&graph.Graph{Snapshot: &graph.Snapshot{}}).Partial())
+}

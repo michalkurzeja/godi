@@ -44,6 +44,11 @@ type Graph struct {
 	Bindings    []*Binding    `json:"bindings"` // Sorted by (Scope, Interface).
 	Diagnostics []*Diagnostic `json:"diagnostics,omitempty"`
 
+	// Snapshot is set when the graph was taken from a container that was not
+	// finished being built. It is nil for a built container, which is the only
+	// graph describing wiring nobody is going to change again.
+	Snapshot *Snapshot `json:"snapshot,omitzero"`
+
 	// SourceRoot is the directory every file path is relative to, when they
 	// share one. It is empty when they do not, and then the paths are as the
 	// runtime gave them. Trimming it keeps output readable and stable across
@@ -455,6 +460,46 @@ type Binding struct {
 	// is declared but unused.
 	EdgeCount int `json:"edgeCount"`
 }
+
+// Snapshot says when a graph was taken from a container that was still being
+// built: before compilation started, or between two compiler passes.
+//
+// Wiring a later pass would have added is simply not there yet, so a snapshot
+// describes the work so far rather than the container the application runs.
+type Snapshot struct {
+	// Stage is the compiler stage in progress. Empty before compilation starts.
+	Stage string `json:"stage,omitzero"`
+	// Pass is the compiler pass in progress. Empty outside a pass.
+	Pass string `json:"pass,omitzero"`
+	// Done names the passes that had already finished, in the order they ran.
+	// It is the honest measure of how much of the wiring is here.
+	Done []string `json:"done,omitzero"`
+}
+
+// Label says in a few words when the graph was taken.
+func (s *Snapshot) Label() string {
+	switch {
+	case s == nil:
+		return ""
+	case s.Pass != "":
+		return "taken during the " + s.Pass + " pass"
+	case s.Stage != "":
+		return "taken before the " + s.Stage + " stage"
+	default:
+		return "taken before the container was compiled"
+	}
+}
+
+// Caveat is what a reader needs to know to read a partial graph correctly.
+// Every encoder says it, so it is worded once, here.
+func (s *Snapshot) Caveat() string {
+	return "wiring the remaining passes would add is missing: an argument can read as not wired, " +
+		"and a node nothing injects yet reads as a root"
+}
+
+// Partial reports that the graph was taken while the container was still being
+// built, and so describes wiring that is not finished.
+func (g *Graph) Partial() bool { return g != nil && g.Snapshot != nil }
 
 // Diagnostic reports something the extractor could not make sense of. Extraction
 // never fails on odd input; it records it here instead.

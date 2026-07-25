@@ -447,6 +447,7 @@ func (g *Graph) rebuild(sel *selection) *Graph {
 		Schema:      g.Schema,
 		SourceRoot:  g.SourceRoot,
 		Diagnostics: g.Diagnostics,
+		Snapshot:    g.Snapshot,
 	}
 
 	kept := make(map[NodeID]*Node, len(sel.nodes))

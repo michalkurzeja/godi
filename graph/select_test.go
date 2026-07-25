@@ -461,6 +461,21 @@ func TestNoFiltersChangesNothing(t *testing.T) {
 	require.Same(t, g, g.Select())
 }
 
+// A narrowed snapshot is still a snapshot: whatever the reader is warned about
+// has to survive being filtered, or the warning goes missing exactly when the
+// picture gets smaller and looks more complete.
+func TestFilteringKeepsWhatTheGraphSaysAboutItself(t *testing.T) {
+	t.Parallel()
+
+	g := model()
+	g.Snapshot = &graph.Snapshot{Stage: "automation", Pass: "autowiring"}
+
+	got := g.Select(graph.OnlyRoots())
+
+	require.True(t, got.Partial())
+	require.Equal(t, g.Snapshot, got.Snapshot)
+}
+
 // A Filter can only be built by the functions in this package, but the zero
 // value is still writable, so it has to mean "no question asked".
 func TestAZeroFilterAsksNothing(t *testing.T) {
