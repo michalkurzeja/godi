@@ -26,6 +26,25 @@
 // whatever binding exists, including one godi created because a different
 // argument needed it.
 //
+// # Narrowing it down
+//
+// Past a hundred or so nodes no format produces a picture worth reading, so
+// readability comes from asking a narrower question rather than from a better
+// renderer. Filters are options like any other, and they work on the model, so
+// every format gets them:
+//
+//	g, err := graph.Extract(c,
+//		graph.Focus(graph.ByType("*app.(*Server)"), graph.Downstream(3)),
+//		graph.HideMethodCalls(),
+//	)
+//
+// Select does the same to a graph already in hand, which is how one extraction
+// becomes several views.
+//
+// Where a limit rather than a name cut the graph, the nodes left at the edge
+// carry Node.Elided: how many of their neighbours went. A picture that stops
+// without saying so reads as the whole story.
+//
 // # Roots
 //
 // Node.Root marks a node nothing injects: the top of a dependency tree. Those

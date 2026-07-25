@@ -26,6 +26,7 @@
 - **Lazy / eager.** Services and functions are instantiated/executed lazily by default; eager mode triggers them at the end of container build.
 - **Cycle detection.** The compiler validates the service dependency graph for cycles using a DAG library.
 - **`extras` package.** Built-in compiler passes for common mutation operations (override arg, remove service/function).
+- **Dependency graph.** A built container can be extracted as an inspectable model and encoded as text, Graphviz DOT, or a self-contained interactive HTML page. Every edge records who wired the argument and how it resolved, which is not recoverable at runtime.
 
 ### Design goals
 
@@ -48,6 +49,8 @@ The library is split into two packages:
 | `github.com/michalkurzeja/godi/v2` (root) | Public facade. All types a typical user needs. Fluent builders. Generic helper functions for container access. |
 | `github.com/michalkurzeja/godi/v2/di` | Core implementation. All runtime logic: scope tree, definition registry, compiler, arg resolution, instantiation. |
 
+A third group sits alongside them: `graph` and its encoder packages, covered in Section 3. The model is a leaf — it imports nothing of godi's — which is what lets the root `Container` interface name it without a cycle.
+
 Users interact almost exclusively with the root package. The `di/` package is consumed by the root package and by extension authors (compiler pass authors).
 
 The root package re-exports `di.ID` and `di.Label` as type aliases so that users never need to import `di/` directly for everyday use.
@@ -58,7 +61,7 @@ The root package re-exports `di.ID` and `di.Label` as type aliases so that users
 
 The runtime store of services and functions. After `Build()` it is immutable from the user's perspective. Internally it holds a tree of `*Scope` objects. The public `Container` interface (defined in `di.go`) is what user code receives; the concrete `*di.Container` struct implements it.
 
-The root `Container` interface (in the root package) must be satisfied to call the retrieval helpers (`SvcByType`, `ExecByLabel`, etc.). A testify mock of this interface lives in `mocks/container.go`.
+The root `Container` interface (in the root package) must be satisfied to call the retrieval helpers (`SvcByType`, `ExecByLabel`, etc.). A testify mock of this interface lives in `mocks/mocks.go`.
 
 #### ContainerBuilder (`di.ContainerBuilder`)
 
@@ -210,7 +213,7 @@ Key direct dependencies:
 - `github.com/elliotchance/orderedmap/v2 v2.7.0` — insertion-order-preserving map used for definition registries and bindings.
 - `github.com/google/uuid v1.6.0` — generates UUIDs for service/function IDs.
 - `github.com/samber/lo v1.49.1` — generic helpers (map, filter, repeat-by, etc.).
-- `github.com/stretchr/testify v1.10.0` — testing assertions and mocks.
+- `github.com/stretchr/testify v1.11.1` — testing assertions and mocks.
 - `golang.org/x/exp v0.0.0-...` — `constraints.Ordered` used in `util.SortedAsc`.
 - `github.com/vektra/mockery/v3` — code generation tool (listed as `tool`, not a runtime dependency).
 
@@ -248,11 +251,17 @@ type Container interface {
     ExecuteFunctionsByType(typ reflect.Type) ([][]any, error)
     GetFunctionsIDsByLabel(label Label) []ID
     ExecuteFunctionsByLabel(label Label) ([][]any, error)
+
+    // Deprecated: use graph.Extract with the text encoder.
     Print(w io.Writer)
+
+    Graph(cfg graph.Config) *graph.Graph
 }
 ```
 
-This interface is satisfied by `*di.Container`. It is also mockable (see `mocks/container.go`).
+This interface is satisfied by `*di.Container`. It is also mockable (see `mocks/mocks.go`).
+
+`Graph` is what makes `graph.Extract(c)` fully typed with no `any` and no assertion: a value of static type `godi.Container` structurally satisfies `graph.Source`, and so does `*di.ContainerBuilder`. The dependencies stay one-directional — root `di` → `graph` for the signature, engine `di` → `graph` for the extraction, `graph` → nobody — which only works because the model is a leaf package. A mock returns nil, so `Extract` guards for it rather than dereferencing.
 
 #### Exported functions (generic)
 
@@ -702,7 +711,7 @@ type ArgResolver struct {
 
 Each sub-resolver is a zero-field struct except `typeArgResolver`, `labelArgResolver`, `flexibleSliceArgResolver`, and `compoundArgResolver` which hold a back-pointer to `*ArgResolver` for recursive resolution.
 
-The `ArgResolver` interface (mocked in `di/mocks/arg_resolver.go`) has three methods: `Validate(scope, arg)`, `Resolve(scope, arg)`, `ResolveIDs(scope, arg)`.
+`ArgResolver` is a struct, not an interface, and exposes three methods: `Validate(scope, arg)`, `Resolve(scope, arg)`, `ResolveIDs(scope, arg)`. Mockery v2 generated a mock for it regardless; v3 correctly does not.
 
 **Resolution rules per arg type:**
 
@@ -1126,19 +1135,21 @@ In `MethodCall` (the builder method in `definition.go`), the receiver is `di.New
 
 **Package:** `di`
 
-**Purpose:** Debug printer for the container.
+**Purpose:** Debug printer for the container. Deprecated in favour of the `graph` package.
 
 ```go
 func Print(s *Scope, w io.Writer)
 ```
 
-Outputs a human-readable representation of a scope's bindings, services (with factory, flags, args), and functions. Only prints the given scope, not the chain.
+Extracts the graph of the scope's container, narrows it to that scope and everything nested inside it (`graph.OnlyScopeTree`), and encodes it with `graph/text`. Writes nothing for a nil scope or one with no container.
 
-Slots in method calls: the receiver slot (index 0) is skipped in the output — it iterates `method.Args().Slots()[1:]`.
+It used to walk the registry itself, which gave it three faults that the graph does not have:
 
-Interface binding in output: for each slot arg, it checks `s.GetBoundArg(arg.Type())` and if a binding exists, prints the bound arg's string representation instead of the slot's.
+1. It only ever walked the one scope it was handed, and `Container.Print` hands it the root — so everything registered via `Children(...)` was missing from the output.
+2. It resolved bindings with `s.GetBoundArg(arg.Type())`, keyed on the slot's own type. An autowired `[]Iface` slot is bound on `Iface`, so the row showed the declared type rather than the implementations actually injected. The non-chain lookup also missed bindings declared in a child scope.
+3. It called `slot.Arg()` without checking `IsFilled()`. An unfilled slot returns a nil `Arg`, which was then dereferenced — unreachable from a built container, but reachable through this exported function on a builder's scope mid-compilation, which is exactly what a debugging compiler pass does.
 
-This function is exposed on the public `Container` interface as `Print(w io.Writer)`.
+Both this and `Container.Print(w io.Writer)` carry a `Deprecated:` notice pointing at `graph.Extract` plus `text.New()`, so `staticcheck`'s SA1019 warns callers. Once removed, `graph/text` stops being compiled into every binary.
 
 ---
 
@@ -1283,6 +1294,86 @@ Both run at `PreAutomation` and call `builder.RootScope().RemoveServiceDefinitio
 Only removes from the root scope. Child-scope services cannot be removed this way.
 
 After removal, the definition is no longer enumerable by compiler passes. Compilation continues without it.
+
+---
+
+### graph/ — the dependency graph
+
+**Packages:** `graph`, `graph/dot`, `graph/text`, `graph/html`, `graph/view`, `graph/internal/render`
+
+**Purpose:** Turn a built container into an inspectable model, and encode it.
+
+The layering is forced by one constraint: the model package must not import `di`, because the root `Container` interface names `graph.Config` in its `Graph` method, and `di` → `graph` → `di` would be an import cycle.
+
+```
+graph/                   model, Config, Source, Encoder, filters. Leaf — stdlib only.
+graph/dot/               DOT encoder                      -> graph
+graph/text/              text encoder                     -> graph
+graph/html/              interactive viewer, go:embed     -> graph
+graph/view/              opens a graph, os/exec           -> graph
+graph/internal/render/   short names, wrapping, ellipsis  -> reachable only from graph/...
+di/graph.go              extraction: (*Container).Graph(cfg) *graph.Graph
+```
+
+One package per format, following `image`/`image/png`, so nothing is compiled into a binary that does not ask for it. The root package pulls in only the model: no Graphviz plumbing, no embedded viewer assets, no `os/exec`. `graph/text` is the exception — `Print` delegates to it, and `Print` is on the public `Container` interface, so it is reachable in every binary until that deprecation is seen through.
+
+#### Entry point
+
+```go
+func Extract(src Source, opts ...Option) (*Graph, error)
+func (g *Graph) Encode(w io.Writer, enc Encoder) error
+func (g *Graph) Select(opts ...Option) *Graph
+```
+
+`Source` is anything with `Graph(Config) *Graph`: a built container, or a `*di.ContainerBuilder` inside a compiler pass, which gives the pre-autowiring picture. `Extract` guards against a nil graph, which is what a generated mock returns.
+
+#### The model
+
+The load-bearing decision is that an injection point (`Param`) is separate from an injection edge (`Edge`). One `Param` per argument slot; zero or many `Edge`s per `Param`. Slice and variadic slots, literal args and unfilled slots then fall out naturally, and every edge has a stable anchor for its provenance.
+
+Node IDs are readable and build-stable (`root/svc:http.(*Server)`), not UUIDs — those are regenerated every build, so UUID-keyed output cannot be golden-tested. The raw ID is kept as `Node.UUID`. A child scope's own name *is* the owning definition's UUID, so scope paths are built from the owner's node ID instead.
+
+#### Provenance
+
+Two independent facets, both recorded by the compiler rather than inferred:
+
+| | slot (`ArgOrigin`) | binding (`BindOrigin`) |
+|---|---|---|
+| nobody yet | `ArgOriginNone` | — (a binding cannot exist unfilled) |
+| you | `ArgOriginManual` | `BindOriginManual` |
+| godi | `ArgOriginAutowiring` | `BindOriginAutobinding` |
+| an extension | `ArgOriginCompilerPass` + name | `BindOriginCompilerPass` + name |
+
+A marker is unavoidable: an autowired non-slice slot ends up holding a `typeArg` byte-identical to a hand-written `di.Type[T]()`, and an auto-created binding is indistinguishable from `di.BindType[I, T]()`. `Compiler.Run` clears a dirty flag before the pass loop and attributes after every pass, so third-party passes are covered without cooperating.
+
+`(*Edge).PassCredit` answers "which pass is responsible" once, for every encoder: a pass can have wired the argument or created the binding it resolved through, and the answer is the same either way unless two different passes each had a hand in it.
+
+#### Extraction (`di/graph.go`)
+
+A parallel resolver-walker, not `ResolveArgIDs`: that returns bare `[]ID`, discarding which mechanism matched and flattening compound args. Everything this feature needs is what it throws away. The walker mirrors `di/arg_resolver.go` branch for branch, and `TestGraphEdgesMatchTheResolver` is the guard — for every slot in a compiled container, the graph's edges must equal what the resolver would return. It fails the day anyone edits the resolver without editing the walker.
+
+Source locations come from `runtime.Callers` captured in the two definition constructors and resolved lazily, walking past exactly three packages (the facade, the engine, `extras`) to reach the caller. Go's DWARF carries no declaration site for a struct type, so `Node.Defined` points at the factory, not the type.
+
+#### Filters (`graph/select.go`)
+
+`Focus`, `Exclude`, `ExcludeTypes`, `ExcludeLabels`, `OnlyScope`, `OnlyScopeTree`, `OnlyRoots`, `HideMethodCalls`, `MaxNodes`. Selectors are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, combined with `Any` and `Not`; patterns are globs matched against both the qualified name and the short form.
+
+Two rules are worth knowing:
+
+- **A walk never turns around.** `Focus` follows each direction separately and unions the results. Following both at once would let a path go down to a dependency and back up to something else that uses it, which reaches the selection's siblings and calls them neighbours.
+- **Order does not matter.** Filters that take away a *kind of wiring* (`HideMethodCalls`) run before ones that follow it, so hiding method calls also hides what only a method call reached, whichever order they were written in.
+
+Filtering copies: nodes and params are cloned because their counts change, edges and scopes are shared because they do not. `Node.Root` is *not* recomputed — it is a fact about the container, and recomputing it would call a service an entry point because its only consumer was filtered out. Where a limit rather than a name did the cutting, surviving nodes carry `Node.Elided`.
+
+#### Encoders
+
+`graph/dot` renders scopes as nested clusters and each service as an HTML-like label table with one port per argument slot, so an edge lands on the row it feeds. Never `shape=record`: its `|{}<>` structure characters collide with Go type syntax.
+
+`graph/html` is one self-contained file: Cytoscape draws, Graphviz compiled to WebAssembly lays out, both inlined, under a CSP that names the SHA-256 of every inline script. No network at any point. Layout DOT is built in the browser rather than by `graph/dot` — Graphviz needs the node sizes and only Cytoscape knows those.
+
+`graph/text` is an indented outline, and the format `Print` now delegates to.
+
+`graph/view` writes to a temporary file created private to the user (a graph asked for literal values carries whatever those are) and hands it to `open`/`xdg-open`/`start`. It is a separate package so that nothing on the root package's import path can run another program.
 
 ---
 

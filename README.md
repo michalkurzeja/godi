@@ -881,3 +881,89 @@ If it fails, it will try to find a services that implement that interface:
 - For slice or variadic args, it will resolve all services that implement the interface, even if they are all of different types.
 
 This behaviour guarantees that any automatic choice made by godi is unambiguous and deterministic.
+### Dependency graph
+
+Once a container is built, `godi` can hand you its dependency graph: what depends on what, what constant was
+passed where, and — the part you cannot get any other way — *how* each dependency got there. An argument you
+wired by hand, one godi autowired by type, one resolved through an interface binding godi created for you, and
+one substituted by a compiler pass all look identical at runtime. The graph tells them apart.
+
+```go
+import (
+	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/text"
+)
+
+g, err := graph.Extract(c)
+err = g.Encode(os.Stdout, text.New())
+```
+
+`graph` itself is only the model — plain data, no dependency on the container. Each format lives in its own
+package, so a binary compiles the ones it asks for and nothing else:
+
+| Package | Output |
+|---|---|
+| `graph/text` | An indented outline. Needs nothing installed, so it is what you reach for in a terminal or a test failure. |
+| `graph/dot` | Graphviz DOT. Scopes become nested clusters and every edge lands on the argument row it feeds. |
+| `graph/html` | One self-contained page you can search, filter and drag about. No CDN, no server, no network. |
+
+`graph/view` opens the result in whatever your system uses for the format — a browser tab for the viewer —
+via a temporary file:
+
+```go
+path, err := view.Open(c, html.New())
+```
+
+#### Reading a real container
+
+Past a hundred or so services no layout engine produces a picture worth looking at, so narrow the question
+instead. Filters work on the model, which means every format gets them:
+
+```go
+g, err := graph.Extract(c,
+	graph.Focus(graph.ByType("*app.(*Server)"), graph.Downstream(3)),
+	graph.ExcludeLabels("infrastructure"),
+	graph.HideMethodCalls(),
+)
+```
+
+`Focus` follows the wiring outwards from what you select — both ways by default, or only the direction you
+name. It never turns a corner: a service that merely shares a dependency with your selection is not a
+neighbour of it. Where a limit rather than a name cut the graph, the nodes at the edge say how many neighbours
+went with it, so a narrowed picture does not read as the whole one.
+
+Select by type, factory name, label, graph ID, or the file a service was registered in. Patterns are globs
+where `*` stands for any run of characters, matched against both the qualified name and the short form:
+
+```go
+graph.ByType("app.(*Server)")            // the short form
+graph.ByType("github.com/acme/app/*")    // a whole package tree
+graph.ByFile("internal/*")               // wherever it was registered
+```
+
+#### Provenance
+
+Every edge carries two independent facts, and both formats draw them on separate channels:
+
+- **Who wired the argument** — you, godi's autowiring, or a compiler pass, named.
+- **How it resolved** — an exact type match, or through an interface binding, which was itself declared by you,
+  created by godi, or created by a pass.
+
+So `extras.OverrideSvcArg` shows up as the pass that did it rather than as something you typed, and a binding
+godi invented for you is distinguishable from one you wrote.
+
+#### Roots
+
+A **root** is a node nothing injects: the top of a dependency tree. Those are your entry points, together with
+any wiring nothing uses, and `godi` does not try to tell the two apart — a service fetched at runtime with
+`SvcByType` or `SvcByRef` leaves no trace in the container, so only you know which of your roots are deliberate.
+
+#### Example
+
+`examples/graph` wires a small container that exercises every kind of provenance the encoders can draw:
+
+```shell
+go run ./examples/graph -format text            # read it here
+go run ./examples/graph | dot -Tsvg -o graph.svg
+go run ./examples/graph -format html -open      # open the interactive viewer
+```

@@ -13,7 +13,7 @@ description: >-
 
 # godi v2
 
-godi is a reflection-based dependency-injection container for Go (requires Go 1.24).
+godi is a reflection-based dependency-injection container for Go (requires Go 1.25).
 You declare *what* services exist and *how* they are built (factory functions); godi
 figures out the dependency graph, validates it at build time, and creates values on demand.
 
@@ -317,6 +317,54 @@ pass := di.NewCompilerPass("my pass", di.PreAutomation, di.CompilerOpFunc(
     },
 ))
 ```
+
+## Seeing how a container is wired
+
+A built container can hand you its dependency graph. This is the only way to recover *how*
+each dependency got there: at runtime an argument you wired by hand, one godi autowired,
+one resolved through a binding godi created, and one substituted by a compiler pass are
+indistinguishable.
+
+```go
+import (
+	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/text"
+)
+
+g, err := graph.Extract(c)
+err = g.Encode(os.Stdout, text.New())
+```
+
+`graph` is the model only. Encoders live in their own packages, so a binary compiles the
+formats it asks for: `graph/text` (an indented outline, nothing to install), `graph/dot`
+(Graphviz, one port per argument row), `graph/html` (a self-contained interactive page —
+no CDN, no server). `graph/view` opens the result via a temporary file:
+
+```go
+path, err := view.Open(c, html.New())
+```
+
+Filters work on the model, so every format gets them. Reach for them on any real container:
+past a hundred nodes a whole-graph picture is unreadable.
+
+```go
+g, err := graph.Extract(c,
+	graph.Focus(graph.ByType("*app.(*Server)"), graph.Downstream(3)),
+	graph.ExcludeLabels("infrastructure"),
+	graph.HideMethodCalls(),
+)
+```
+
+Selectors are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, plus `Any` and `Not`.
+Patterns are globs (`*` = any run of characters), matched against the qualified name and
+the short form alike, so `ByType("app.(*Server)")` and `ByType("github.com/acme/*")` both
+work.
+
+A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
+guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
+
+`Container.Print(w)` and `di.Print(scope, w)` still work but are deprecated; they now render
+through `graph/text`. Prefer `graph.Extract` in new code.
 
 ## Common pitfalls
 
