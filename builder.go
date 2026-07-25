@@ -25,7 +25,10 @@ type Builder struct {
 	bindings  []*InterfaceBindingBuilder
 	passes    []*di.CompilerPass
 
-	prepared bool
+	// prepared counts how many of each have been turned into definitions
+	// already, so that reading the graph and then registering more still
+	// builds the lot.
+	prepared struct{ services, functions, bindings int }
 	prepErr  error
 }
 
@@ -76,45 +79,46 @@ func (b *Builder) Graph(cfg graph.Config) *graph.Graph {
 	return b.cb.Graph(cfg)
 }
 
-// prepare turns the definition builders into definitions in the container
-// builder, collecting everything that went wrong rather than stopping at the
-// first.
+// prepare turns the definition builders registered since last time into
+// definitions in the container builder, collecting everything that went wrong
+// rather than stopping at the first.
 //
-// It runs once. The definitions it produces are the same objects Build
-// compiles, so preparing twice would fill their arguments twice.
+// Each builder is prepared exactly once: the definitions it produces are the
+// same objects Build compiles, so preparing one twice would fill its arguments
+// twice. Anything registered after a graph was read is still waiting here.
 func (b *Builder) prepare() error {
-	if b.prepared {
-		return b.prepErr
-	}
-	b.prepared = true
+	services := b.services[b.prepared.services:]
+	b.prepared.services = len(b.services)
 
-	for _, builder := range b.services {
+	for _, builder := range services {
 		if err := builder.ParseFactory(); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue
 		}
 	}
 
-	for _, builder := range b.services {
+	for _, builder := range services {
 		if err := builder.Build(b.cb.RootScope()); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue
 		}
 	}
 
-	for _, builder := range b.functions {
+	for _, builder := range b.functions[b.prepared.functions:] {
 		if err := builder.Build(b.cb.RootScope()); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue
 		}
 	}
+	b.prepared.functions = len(b.functions)
 
-	for _, builder := range b.bindings {
+	for _, builder := range b.bindings[b.prepared.bindings:] {
 		if err := builder.Build(b.cb.RootScope()); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue
 		}
 	}
+	b.prepared.bindings = len(b.bindings)
 
 	return b.prepErr
 }

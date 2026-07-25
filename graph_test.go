@@ -738,6 +738,28 @@ func TestReadingTheGraphDoesNotDisturbTheBuild(t *testing.T) {
 	require.Len(t, paramOf(t, g, "v2_test.(*Server)", 2).Literals, 1, "the argument was filled once")
 }
 
+// Reading the graph is not a commitment to build what it showed: whatever you
+// register afterwards has to end up in the container, and nothing would say so
+// if it did not.
+func TestRegisteringAfterReadingTheGraphStillBuilds(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().Services(godi.Svc(NewStore))
+
+	require.ElementsMatch(t, []string{"v2_test.(*Store)"}, nodeTypes(extract(t, b)))
+
+	b.Services(godi.Svc(NewEnGreeter))
+
+	require.ElementsMatch(t,
+		[]string{"v2_test.(*Store)", "v2_test.EnGreeter"}, nodeTypes(extract(t, b)))
+
+	c, err := b.Build()
+	require.NoError(t, err)
+
+	_, err = godi.SvcByType[EnGreeter](c)
+	require.NoError(t, err, "a service registered after the graph was read is missing")
+}
+
 func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 	t.Parallel()
 
