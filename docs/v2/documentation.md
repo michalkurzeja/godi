@@ -203,7 +203,7 @@ After `Build()` the `ContainerBuilder` zeroes its internal `container` pointer a
 
 **Purpose:** Module manifest.
 
-Module path: `github.com/michalkurzeja/godi/v2`. Go 1.24 required.
+Module path: `github.com/michalkurzeja/godi/v2`. Go 1.25 required.
 
 Key direct dependencies:
 - `github.com/dominikbraun/graph v0.23.0` — DAG library used for cycle detection.
@@ -212,7 +212,7 @@ Key direct dependencies:
 - `github.com/samber/lo v1.49.1` — generic helpers (map, filter, repeat-by, etc.).
 - `github.com/stretchr/testify v1.10.0` — testing assertions and mocks.
 - `golang.org/x/exp v0.0.0-...` — `constraints.Ordered` used in `util.SortedAsc`.
-- `github.com/vektra/mockery/v2` — code generation tool (listed as `tool`, not a runtime dependency).
+- `github.com/vektra/mockery/v3` — code generation tool (listed as `tool`, not a runtime dependency).
 
 ---
 

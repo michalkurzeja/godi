@@ -8,7 +8,7 @@ You can focus on writing your business logic and let Godi handle the rest!
 
 ## 📋 Requirements
 
-- Go 1.24
+- Go 1.25
 
 ## 🔧 Installation
 
