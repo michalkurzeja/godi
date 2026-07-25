@@ -2,8 +2,10 @@ package di
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
+	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )
 
@@ -78,6 +80,26 @@ const (
 	compilerPassStageCount
 )
 
+func (s CompilerStage) String() string {
+	switch s {
+	case PreAutomation:
+		return "pre-automation"
+	case Automation:
+		return "automation"
+	case PreValidation:
+		return "pre-validation"
+	case Validation:
+		return "validation"
+	case PreFinalization:
+		return "pre-finalization"
+	case Finalization:
+		return "finalization"
+	case PostFinalization:
+		return "post-finalization"
+	}
+	return fmt.Sprintf("stage %d", uint8(s))
+}
+
 // Passes contains an ordered list of Compiler passes.
 // It is organised into stages and priorities. This makes it possible
 // to control when the pass is executed.
@@ -117,6 +139,12 @@ func (passes Passes) sort() {
 // it possible to create services dynamically and automatically.
 type Compiler struct {
 	passes Passes
+
+	// running is the pass in progress, and done names the ones that have
+	// finished. A graph taken mid-compilation is only readable if it says how
+	// much of the wiring had happened, and this is where that is known.
+	running *CompilerPass
+	done    []string
 }
 
 func NewCompiler(conf CompilerConfig) *Compiler {
@@ -134,13 +162,26 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	c.creditPendingWiring(builder.container, argOriginManual, bindOriginManual, "")
 
 	for _, pass := range c.passes {
+		c.running = pass
 		err := pass.Run(builder)
+		c.running = nil
 		if err != nil {
 			return errorsx.Wrapf(err, "compiler pass (%s) returned an error", pass)
 		}
+		c.done = append(c.done, pass.name)
 		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 	}
 	return nil
+}
+
+// snapshot describes how far compilation has got, for a graph taken while it is
+// still going on.
+func (c *Compiler) snapshot() *graph.Snapshot {
+	s := &graph.Snapshot{Done: slices.Clone(c.done)}
+	if c.running != nil {
+		s.Stage, s.Pass = c.running.stage.String(), c.running.name
+	}
+	return s
 }
 
 // creditPendingWiring names whoever is responsible for the wiring changed since

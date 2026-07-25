@@ -648,6 +648,48 @@ func TestGraphFromBuilderShowsWiringBeforeAutowiring(t *testing.T) {
 	}
 }
 
+// Half-wired is the normal state mid-compilation, so the graph has to say so:
+// read without that, it is a container with dependencies mysteriously missing.
+func TestASnapshotSaysHowFarCompilationHadGot(t *testing.T) {
+	t.Parallel()
+
+	var early, late *graph.Graph
+	snapshot := func(name string, stage di.CompilerStage, into **graph.Graph) *di.CompilerPass {
+		return di.NewCompilerPass(name, stage, di.CompilerOpFunc(
+			func(b *di.ContainerBuilder) error {
+				var err error
+				*into, err = graph.Extract(b)
+				return err
+			},
+		))
+	}
+
+	c, err := godi.New().
+		Services(
+			godi.Svc(NewServer, "localhost:8080"),
+			godi.Svc(NewEnGreeter),
+			godi.Svc(NewStore),
+		).
+		CompilerPasses(
+			snapshot("look early", di.PreAutomation, &early),
+			snapshot("look late", di.PreValidation, &late),
+		).
+		Build()
+	require.NoError(t, err)
+
+	require.True(t, early.Partial())
+	require.Equal(t, "look early", early.Snapshot.Pass)
+	require.Equal(t, "pre-automation", early.Snapshot.Stage)
+	require.Empty(t, early.Snapshot.Done, "nothing had run yet")
+
+	require.True(t, late.Partial())
+	require.Equal(t, "look late", late.Snapshot.Pass)
+	require.Equal(t, []string{"look early", "interface binding", "autowiring"}, late.Snapshot.Done,
+		"the passes that had run are what says how much of the wiring is here")
+
+	require.False(t, extract(t, c).Partial(), "a built container is not a snapshot")
+}
+
 func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 	t.Parallel()
 

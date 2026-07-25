@@ -67,12 +67,19 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 // right now. Called from a compiler pass, it shows the wiring before later
 // passes - autowiring included - have had their say.
 //
+// The graph carries a graph.Snapshot saying how far compilation had got, so
+// that missing wiring reads as work still to do rather than as a broken
+// container.
+//
 // Build nils out the builder's container, so this only works during compilation.
 func (b *ContainerBuilder) Graph(cfg graph.Config) *graph.Graph {
 	if b.container == nil {
 		return nil
 	}
-	return b.container.Graph(cfg)
+
+	g := b.container.Graph(cfg)
+	g.Snapshot = b.compiler.snapshot()
+	return g
 }
 
 func (b *ContainerBuilder) Compiler() *Compiler {
