@@ -130,9 +130,9 @@ func ids(g *graph.Graph) []string {
 	return out
 }
 
-// only keeps exactly what the selector picks, so a test of what a selector
+// only keeps exactly what the matcher accepts, so a test of what a matcher
 // matches is not also a test of what Focus reaches from there.
-func only(sel graph.Selector) graph.Option { return graph.Exclude(graph.Not(sel)) }
+func only(match graph.Matcher) graph.Option { return graph.Exclude(graph.Not(match)) }
 
 func node(t *testing.T, g *graph.Graph, id string) *graph.Node {
 	t.Helper()
@@ -141,7 +141,7 @@ func node(t *testing.T, g *graph.Graph, id string) *graph.Node {
 	return n
 }
 
-// --------------------------------------------------------------- selectors ---
+// ---------------------------------------------------------------- matchers ---
 
 func TestAPatternMatchesTheWholeNameOrItsShortForm(t *testing.T) {
 	t.Parallel()
@@ -175,13 +175,13 @@ func TestAPatternMatchesTheWholeNameOrItsShortForm(t *testing.T) {
 	}
 }
 
-func TestSelectorsReachEveryWayANodeIsNamed(t *testing.T) {
+func TestMatchersReachEveryWayANodeIsNamed(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		sel  graph.Selector
-		want []string
+		name  string
+		match graph.Matcher
+		want  []string
 	}{
 		{"by label", graph.ByLabel("data"), []string{repo}},
 		{"by graph id", graph.ByID("*ConsoleLogger"), []string{logger}},
@@ -194,13 +194,30 @@ func TestSelectorsReachEveryWayANodeIsNamed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := model().Select(only(test.sel))
+			got := model().Select(only(test.match))
 			require.ElementsMatch(t, test.want, ids(got))
 		})
 	}
 }
 
-func TestNotInvertsASelector(t *testing.T) {
+func TestAllNarrowsWhereAnyWidens(t *testing.T) {
+	t.Parallel()
+
+	kind, labelled := graph.ByType("*Repo)", "*Metrics)"), graph.ByLabel("data")
+
+	require.ElementsMatch(t, []string{repo, metrics}, ids(model().Select(only(graph.Any(kind, labelled)))))
+	require.ElementsMatch(t, []string{repo}, ids(model().Select(only(graph.All(kind, labelled)))))
+}
+
+func TestAllOfNothingMatchesEverything(t *testing.T) {
+	t.Parallel()
+
+	got := model().Select(only(graph.All()))
+
+	require.ElementsMatch(t, ids(model()), ids(got))
+}
+
+func TestNotInvertsAMatcher(t *testing.T) {
 	t.Parallel()
 
 	got := model().Select(graph.Exclude(graph.Not(graph.ByType("*Config)", "*Repo)"))))

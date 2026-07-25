@@ -355,7 +355,7 @@ g, err := graph.Extract(c,
 )
 ```
 
-Selectors are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, plus `Any` and `Not`.
+Matchers are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, plus `All`, `Any` and `Not`.
 Patterns are globs (`*` = any run of characters), matched against the qualified name and
 the short form alike, so `ByType("app.(*Server)")` and `ByType("github.com/acme/*")` both
 work.

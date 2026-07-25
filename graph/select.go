@@ -16,9 +16,9 @@ import (
 // Because they work on the model, every format gets them for free and no
 // encoder contains filter logic.
 
-// Selector picks nodes by one of their properties. The By* functions build
-// them; Any and Not combine them.
-type Selector func(*Node) bool
+// Matcher tests one node against one of its properties. The By* functions build
+// them; All, Any and Not combine them.
+type Matcher func(*Node) bool
 
 // Patterns are globs in which * stands for any run of characters, including
 // none. Each is tried against the full name and against the short form, so a
@@ -58,19 +58,19 @@ func glob(pattern, s string) bool {
 	return strings.HasSuffix(s, parts[len(parts)-1])
 }
 
-// ByType selects services by the type they provide, and functions by their
+// ByType matches services by the type they provide, and functions by their
 // signature.
-func ByType(patterns ...string) Selector {
+func ByType(patterns ...string) Matcher {
 	return func(n *Node) bool { return matches(patterns, n.Type) }
 }
 
-// ByName selects nodes by the name of their factory or function.
-func ByName(patterns ...string) Selector {
+// ByName matches nodes by the name of their factory or function.
+func ByName(patterns ...string) Matcher {
 	return func(n *Node) bool { return matches(patterns, n.Name) }
 }
 
-// ByLabel selects nodes carrying any of the given labels.
-func ByLabel(patterns ...string) Selector {
+// ByLabel matches nodes carrying any of the given labels.
+func ByLabel(patterns ...string) Matcher {
 	return func(n *Node) bool {
 		return slices.ContainsFunc(n.Labels, func(label string) bool {
 			return matches(patterns, label)
@@ -78,29 +78,37 @@ func ByLabel(patterns ...string) Selector {
 	}
 }
 
-// ByID selects nodes by their graph ID.
-func ByID(patterns ...string) Selector {
+// ByID matches nodes by their graph ID.
+func ByID(patterns ...string) Matcher {
 	return func(n *Node) bool { return matches(patterns, string(n.ID)) }
 }
 
-// ByFile selects nodes registered or defined in a matching file. Paths are
+// ByFile matches nodes registered or defined in a matching file. Paths are
 // relative to the graph's SourceRoot, so "internal/*" reaches a whole tree.
-func ByFile(patterns ...string) Selector {
+func ByFile(patterns ...string) Matcher {
 	return func(n *Node) bool {
 		return matches(patterns, n.Registered.File) || matches(patterns, n.Defined.File)
 	}
 }
 
-// Any selects a node that any of the given selectors picks.
-func Any(sels ...Selector) Selector {
+// All matches a node every one of the given matchers accepts. With none it
+// matches everything, which is what an empty "and" means.
+func All(matchers ...Matcher) Matcher {
 	return func(n *Node) bool {
-		return slices.ContainsFunc(sels, func(sel Selector) bool { return sel(n) })
+		return !slices.ContainsFunc(matchers, func(match Matcher) bool { return !match(n) })
 	}
 }
 
-// Not inverts a selector.
-func Not(sel Selector) Selector {
-	return func(n *Node) bool { return !sel(n) }
+// Any matches a node at least one of the given matchers accepts.
+func Any(matchers ...Matcher) Matcher {
+	return func(n *Node) bool {
+		return slices.ContainsFunc(matchers, func(match Matcher) bool { return match(n) })
+	}
+}
+
+// Not inverts a matcher.
+func Not(match Matcher) Matcher {
+	return func(n *Node) bool { return !match(n) }
 }
 
 // ---------------------------------------------------------------- filters ---
@@ -152,7 +160,7 @@ func Downstream(hops int) FocusOption { return func(r *reach) { r.down = hops } 
 // which is the whole connected component. Naming one direction takes the other
 // out: Focus(sel, Downstream(3)) is "this and the three levels it is built
 // from", not "and also everything that uses it".
-func Focus(sel Selector, opts ...FocusOption) Option {
+func Focus(match Matcher, opts ...FocusOption) Option {
 	r := reach{up: unset, down: unset}
 	for _, opt := range opts {
 		opt(&r)
@@ -169,7 +177,7 @@ func Focus(sel Selector, opts ...FocusOption) Option {
 	return withFilter(func(g *Graph, s *selection) {
 		var seeds []NodeID
 		for _, n := range g.Nodes {
-			if s.has(n.ID) && sel(n) {
+			if s.has(n.ID) && match(n) {
 				seeds = append(seeds, n.ID)
 			}
 		}
@@ -183,12 +191,12 @@ func Focus(sel Selector, opts ...FocusOption) Option {
 	})
 }
 
-// Exclude drops the selected nodes. Unlike Focus it says nothing about what it
-// removed: you named these, so their absence is not news.
-func Exclude(sel Selector) Option {
+// Exclude drops the nodes the matcher accepts. Unlike Focus it says nothing
+// about what it removed: you named these, so their absence is not news.
+func Exclude(match Matcher) Option {
 	return withFilter(func(g *Graph, s *selection) {
 		for _, n := range g.Nodes {
-			if sel(n) {
+			if match(n) {
 				s.drop(n.ID)
 			}
 		}

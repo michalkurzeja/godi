@@ -1356,7 +1356,7 @@ Source locations come from `runtime.Callers` captured in the two definition cons
 
 #### Filters (`graph/select.go`)
 
-`Focus`, `Exclude`, `ExcludeTypes`, `ExcludeLabels`, `OnlyScope`, `OnlyScopeTree`, `OnlyRoots`, `HideMethodCalls`, `MaxNodes`. Selectors are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, combined with `Any` and `Not`; patterns are globs matched against both the qualified name and the short form.
+`Focus`, `Exclude`, `ExcludeTypes`, `ExcludeLabels`, `OnlyScope`, `OnlyScopeTree`, `OnlyRoots`, `HideMethodCalls`, `MaxNodes`. Matchers are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, combined with `All`, `Any` and `Not`; patterns are globs matched against both the qualified name and the short form.
 
 Two rules are worth knowing:
 

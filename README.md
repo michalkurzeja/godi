@@ -939,7 +939,11 @@ where `*` stands for any run of characters, matched against both the qualified n
 graph.ByType("app.(*Server)")            // the short form
 graph.ByType("github.com/acme/app/*")    // a whole package tree
 graph.ByFile("internal/*")               // wherever it was registered
+
+graph.All(graph.ByLabel("http"), graph.Not(graph.ByFile("internal/*")))
 ```
+
+`All`, `Any` and `Not` combine matchers.
 
 #### Provenance
 
