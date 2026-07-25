@@ -26,11 +26,11 @@
 // whatever binding exists, including one godi created because a different
 // argument needed it.
 //
-// # Dead wiring
+// # Roots
 //
-// Node.ReachableFromRoots is a lower bound, not a verdict. Reachability starts
-// from the functions and eager services in the container, but services fetched
-// at runtime with SvcByType, SvcByLabel or SvcByRef are invisible to the
-// container, so an unreachable node is a candidate worth looking at rather than
-// proof that anything is dead.
+// Node.Root marks a node nothing injects: the top of a dependency tree. Those
+// are the entry points of the container, together with any wiring nothing uses,
+// and nothing here tries to tell the two apart - a service fetched at runtime
+// with SvcByType, SvcByLabel or SvcByRef leaves no trace in the container, so
+// only the reader knows which of their roots are deliberate.
 package graph

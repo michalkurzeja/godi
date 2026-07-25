@@ -27,14 +27,12 @@ func modelWith(edge *graph.Edge, params ...*graph.Param) *graph.Graph {
 	consumer := &graph.Node{
 		ID: "root/svc:app.(*Consumer)", Kind: graph.NodeService, Scope: "root",
 		Type: "github.com/acme/app.(*Consumer)", Name: "github.com/acme/app.NewConsumer",
-		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true,
-		Params: params,
+		Shared: true, Lazy: true, Autowired: true, Params: params,
 	}
 	dep := &graph.Node{
 		ID: "root/svc:app.(*Dep)", Kind: graph.NodeService, Scope: "root",
 		Type: "github.com/acme/app.(*Dep)", Name: "github.com/acme/app.NewDep",
-		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true,
-	}
+		Shared: true, Lazy: true, Autowired: true}
 
 	g := &graph.Graph{
 		Schema: graph.Schema,
@@ -345,9 +343,9 @@ func TestScopesBecomeNestedClusters(t *testing.T) {
 		},
 		Nodes: []*graph.Node{
 			{ID: "root/svc:app.(*Server)", Kind: graph.NodeService, Scope: "root",
-				Type: "github.com/acme/app.(*Server)", ChildScope: "root/svc:app.(*Server)", ReachableFromRoots: true},
+				Type: "github.com/acme/app.(*Server)", ChildScope: "root/svc:app.(*Server)"},
 			{ID: "root/svc:app.(*Server)/svc:app.(*Conn)", Kind: graph.NodeService, Scope: "root/svc:app.(*Server)",
-				Type: "github.com/acme/app.(*Conn)", ReachableFromRoots: true},
+				Type: "github.com/acme/app.(*Conn)"},
 		},
 	}
 
@@ -364,7 +362,7 @@ func TestScopesBecomeNestedClusters(t *testing.T) {
 	require.Less(t, inner, conn, "the private service sits inside its owner's cluster")
 }
 
-func TestUnreachableNodesAreFlagged(t *testing.T) {
+func TestRootsAreDistinguishable(t *testing.T) {
 	t.Parallel()
 
 	g := &graph.Graph{
@@ -372,15 +370,16 @@ func TestUnreachableNodesAreFlagged(t *testing.T) {
 		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
 		Nodes: []*graph.Node{{
 			ID: "root/svc:app.(*Orphan)", Kind: graph.NodeService, Scope: "root",
-			Type: "github.com/acme/app.(*Orphan)", ReachableFromRoots: false,
+			Type: "github.com/acme/app.(*Orphan)", Root: true,
 		}},
 	}
 
 	out := encode(t, g)
-	require.Contains(t, out, "⚠ ")
-	require.Contains(t, out, `class="service unreachable"`)
-	// Phrased as a candidate, never as a verdict: runtime lookups are invisible.
-	require.Contains(t, out, "not reachable from any eager service or function")
+	require.Contains(t, out, `class="service root"`)
+	require.Contains(t, out, `fillcolor="#dbe9fc"`, "a tint, not a warning colour")
+	require.Contains(t, out, "▲ ", "and a marker on the node itself")
+	require.NotContains(t, out, "⚠", "a root is not a problem")
+	require.Contains(t, out, "nothing injects this: it is the top of a tree")
 }
 
 func TestPortsCanBeTurnedOff(t *testing.T) {
@@ -419,8 +418,7 @@ func TestClusterLabelsFollowTheTheme(t *testing.T) {
 		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
 		Nodes: []*graph.Node{{
 			ID: "root/svc:app.(*A)", Kind: graph.NodeService, Scope: "root",
-			Type: "github.com/acme/app.(*A)", ReachableFromRoots: true,
-		}},
+			Type: "github.com/acme/app.(*A)"}},
 	}
 
 	for _, tc := range []struct {

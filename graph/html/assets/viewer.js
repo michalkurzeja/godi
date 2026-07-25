@@ -34,7 +34,7 @@ for (const e of data.edges) {
 }
 
 const scopes = new Map(data.scopes.map((s) => [s.id, s]));
-const unreachable = data.nodes.filter((n) => !n.reachable).length;
+const roots = data.nodes.filter((n) => n.root).length;
 
 // How many edges a node has before any filtering, which is what tells a node a
 // filter stripped bare from one that never had a connection at all.
@@ -79,9 +79,10 @@ const state = {
 	hops: 1,
 	dir: 'both',
 	isolate: false,
+	rootsOnly: false,
 	args: true,
 	layout: 'layered',
-	show: { manual: true, autowiring: true, 'compiler-pass': true, method: true, unreachable: true },
+	show: { manual: true, autowiring: true, 'compiler-pass': true, method: true },
 };
 
 // ------------------------------------------------------------------ labels ---
@@ -97,7 +98,9 @@ const shownParam = (p) => state.args && (state.show.method || !isMethod(p));
 
 function rows(n) {
 	const lines = [];
-	const head = (n.reachable ? '' : '⚠ ') + (n.kind === 'function' ? 'ƒ ' : '');
+	// A root is the top of a tree, and a function is a function; a root
+	// function wears both.
+	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
 	const heading = displayName(n);
 	const sub = displaySub(n);
 	lines.push(clip(head + heading));
@@ -140,7 +143,7 @@ function buildElements() {
 		els.push({
 			data: {
 				id: n.id, parent: 'scope:' + n.scope, label: layout.text,
-				kind: n.kind, shared: n.shared, lazy: n.lazy, reachable: n.reachable,
+				kind: n.kind, shared: n.shared, lazy: n.lazy, root: n.root,
 				height: layout.count * LINE + 2 * PAD,
 			},
 		});
@@ -174,7 +177,7 @@ function palette() {
 	const v = (name) => css.getPropertyValue(name).trim();
 	return {
 		text: v('--text'), muted: v('--muted'), accent: v('--accent'), warn: v('--warn'),
-		node: v('--node'), nodeBorder: v('--node-border'),
+		node: v('--node'), nodeBorder: v('--node-border'), rootNode: v('--node-root'),
 		scope: v('--scope'), scopeBorder: v('--scope-border'),
 		manual: v('--manual'), auto: v('--auto'), pass: v('--pass'),
 	};
@@ -197,7 +200,10 @@ function stylesheet() {
 		{
 			selector: 'node', style: {
 				shape: 'round-rectangle',
-				'background-color': p.node,
+				// Nothing injects a root, so it is the top of a tree. The fill
+				// says so: width and style already mean lazy and shared, and a
+				// root is not a problem, so it gets no warning colour.
+				'background-color': (n) => n.data('root') ? p.rootNode : p.node,
 				'border-color': p.nodeBorder,
 				'border-width': (n) => n.data('lazy') ? 1 : 2.2,
 				'border-style': (n) => n.data('kind') === 'service' && !n.data('shared') ? 'dashed' : 'solid',
@@ -219,7 +225,6 @@ function stylesheet() {
 				padding: PAD,
 			},
 		},
-		{ selector: 'node[!reachable]', style: { 'border-color': p.warn } },
 		{
 			selector: '$node > node', style: {
 				'background-color': p.scope, 'border-color': p.scopeBorder, 'border-width': 1,
@@ -408,30 +413,43 @@ function neighbourhood(id, live) {
 // returns whether the set of visible elements changed, because that is when the
 // graph is worth laying out again.
 function apply() {
-	const hidden = new Set();
-	if (!state.show.unreachable) {
-		for (const n of data.nodes) if (!n.reachable) hidden.add(n.id);
-	}
-
-	const live = new Set();
+	// What the wiring filters keep. Which nodes are on show is deliberately not
+	// consulted here: this set is what says whether a node has any wiring left,
+	// and hiding its neighbours is not the same as taking its wiring away.
+	const passing = new Set();
 	for (const e of data.edges) {
-		if (hidden.has(e.from) || hidden.has(e.to)) continue;
 		if (e.decidedBy !== 'none' && !state.show[e.decidedBy]) continue;
 		if (!state.show.method && isMethod(e)) continue;
-		live.add(e.id);
+		passing.add(e.id);
 	}
 
-	// A node a filter has stripped of every edge is an artefact of the filter
-	// rather than anything about the wiring, so it goes with them. A node that
-	// never had an edge at all is a finding in its own right - that is what
-	// unreachable is for - so it stays until that box says otherwise.
+	// A node a wiring filter has stripped of every edge is an artefact of the
+	// filter rather than anything about the wiring, so it goes with them. A node
+	// that never had an edge at all is a finding in its own right - an unwired
+	// service - so it stays.
 	const connected = new Set();
-	for (const id of live) {
+	for (const id of passing) {
 		const e = edges.get(id);
 		connected.add(e.from);
 		connected.add(e.to);
 	}
 	const stranded = (id) => wired.get(id) > 0 && !connected.has(id);
+
+	// Hiding nodes outright is a different thing: the reader asked to see just
+	// these, so being left without visible neighbours is the point rather than
+	// fallout, and the rule above must not take them away again.
+	const hidden = new Set();
+	if (state.rootsOnly) {
+		for (const n of data.nodes) if (!n.root) hidden.add(n.id);
+	}
+
+	const dropped = (id) => hidden.has(id) || stranded(id);
+
+	const live = new Set();
+	for (const id of passing) {
+		const e = edges.get(id);
+		if (!dropped(e.from) && !dropped(e.to)) live.add(id);
+	}
 
 	const hits = found();
 	const near = nodes.has(state.focus) ? neighbourhood(state.focus, live) : null;
@@ -441,7 +459,7 @@ function apply() {
 	cy.batch(() => {
 		for (const n of data.nodes) {
 			const el = cy.getElementById(n.id);
-			const gone = hidden.has(n.id) || stranded(n.id) || (state.isolate && outside(n.id));
+			const gone = dropped(n.id) || (state.isolate && outside(n.id));
 			if (el.visible() === gone) changed = true;
 			gone ? el.hide() : el.show();
 			el.toggleClass('dim', !gone && (outside(n.id) || (hits !== null && !hits.has(n.id))));
@@ -465,7 +483,7 @@ function apply() {
 	const counts = [
 		shownNodes + ' of ' + data.nodes.length + ' nodes',
 		shownEdges + ' of ' + data.edges.length + ' edges',
-		unreachable + ' not reachable from a root',
+		roots + (roots === 1 ? ' root' : ' roots'),
 	];
 	if (data.notices && data.notices.length) counts.push(data.notices.length + ' warnings');
 	$('counts').textContent = counts.join(' · ');
@@ -535,7 +553,7 @@ function showPanel(id) {
 	badges.append(badge(n.lazy ? 'lazy' : 'eager'));
 	if (!n.autowired) badges.append(badge('not autowired'));
 	if (n.instantiated) badges.append(badge('instantiated'));
-	if (!n.reachable) badges.append(badge('not reachable from a root', 'warn'));
+	if (n.root) badges.append(badge('root', 'root'));
 	for (const label of n.labels || []) badges.append(badge(label));
 	parts.push(badges);
 
@@ -691,10 +709,10 @@ function showAbout() {
 		parts.push(row);
 	}
 
-	parts.push(make('h3', null, 'Reachability'));
+	parts.push(make('h3', null, 'Roots'));
 	parts.push(make('p', 'via',
-		'Services fetched at runtime with SvcByType and friends are invisible to the container, ' +
-		'so "not reachable" marks a candidate for dead wiring, never a proof of it.'));
+		'A root is a node nothing injects: the top of a dependency tree. That is either an entry ' +
+		'point or wiring nothing uses, and the container cannot tell the two apart.'));
 
 	$('panel').replaceChildren(...parts);
 }

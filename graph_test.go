@@ -527,10 +527,33 @@ type Described struct{}
 
 func NewSelfDescribing(SelfDescribing) *Described { return &Described{} }
 
-func TestGraphReachability(t *testing.T) {
+// A root is a node nothing injects: the top of a dependency tree. It is a fact
+// about the wiring, so it holds whether or not anything is eager and whatever
+// the container is later asked for.
+func TestGraphRoots(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an unreferenced lazy service is not reachable", func(t *testing.T) {
+	t.Run("a service nothing injects is a root", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := godi.New().Services(
+			godi.Svc(NewServer, "localhost:8080"),
+			godi.Svc(NewEnGreeter),
+			godi.Svc(NewStore),
+		).Build()
+		require.NoError(t, err)
+
+		g := extract(t, c)
+		server := nodeOf(t, g, "v2_test.(*Server)")
+		store := nodeOf(t, g, "v2_test.(*Store)")
+
+		require.True(t, server.Root, "the server is injected nowhere")
+		require.Zero(t, server.InDegree)
+		require.False(t, store.Root, "the server takes a store")
+		require.Equal(t, 1, store.InDegree)
+	})
+
+	t.Run("wiring nothing uses is a root too, and cannot be told apart", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := godi.New().Services(
@@ -540,15 +563,10 @@ func TestGraphReachability(t *testing.T) {
 		require.NoError(t, err)
 
 		g := extract(t, c)
-		require.Empty(t, g.Roots, "nothing is eager and there are no functions")
-
-		store := nodeOf(t, g, "v2_test.(*Store)")
-		require.False(t, store.ReachableFromRoots)
-		require.False(t, store.Instantiated)
-		require.Contains(t, g.Unreachable(), store)
+		require.True(t, nodeOf(t, g, "v2_test.(*Store)").Root)
 	})
 
-	t.Run("a service an eager service needs is reachable and built", func(t *testing.T) {
+	t.Run("being eager is beside the point", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := godi.New().Services(
@@ -562,9 +580,8 @@ func TestGraphReachability(t *testing.T) {
 		server := nodeOf(t, g, "v2_test.(*Server)")
 		store := nodeOf(t, g, "v2_test.(*Store)")
 
-		require.Contains(t, g.Roots, server.ID)
-		require.True(t, server.ReachableFromRoots)
-		require.True(t, store.ReachableFromRoots, "reached through the eager server")
+		require.True(t, server.Root)
+		require.False(t, store.Root, "still injected, however it was built")
 
 		require.True(t, server.Instantiated, "an eager service is built during Build")
 		require.True(t, store.Instantiated, "and so is everything it needs")

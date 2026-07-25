@@ -12,14 +12,13 @@ import (
 // every keystroke. It is a private contract between this package and its own
 // JavaScript, not a published serialisation of the model.
 type payload struct {
-	Schema  string         `json:"schema"`
-	Title   string         `json:"title"`
-	Scopes  []viewScope    `json:"scopes"`
-	Nodes   []viewNode     `json:"nodes"`
-	Edges   []viewEdge     `json:"edges"`
-	Roots   []graph.NodeID `json:"roots"`
-	Notices []string       `json:"notices,omitzero"`
-	Credits []credit       `json:"credits"`
+	Schema  string      `json:"schema"`
+	Title   string      `json:"title"`
+	Scopes  []viewScope `json:"scopes"`
+	Nodes   []viewNode  `json:"nodes"`
+	Edges   []viewEdge  `json:"edges"`
+	Notices []string    `json:"notices,omitzero"`
+	Credits []credit    `json:"credits"`
 
 	// SourceRoot is the directory the file paths hang off, and SourceLink the
 	// template that turns one into something clickable. Empty means the page
@@ -65,8 +64,8 @@ type viewNode struct {
 	Lazy         bool `json:"lazy"`
 	Shared       bool `json:"shared"`
 	Autowired    bool `json:"autowired"`
-	Reachable    bool `json:"reachable"`
 	Instantiated bool `json:"instantiated"`
+	Root         bool `json:"root"`
 
 	Params []viewParam `json:"params,omitzero"`
 
@@ -131,7 +130,6 @@ func newPayload(g *graph.Graph, cfg config) payload {
 	p := payload{
 		Schema:     g.Schema,
 		Title:      cfg.title,
-		Roots:      g.Roots,
 		Credits:    cfg.credits(),
 		SourceRoot: g.SourceRoot,
 		SourceLink: cfg.sourceLink,
@@ -171,8 +169,8 @@ func newViewNode(node *graph.Node) viewNode {
 		Lazy:         node.Lazy,
 		Shared:       node.Shared,
 		Autowired:    node.Autowired,
-		Reachable:    node.ReachableFromRoots,
 		Instantiated: node.Instantiated,
+		Root:         node.Root,
 		Registered:   newViewLocation(node.Registered),
 		Defined:      newViewLocation(node.Defined),
 	}

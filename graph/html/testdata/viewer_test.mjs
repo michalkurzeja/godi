@@ -538,12 +538,54 @@ await test('re-ticking godi restores every node and edge', async () => {
 		[8, 5], 'counts after restoring');
 });
 
-await test('unreachable still hides the never-wired service', async () => {
-	await toggle('unreachable', false);
-	const shown = await visibleNodes();
-	await toggle('unreachable', true);
-	return !shown.includes('root/svc:app.(*Metrics)') || 'unreachable no longer hides it';
+// --- roots: the tops of the dependency trees --------------------------------
+
+await test('a node nothing injects is a root', async () =>
+	eq(await ev(`godi.data.nodes.filter(n => n.root).map(n => n.id).sort()`), [
+		'root/svc:app.(*Auditor)',
+		'root/svc:app.(*Metrics)',
+		'root/svc:app.(*Repo)',
+		'root/svc:app.(*Server)',
+	], 'the roots'));
+
+await test('a root is marked on the node itself', async () => {
+	const [root, plain] = await ev(`[
+		godi.cy.getElementById('root/svc:app.(*Server)').data('label'),
+		godi.cy.getElementById('root/svc:app.(*Router)').data('label'),
+	]`);
+	return (root.startsWith('▲ ') && !plain.includes('▲'))
+		|| `root label ${JSON.stringify(root.split('\n')[0])}, plain ${JSON.stringify(plain.split('\n')[0])}`;
 });
+
+await test('a root is tinted rather than warned about', async () => {
+	const [root, plain] = await ev(`[
+		godi.cy.getElementById('root/svc:app.(*Server)').style('background-color'),
+		godi.cy.getElementById('root/svc:app.(*Router)').style('background-color'),
+	]`);
+	return root !== plain || `both nodes are ${root}, so a root is not distinguishable`;
+});
+
+await test('the panel badges it', async () => {
+	await selectNode(SERVER);
+	const badges = await ev(`[...document.querySelectorAll('#panel .badge')].map(b => b.textContent)`);
+	return badges.includes('Root') || `badges were ${JSON.stringify(badges)}`;
+});
+
+await test('roots only hides everything else', async () => {
+	await toggle('rootsOnly', true);
+	const shown = await visibleNodes();
+	await toggle('rootsOnly', false);
+	return eq(shown, [
+		'root/svc:app.(*Auditor)',
+		'root/svc:app.(*Metrics)',
+		'root/svc:app.(*Repo)',
+		'root/svc:app.(*Server)',
+	], 'what survives the roots-only view');
+});
+
+await test('the count is in the status bar', async () =>
+	(await ev(`document.getElementById('counts').textContent`)).includes('4 roots')
+	|| 'the status bar does not count the roots');
 
 // --- reported: the hop slider had no way to say "all" ----------------------
 

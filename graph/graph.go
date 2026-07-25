@@ -41,7 +41,6 @@ type Graph struct {
 	Nodes       []*Node       `json:"nodes"`    // Sorted by ID.
 	Edges       []*Edge       `json:"edges"`    // Sorted by (From, Param, Ordinal).
 	Bindings    []*Binding    `json:"bindings"` // Sorted by (Scope, Interface).
-	Roots       []NodeID      `json:"roots"`    // Where reachability starts.
 	Diagnostics []*Diagnostic `json:"diagnostics,omitempty"`
 
 	// SourceRoot is the directory every file path is relative to, when they
@@ -108,10 +107,16 @@ type Node struct {
 
 	InDegree  int `json:"inDegree"`
 	OutDegree int `json:"outDegree"`
-	// ReachableFromRoots is a lower bound: services fetched at runtime with
-	// SvcByType and friends are invisible to the container, so an unreachable
-	// node is a candidate for dead wiring, never a proof of it.
-	ReachableFromRoots bool `json:"reachableFromRoots"`
+	// Root reports that nothing in the container injects this node: it is the
+	// top of a dependency tree. That is either an entry point, or wiring
+	// nothing uses, and the container cannot tell the two apart - which is the
+	// point of showing them.
+	//
+	// It is a fact about the wiring rather than a guess about intent, unlike
+	// asking what is reachable, which needs a set of entry points the container
+	// does not have. A cycle has no member of in-degree zero, so a cyclic
+	// component has no root.
+	Root bool `json:"root"`
 	// Instantiated reports whether the container had built this service by the
 	// time the graph was taken.
 	Instantiated bool `json:"instantiated"`
@@ -365,18 +370,6 @@ func (g *Graph) OutEdges(id NodeID) []*Edge {
 func (g *Graph) InEdges(id NodeID) []*Edge {
 	g.index()
 	return g.in[id]
-}
-
-// Unreachable returns the nodes not reachable from any root. They are candidates
-// for dead wiring, not proof of it - see Node.ReachableFromRoots.
-func (g *Graph) Unreachable() []*Node {
-	var out []*Node
-	for _, n := range g.Nodes {
-		if !n.ReachableFromRoots {
-			out = append(out, n)
-		}
-	}
-	return out
 }
 
 // ChildScopes returns the scopes directly nested in the given one.

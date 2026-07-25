@@ -133,8 +133,8 @@ func scopeLabel(scope *graph.Scope) string {
 
 func (p *printer) node(node *graph.Node) {
 	classes := []string{string(node.Kind)}
-	if !node.ReachableFromRoots {
-		classes = append(classes, "unreachable")
+	if node.Root {
+		classes = append(classes, "root")
 	}
 	if node.Instantiated {
 		classes = append(classes, "instantiated")
@@ -144,21 +144,25 @@ func (p *printer) node(node *graph.Node) {
 	if !node.Shared && node.Kind == graph.NodeService {
 		style += ",dashed" // A fresh instance every time it is injected.
 	}
-	border := p.palette.nodeBorder
 	penWidth := "1.2"
 	if !node.Lazy {
 		penWidth = "2.4" // Built during Build, not on demand.
 	}
-	if !node.ReachableFromRoots {
-		border = p.palette.warn
+
+	// Nothing injects a root, so it is the top of a tree. The fill says so:
+	// border width and style are already spoken for by lazy and shared.
+	fill := p.palette.nodeFill
+	if node.Root {
+		fill = p.palette.rootFill
 	}
 
-	p.printf("\t\t%s [id=%s, class=%s, style=%s, color=%s, penwidth=%s, tooltip=%s, label=%s];\n",
+	p.printf("\t\t%s [id=%s, class=%s, style=%s, color=%s, fillcolor=%s, penwidth=%s, tooltip=%s, label=%s];\n",
 		quote(string(node.ID)),
 		quote(string(node.ID)),
 		quote(strings.Join(classes, " ")),
 		quote(style),
-		quote(border),
+		quote(p.palette.nodeBorder),
+		quote(fill),
 		penWidth,
 		quote(p.nodeTooltip(node)),
 		p.nodeLabel(node),
@@ -188,8 +192,8 @@ func (p *printer) nodeTooltip(node *graph.Node) string {
 		sb.WriteString("\ndefined: ")
 		sb.WriteString(node.Defined.String())
 	}
-	if !node.ReachableFromRoots {
-		sb.WriteString("\nnot reachable from any eager service or function")
+	if node.Root {
+		sb.WriteString("\nnothing injects this: it is the top of a tree")
 	}
 	return sb.String()
 }
@@ -201,8 +205,8 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 	sb.WriteString(`<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">`)
 
 	marker := ""
-	if !node.ReachableFromRoots {
-		marker = "⚠ "
+	if node.Root {
+		marker = "▲ " // Nothing injects it: the top of a tree.
 	}
 
 	// A service is known by the type it provides; a function by its name, since

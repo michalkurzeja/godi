@@ -17,6 +17,7 @@ svg[hidden] { display: none; }
 	--auto: #0f766e;
 	--pass: #8250df;
 	--node: #ffffff;
+	--node-root: #dbe9fc;
 	--node-border: #b6bdc6;
 	--scope: #00000008;
 	--scope-border: #c9ced6;
@@ -39,6 +40,7 @@ html.theme-dark {
 	--auto: #2dd4bf;
 	--pass: #c297ff;
 	--node: #1b222c;
+	--node-root: #1b3557;
 	--node-border: #454d57;
 	--scope: #ffffff0a;
 	--scope-border: #30363d;
@@ -62,6 +64,7 @@ html.theme-auto { color-scheme: light dark; }
 		--auto: #2dd4bf;
 		--pass: #c297ff;
 		--node: #1b222c;
+		--node-root: #1b3557;
 		--node-border: #454d57;
 		--scope: #ffffff0a;
 		--scope-border: #30363d;
@@ -231,6 +234,7 @@ kbd {
 	white-space: nowrap;
 }
 .badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.root { color: var(--accent); border-color: var(--accent); }
 .badge.origin-manual { color: var(--manual); border-color: var(--manual); }
 .badge.origin-autowiring { color: var(--auto); border-color: var(--auto); }
 .badge.origin-compiler-pass { color: var(--pass); border-color: var(--pass); }

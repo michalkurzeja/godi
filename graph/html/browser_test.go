@@ -150,18 +150,19 @@ func chromeOrSkip(t *testing.T) string {
 //   - a dependency autowired through a binding a compiler pass created, whose
 //     colour and filter used to disagree
 //   - a chain two hops deep, so the hop limit has something to cut
-//   - a service nothing wires at all, which no filter may hide by accident
+//   - a service nothing wires at all, which no filter may hide by accident,
+//     and which is a root because nothing injects it
 //
 // The ids below are what testdata/viewer_test.mjs addresses, so they and the
 // counts in it move together.
 func regressionModel() *graph.Graph {
 	const pkg = "github.com/acme/app"
 
-	svc := func(name string, reachable bool, params ...*graph.Param) *graph.Node {
+	svc := func(name string, params ...*graph.Param) *graph.Node {
 		return &graph.Node{
 			ID: graph.NodeID("root/svc:app." + name), Kind: graph.NodeService, Scope: "root",
 			Type: pkg + "." + name, Name: pkg + ".New" + strings.Trim(name, "(*)"),
-			Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: reachable,
+			Shared: true, Lazy: true, Autowired: true,
 			Signature: "func(*app.Router, app.Logger) " + pkg + "." + name,
 			Params:    params,
 		}
@@ -207,20 +208,20 @@ func regressionModel() *graph.Graph {
 	}
 
 	nodes := []*graph.Node{
-		svc("(*Server)", true, serverRouter, serverAddr, setLogger, setTimeout),
-		svc("(*Router)", true, routerConfig),
-		svc("(*Config)", true),
-		svc("ConsoleLogger", true),
-		svc("(*Auditor)", true, auditorReporter),
-		svc("JSONReporter", true),
-		svc("(*Repo)", true, repoConfig),
-		svc("(*Metrics)", false), // Wired to nothing, reached by nothing.
+		svc("(*Server)", serverRouter, serverAddr, setLogger, setTimeout),
+		svc("(*Router)", routerConfig),
+		svc("(*Config)"),
+		svc("ConsoleLogger"),
+		svc("(*Auditor)", auditorReporter),
+		svc("JSONReporter"),
+		svc("(*Repo)", repoConfig),
+		svc("(*Metrics)"), // Wired to nothing, reached by nothing.
 	}
 	nodes[0].Lazy = false // Eager, so it is a root.
 	nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
 	nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
 
-	return &graph.Graph{
+	g := &graph.Graph{
 		Schema: graph.Schema,
 		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
 		Nodes:  nodes,
@@ -233,7 +234,19 @@ func regressionModel() *graph.Graph {
 				graph.BindingHop{Interface: pkg + ".Reporter", Origin: graph.BindOriginCompilerPass, OriginPass: "bind reporter"}),
 			edge(repoConfig, "root/svc:app.(*Config)", graph.ArgOriginManual),
 		},
-		Roots:      []graph.NodeID{"root/svc:app.(*Server)"},
 		SourceRoot: "/home/me/app",
 	}
+
+	// What the extractor would work out: a root is a node nothing injects. Read
+	// off the edges rather than written down, so it stays true as the fixture
+	// grows.
+	injected := make(map[graph.NodeID]bool, len(g.Edges))
+	for _, edge := range g.Edges {
+		injected[edge.To] = true
+	}
+	for _, node := range g.Nodes {
+		node.Root = !injected[node.ID]
+	}
+
+	return g
 }

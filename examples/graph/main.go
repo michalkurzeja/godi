@@ -14,11 +14,11 @@
 // Or write the interactive viewer, which lays the graph out with Graphviz and
 // wraps it in a page that searches, filters and explains the wiring:
 //
-//	go run ./examples/graph -format html > graph.html && open graph.html
+//	go run ./examples/graph -format html -open
 //
 // Pass -link to make the source locations in the detail panel clickable:
 //
-//	go run ./examples/graph -format html -link vscode > graph.html
+//	go run ./examples/graph -format html -link vscode -open
 //
 // Open the SVG in a browser to pan, zoom, and read the tooltips: every node
 // carries its fully qualified type, factory and scope, and every edge carries
@@ -41,6 +41,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
 	"github.com/michalkurzeja/godi/v2/graph/html"
+	"github.com/michalkurzeja/godi/v2/graph/view"
 )
 
 // An interface with a single implementation: godi binds it on its own, and the
@@ -54,7 +55,7 @@ func (ConsoleLogger) Log(string) {}
 
 // An interface with two implementations: godi cannot choose, so the container
 // declares a binding. Those edges get a hollow arrowhead, and the losing
-// implementation shows up as unreachable.
+// implementation ends up a root, because nothing injects it.
 
 type Clock interface{ Now() time.Time }
 
@@ -150,7 +151,7 @@ func NewServer(*Router, Logger, *Conn, string) *Server { return &Server{} }
 
 func (s *Server) SetTimeout(time.Duration) {}
 
-// A function is an entry point, so everything it needs counts as reachable.
+// A function is an entry point: nothing injects it, so it is a root.
 func migrate(*Repo, Logger, *Scheduler, *Auditor) error { return nil }
 
 func main() {
@@ -158,16 +159,22 @@ func main() {
 	theme := flag.String("theme", "", "colour scheme: light, dark, or auto for html")
 	layout := flag.String("layout", "", "html layout engine: graphviz or dagre")
 	link := flag.String("link", "", "html editor for source links: "+strings.Join(html.Editors(), ", ")+", or a template of your own")
+	show := flag.Bool("open", false, "open the graph instead of writing it to stdout")
 	flag.Parse()
 
-	if err := run(*format, *theme, *layout, *link, os.Stdout); err != nil {
+	if err := run(*format, *theme, *layout, *link, *show, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(format, theme, layout, link string, w io.Writer) error {
+func run(format, theme, layout, link string, show bool, w io.Writer) error {
 	c, err := build()
+	if err != nil {
+		return err
+	}
+
+	enc, err := encoder(format, theme, layout, link)
 	if err != nil {
 		return err
 	}
@@ -175,12 +182,21 @@ func run(format, theme, layout, link string, w io.Writer) error {
 	// Literal values are left out by default, because a constant is often a
 	// connection string or a token. This example opts in, truncating to 28
 	// characters, so that the fake DSN below shows up in the picture.
-	g, err := graph.Extract(c, graph.WithLiteralValues(28))
-	if err != nil {
-		return err
+	//
+	// Both paths below extract, so the options live here: passing them to one
+	// and not the other would quietly draw two different graphs.
+	opts := []graph.Option{graph.WithLiteralValues(28)}
+
+	if show {
+		path, err := view.Open(c, enc, opts...)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, path)
+		return nil
 	}
 
-	enc, err := encoder(format, theme, layout, link)
+	g, err := graph.Extract(c, opts...)
 	if err != nil {
 		return err
 	}
@@ -301,9 +317,10 @@ func build() (di.Container, error) {
 				MethodCall((*Server).SetTimeout, 30*time.Second).
 				Children(di.Svc(NewConn)), // Private to the server.
 
-			// Registered, wired to nothing, reached by nothing. Together with the
-			// text reporter the binding above passes over, it is what the graph
-			// flags as a candidate for dead wiring.
+			// Registered and wired to nothing, so it comes out a root with no
+			// tree under it - as does the text reporter the binding above passes
+			// over. Whether a root is an entry point or dead wiring is the one
+			// thing the graph leaves to the reader.
 			di.Svc(NewMetrics),
 		).
 		Bindings(

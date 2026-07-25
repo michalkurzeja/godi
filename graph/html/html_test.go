@@ -35,13 +35,13 @@ func model() *graph.Graph {
 	consumer := &graph.Node{
 		ID: "root/svc:app.(*Consumer)", Kind: graph.NodeService, Scope: "root",
 		Type: "github.com/acme/app.(*Consumer)", Name: "github.com/acme/app.NewConsumer",
-		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true,
+		Shared: true, Lazy: true, Autowired: true,
 		Params: []*graph.Param{param}, OutDegree: 1,
 	}
 	dep := &graph.Node{
 		ID: "root/svc:app.(*Dep)", Kind: graph.NodeService, Scope: "root",
 		Type: "github.com/acme/app.(*Dep)", Name: "github.com/acme/app.NewDep",
-		Shared: true, Lazy: true, Autowired: true, ReachableFromRoots: true, InDegree: 1,
+		Shared: true, Lazy: true, Autowired: true, InDegree: 1,
 	}
 	orphan := &graph.Node{
 		ID: "root/svc:app.(*Orphan)", Kind: graph.NodeService, Scope: "root",
@@ -58,7 +58,6 @@ func model() *graph.Graph {
 			Kind: graph.InjectFactoryArg, Origin: graph.ArgOriginManual,
 			Resolution: graph.ResolutionRef, ParamType: dep.Type,
 		}},
-		Roots: []graph.NodeID{consumer.ID},
 	}
 }
 

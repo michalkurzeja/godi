@@ -82,6 +82,7 @@ func MaxLabel(chars int) Option {
 type palette struct {
 	background    string
 	nodeFill      string
+	rootFill      string
 	nodeBorder    string
 	text          string
 	muted         string
@@ -105,6 +106,7 @@ func paletteFor(name ThemeName) palette {
 		return palette{
 			background:    "#0d1117",
 			nodeFill:      "#161b22",
+			rootFill:      "#1b3557",
 			nodeBorder:    "#6e7681",
 			text:          "#e6edf3",
 			muted:         "#9198a1",
@@ -119,6 +121,7 @@ func paletteFor(name ThemeName) palette {
 	return palette{
 		background:    "#ffffff",
 		nodeFill:      "#f4f5f7",
+		rootFill:      "#dbe9fc",
 		nodeBorder:    "#8a8f98",
 		text:          "#1f2328",
 		muted:         "#57606a",

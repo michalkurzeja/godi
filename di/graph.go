@@ -46,9 +46,6 @@ func (x *extractor) extract() *graph.Graph {
 	x.buildBindings()
 	x.markCycles()
 	x.countDegrees()
-	if !x.cfg.NoReachability {
-		x.computeReachability()
-	}
 	x.sortAll()
 	x.trimSourceRoot()
 	return x.out
@@ -660,41 +657,10 @@ func (x *extractor) countDegrees() {
 			to.InDegree++
 		}
 	}
-}
 
-// computeReachability walks out from the entry points: every function, plus every
-// eager service. It is a lower bound - services pulled at runtime by type or
-// label leave no trace in the container - so an unreachable node is a candidate
-// for dead wiring rather than proof of it.
-func (x *extractor) computeReachability() {
-	adjacency := make(map[graph.NodeID][]graph.NodeID, len(x.out.Nodes))
-	for _, edge := range x.out.Edges {
-		adjacency[edge.From] = append(adjacency[edge.From], edge.To)
-	}
-
-	nodes := make(map[graph.NodeID]*graph.Node, len(x.out.Nodes))
-	var queue []graph.NodeID
+	// Nothing injects it, so it is the top of a tree.
 	for _, node := range x.out.Nodes {
-		nodes[node.ID] = node
-		if node.Kind == graph.NodeFunction || !node.Lazy {
-			x.out.Roots = append(x.out.Roots, node.ID)
-			queue = append(queue, node.ID)
-		}
-	}
-
-	seen := make(map[graph.NodeID]bool, len(queue))
-	for len(queue) > 0 {
-		id := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-
-		if node, ok := nodes[id]; ok {
-			node.ReachableFromRoots = true
-		}
-		queue = append(queue, adjacency[id]...)
+		node.Root = node.InDegree == 0
 	}
 }
 
@@ -717,7 +683,6 @@ func (x *extractor) sortAll() {
 		}
 		return strings.Compare(a.Interface, b.Interface)
 	})
-	slices.Sort(x.out.Roots)
 }
 
 // bindingInChain finds the binding covering typ, and the scope that declared it.

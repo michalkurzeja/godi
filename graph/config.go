@@ -27,8 +27,6 @@ type Config struct {
 	Redactor func(typ reflect.Type, value any) (replacement string, redact bool)
 	// NoLiterals drops literal arguments from the graph entirely.
 	NoLiterals bool
-	// NoReachability skips computing which nodes are reachable from the roots.
-	NoReachability bool
 }
 
 // Option configures extraction.
@@ -64,9 +62,4 @@ func WithRedactor(fn func(typ reflect.Type, value any) (replacement string, reda
 // WithoutLiterals leaves literal arguments out of the graph entirely.
 func WithoutLiterals() Option {
 	return func(cfg *Config) { cfg.NoLiterals = true }
-}
-
-// WithoutReachability skips the reachability pass.
-func WithoutReachability() Option {
-	return func(cfg *Config) { cfg.NoReachability = true }
 }
