@@ -4,7 +4,9 @@
 // The wiring is chosen so that every kind of provenance the encoder can draw
 // shows up somewhere in the picture: an argument you wrote by hand, one godi
 // autowired, one resolved through a binding godi created for you, one resolved
-// through a binding you declared, and one substituted by a compiler pass.
+// through a binding you declared, and one substituted by a compiler pass. Every
+// way of registering one shows up too: a factory, a child of another service, a
+// function, and a value handed over as it stands.
 //
 // Read it in the terminal, which needs nothing installed:
 //
@@ -113,7 +115,25 @@ type TextReporter struct{}
 
 func (TextReporter) Report() {}
 
+// Not everything in a container is built by a factory. SvcVal registers a value
+// as it stands, and a function is a value like any other - so these two are
+// services whose whole implementation is the function registered as them.
+//
+// godi wraps the value in a factory of its own to hold it, which is why neither
+// has a definition site in the graph: there is no source of yours to point at,
+// only the line that registered it.
+
+type Validate func(string) error
+
+type Middleware func(*Router) *Router
+
+// A function with a name of its own, registered as it is.
+func validateEmail(string) error { return nil }
+
+func NewGateway(Validate, Middleware) *Gateway { return &Gateway{} }
+
 type (
+	Gateway   struct{}
 	Config    struct{}
 	Repo      struct{}
 	Cache     struct{}
@@ -328,6 +348,12 @@ func build() (di.Container, error) {
 				Eager().
 				MethodCall((*Server).SetTimeout, 30*time.Second).
 				Children(di.Svc(NewConn)), // Private to the server.
+
+			// A named function as a service, and one written in place. Both are
+			// autowired into the gateway by their types.
+			di.SvcVal[Validate](validateEmail),
+			di.SvcVal[Middleware](func(r *Router) *Router { return r }),
+			di.Svc(NewGateway),
 
 			// Registered and wired to nothing, so it comes out a root with no
 			// tree under it - as does the text reporter the binding above passes
