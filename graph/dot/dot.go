@@ -80,6 +80,7 @@ func (p *printer) write(g *graph.Graph) {
 	if p.cfg.legend {
 		p.legend(g)
 	}
+	p.notices(g)
 	p.printf("}\n")
 }
 
@@ -262,7 +263,7 @@ func (p *printer) paramText(param *graph.Param) string {
 	switch {
 	case len(param.Literals) > 0:
 		sb.WriteString(" = ")
-		sb.WriteString(literalText(param.Literals))
+		sb.WriteString(param.LiteralsText())
 	case param.Origin == graph.ArgOriginNone:
 		sb.WriteString(" (not wired)")
 	case param.Unresolved:
@@ -276,23 +277,6 @@ func (p *printer) paramText(param *graph.Param) string {
 	}
 
 	return sb.String()
-}
-
-func literalText(literals []graph.Literal) string {
-	parts := make([]string, 0, len(literals))
-	for _, lit := range literals {
-		switch {
-		case lit.Redacted:
-			parts = append(parts, lit.Value)
-		case lit.Value == "":
-			parts = append(parts, "‹literal›")
-		case lit.Truncated:
-			parts = append(parts, lit.Value+"…")
-		default:
-			parts = append(parts, lit.Value)
-		}
-	}
-	return strings.Join(parts, ", ")
 }
 
 func nodeBadges(node *graph.Node) string {
@@ -467,6 +451,29 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 //
 // The two channels are independent. The head says how the dependency was
 // matched; the colour says who decided on it.
+// notices draws what the extractor could not make sense of. Extraction never
+// fails on odd input, it records it - and a drawing that leaves the record out
+// is the one place a reader would never think to look for it.
+func (p *printer) notices(g *graph.Graph) {
+	if len(g.Diagnostics) == 0 {
+		return
+	}
+
+	// Escaped a line at a time, then joined with a break: inside an HTML-like
+	// label a newline is just whitespace, and <BR/> is the only line ending.
+	lines := make([]string, 0, len(g.Diagnostics))
+	for _, d := range g.Diagnostics {
+		lines = append(lines, esc(d.Severity+": "+d.Message))
+	}
+
+	p.printf("\tsubgraph cluster_notices {\n")
+	p.printf("\t\tgraph [label=\"notices\", labeljust=l, style=rounded, color=%s, fontcolor=%s, class=%s];\n",
+		quote(p.palette.warn), quote(p.palette.warn), quote("notices"))
+	p.printf("\t\tnotices [shape=plaintext, style=\"\", label=<%s>];\n",
+		small(9, p.palette.warn, strings.Join(lines, `<BR ALIGN="LEFT"/>`)))
+	p.printf("\t}\n")
+}
+
 func (p *printer) legend(g *graph.Graph) {
 	rows := []struct {
 		style, arrow, colour, penWidth, text string

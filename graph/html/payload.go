@@ -194,7 +194,7 @@ func newViewParam(param *graph.Param) viewParam {
 		Note:       param.Note,
 	}
 	for _, lit := range param.Literals {
-		out.Literals = append(out.Literals, literalText(lit))
+		out.Literals = append(out.Literals, lit.String())
 	}
 	return out
 }

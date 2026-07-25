@@ -444,6 +444,17 @@ func TestNoFiltersChangesNothing(t *testing.T) {
 	require.Same(t, g, g.Select())
 }
 
+// Encode is defensive about a nil graph, and these are the two things anyone
+// does to one.
+func TestFilteringNothingIsNotAPanic(t *testing.T) {
+	t.Parallel()
+
+	var g *graph.Graph
+
+	require.Nil(t, g.Select())
+	require.Nil(t, g.Select(graph.OnlyRoots()))
+}
+
 func TestAnEmptyResultIsStillAGraph(t *testing.T) {
 	t.Parallel()
 

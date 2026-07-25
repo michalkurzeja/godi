@@ -253,7 +253,7 @@ func (p *printer) param(g *graph.Graph, param *graph.Param, depth int) {
 	edges := paramEdges(g, param)
 	switch {
 	case len(param.Literals) > 0:
-		p.line(depth, "%s = %s%s", head, literals(param.Literals), bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.line(depth, "%s = %s%s", head, param.LiteralsText(), bracketed(argOrigin(param.Origin, param.OriginPass)))
 	case len(edges) == 0:
 		p.line(depth, "%s%s%s", head, unresolved(param), bracketed(argOrigin(param.Origin, param.OriginPass)))
 	default:
@@ -301,23 +301,6 @@ func unresolved(param *graph.Param) string {
 		// looks like when nothing provides one.
 		return "  (nothing)"
 	}
-}
-
-func literals(lits []graph.Literal) string {
-	parts := make([]string, 0, len(lits))
-	for _, lit := range lits {
-		switch {
-		case lit.Value == "" && lit.Redacted:
-			parts = append(parts, "<redacted>")
-		case lit.Value == "":
-			parts = append(parts, "<literal "+render.Short(lit.Type)+">")
-		case lit.Truncated:
-			parts = append(parts, lit.Value+"...")
-		default:
-			parts = append(parts, lit.Value)
-		}
-	}
-	return strings.Join(parts, ", ")
 }
 
 // resolution says how a dependency was matched, and names the binding it went

@@ -415,7 +415,10 @@ func (g *Graph) Select(opts ...Option) *Graph {
 }
 
 func (g *Graph) selected(filters []filter) *Graph {
-	if len(filters) == 0 {
+	// Nothing to narrow, and nothing to narrow it with. Encode is defensive
+	// about a nil graph for the same reason: these are the two things you do to
+	// one, and neither should be the call that panics.
+	if g == nil || len(filters) == 0 {
 		return g
 	}
 

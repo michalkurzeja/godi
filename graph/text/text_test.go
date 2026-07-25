@@ -224,7 +224,7 @@ func TestAValueLessLiteralSaysOnlyThatThereIsOne(t *testing.T) {
 	g := model()
 	g.Nodes[0].Params[1].Literals = []graph.Literal{{Type: "string"}}
 
-	require.Contains(t, encode(t, g), "1 <- string = <literal string>")
+	require.Contains(t, encode(t, g), "1 <- string = ‹literal›")
 }
 
 func TestARedactedLiteralSaysSo(t *testing.T) {
@@ -233,7 +233,7 @@ func TestARedactedLiteralSaysSo(t *testing.T) {
 	g := model()
 	g.Nodes[0].Params[1].Literals = []graph.Literal{{Type: "string", Redacted: true}}
 
-	require.Contains(t, encode(t, g), "= <redacted>")
+	require.Contains(t, encode(t, g), "= ‹redacted›")
 }
 
 // An empty variadic slot is what an optional dependency looks like when nothing

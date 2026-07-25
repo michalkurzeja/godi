@@ -531,6 +531,13 @@ func TestGraphvizAcceptsTheOutput(t *testing.T) {
 			Literals: []graph.Literal{{Type: "string", Value: `weird \N "value"`}},
 		},
 	)
+	// Everything the encoder can emit, so Graphviz vets all of it: a filtered
+	// node's extra row and the notices cluster included.
+	g.Nodes[0].Elided = 4
+	g.Diagnostics = []*graph.Diagnostic{
+		{Severity: "warning", Message: `scope "orphan" belongs to no definition`},
+		{Severity: "warning", Message: "chan<- int could not be resolved"},
+	}
 
 	cmd := exec.Command("dot", "-Tsvg")
 	cmd.Stdin = strings.NewReader(encode(t, g))
@@ -541,6 +548,8 @@ func TestGraphvizAcceptsTheOutput(t *testing.T) {
 	require.NoError(t, err, "graphviz rejected the output: %s", stderr.String())
 	require.Empty(t, stderr.String(), "graphviz warned about the output")
 	require.Contains(t, string(out), "<svg")
+	require.Contains(t, string(out), "notices", "the cluster made it into the drawing")
+	require.Contains(t, string(out), "+4 more")
 }
 
 // The head already says whether a pass wired the argument or created the
@@ -609,4 +618,29 @@ func TestAnUnknownLocationIsLeftOut(t *testing.T) {
 
 	require.NotContains(t, out, "registered:")
 	require.NotContains(t, out, "defined:")
+}
+
+// Extraction never fails on odd input; it records it. A drawing that leaves the
+// record out is the one place a reader would never think to look for it.
+func TestNoticesAreDrawn(t *testing.T) {
+	t.Parallel()
+
+	g := modelWith(nil, param(graph.ArgOriginManual, ""))
+	g.Diagnostics = []*graph.Diagnostic{
+		{Severity: "warning", Message: `scope "orphan" belongs to no definition`},
+		{Severity: "warning", Message: "chan<- int could not be resolved"},
+	}
+
+	out := encode(t, g)
+
+	require.Contains(t, out, "cluster_notices")
+	require.Contains(t, out, "scope &#34;orphan&#34; belongs to no definition", "quoted, for an HTML-like label")
+	require.Contains(t, out, "chan&lt;- int could not be resolved", "and so is the type syntax")
+	require.Contains(t, out, `<BR ALIGN="LEFT"/>`, "a newline is only whitespace in an HTML-like label")
+}
+
+func TestAGraphWithNothingToReportDrawsNoNotices(t *testing.T) {
+	t.Parallel()
+
+	require.NotContains(t, encode(t, modelWith(nil, param(graph.ArgOriginManual, ""))), "cluster_notices")
 }

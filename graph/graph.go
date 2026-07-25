@@ -248,6 +248,33 @@ type Literal struct {
 	Redacted  bool   `json:"redacted,omitzero"`
 }
 
+// String renders one constant for display. The type is deliberately not
+// repeated: every encoder already shows it on the argument row this sits
+// beside. It lives on the model because three encoders rendering the same
+// constant three ways is three chances to disagree.
+func (l Literal) String() string {
+	switch {
+	case l.Value != "" && l.Truncated:
+		return l.Value + "…"
+	case l.Value != "":
+		// A redactor's replacement lands here, which is the point of it.
+		return l.Value
+	case l.Redacted:
+		return "‹redacted›"
+	default:
+		return "‹literal›"
+	}
+}
+
+// LiteralsText renders every constant on this argument as one string.
+func (p *Param) LiteralsText() string {
+	parts := make([]string, 0, len(p.Literals))
+	for _, lit := range p.Literals {
+		parts = append(parts, lit.String())
+	}
+	return strings.Join(parts, ", ")
+}
+
 // Resolution is the mechanism that matched a dependency to a param.
 type Resolution string
 
