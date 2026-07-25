@@ -435,6 +435,60 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 	border-left: 1px solid var(--muted);
 }
 
+/* The id sits on its own line under a value that is often long enough to wrap,
+   so the button goes beside it rather than after it. */
+.idrow { display: flex; align-items: flex-start; gap: .3rem; }
+.idrow code { flex: 1; min-width: 0; word-break: break-all; }
+
+.copy {
+	flex: none;
+	padding: 1px 3px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: none;
+	color: var(--muted);
+	line-height: 0;
+}
+.copy:hover { border-color: var(--border); color: var(--accent); }
+.copy .i { width: 12px; height: 12px; }
+/* Said rather than animated: the point is to know it worked. */
+.copy.done { color: var(--auto); border-color: transparent; }
+
+/* ---------------------------------------------------------- go to node --- */
+
+#goto {
+	margin: auto;
+	padding: .9rem 1rem;
+	width: min(34rem, 90vw);
+	color: var(--text);
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-radius: 8px;
+	box-shadow: 0 8px 30px rgb(0 0 0 / 28%);
+}
+#goto::backdrop { background: rgb(0 0 0 / 35%); }
+#goto label { display: block; font-weight: 600; margin-bottom: .45rem; }
+#goto .row { display: flex; gap: .4rem; }
+
+#goto-id {
+	flex: 1;
+	min-width: 0;
+	font: inherit;
+	font-family: var(--mono);
+	font-size: 12px;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	padding: .3rem .45rem;
+}
+#goto-id:focus-visible { outline: none; border-color: var(--accent); }
+#goto-ok { display: flex; align-items: center; padding: .2rem .5rem; }
+#goto-ok .i { width: 14px; height: 14px; }
+
+#goto-note { margin: .45rem 0 0; font-size: 11px; color: var(--muted); }
+#goto-note.bad { color: var(--warn); }
+
 #panel h2 { font-size: 14px; margin: 0 0 .1rem; word-break: break-word; }
 #panel h3 {
 	font-size: 11px;

@@ -1312,6 +1312,134 @@ await test('a factory-built service keeps its own heading and no name', async ()
 		|| `heading ${JSON.stringify(heading)}, lines ${JSON.stringify(lines)}`;
 });
 
+// --- the graph id, and getting back to it -----------------------------------
+
+const idRow = () => ev(`(() => {
+	const dl = document.querySelector('#panel dl');
+	const dt = [...dl.children].find(el => el.tagName === 'DT' && el.textContent === 'ID');
+	return dt ? dt.nextElementSibling.querySelector('code').textContent : null;
+})()`);
+
+await test('the panel carries the node id', async () => {
+	await selectNode(SERVER);
+	return await idRow() === SERVER || `the id row reads ${JSON.stringify(await idRow())}`;
+});
+
+await test('and the copy button hands it to the clipboard', async () => {
+	const got = await ev(`(async () => {
+		let copied = null;
+		const real = navigator.clipboard.writeText.bind(navigator.clipboard);
+		navigator.clipboard.writeText = (t) => { copied = t; return real(t); };
+
+		document.querySelector('#panel .copy').click();
+		await new Promise((r) => setTimeout(r, 60));
+
+		navigator.clipboard.writeText = real;
+		return [copied, document.querySelector('#panel .copy').classList.contains('done')];
+	})()`);
+	return eq(got, [SERVER, true], 'what was copied, and whether it said so');
+});
+
+// The clipboard is a permission like any other and can be refused. The old way
+// still works, and either way the reader has to be told which happened.
+await test('and falls back when the clipboard is refused', async () => {
+	const got = await ev(`(async () => {
+		const real = navigator.clipboard.writeText.bind(navigator.clipboard);
+		const realExec = document.execCommand.bind(document);
+		navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));
+		let viaExec = false;
+		document.execCommand = (cmd) => { if (cmd === 'copy') viaExec = true; return true; };
+
+		document.querySelector('#panel .copy').click();
+		await new Promise((r) => setTimeout(r, 60));
+
+		navigator.clipboard.writeText = real;
+		document.execCommand = realExec;
+		return [viaExec, document.querySelector('#panel .copy').classList.contains('done')];
+	})()`);
+	return eq(got, [true, true], 'whether it fell back, and whether it still said it worked');
+});
+
+const openGoto = async () => {
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'g', bubbles: true})); return true; })()`);
+	await sleep(80);
+};
+
+const gotoState = () => ev(`[
+	document.getElementById('goto').open,
+	document.getElementById('goto-note').textContent,
+	document.getElementById('goto-note').classList.contains('bad'),
+]`);
+
+const submitGoto = async (id) => {
+	await ev(`(() => {
+		document.getElementById('goto-id').value = ${JSON.stringify(id)};
+		document.getElementById('goto-ok').click();
+		return true;
+	})()`);
+	await sleep(120);
+};
+
+await test('g opens the go-to window', async () => {
+	await openGoto();
+	const [open] = await gotoState();
+	return open === true || 'g did not open it';
+});
+
+await test('an id nobody has says so, and keeps what was typed', async () => {
+	await submitGoto('root/svc:app.(*Nope)');
+	const [open, note, bad] = await gotoState();
+	const kept = await ev(`document.getElementById('goto-id').value`);
+	return (open && bad && note.includes('No node') && kept === 'root/svc:app.(*Nope)')
+		|| `open=${open} bad=${bad} note=${JSON.stringify(note)} kept=${JSON.stringify(kept)}`;
+});
+
+// An id travels through chat, which wraps it in backticks.
+await test('a pasted id survives the punctuation it travelled in', async () => {
+	await submitGoto('  `' + SERVER + '`  ');
+	const [open] = await gotoState();
+	const focus = await ev(`godi.state.focus`);
+	await ev(`(() => { document.getElementById('goto').close(); return true; })()`);
+	return (!open && focus === SERVER) || 'the backticks were taken as part of the id';
+});
+
+await test('and Enter does the same as the button', async () => {
+	await selectNode('root/svc:app.(*Config)');
+	await openGoto();
+	await ev(`(() => { document.getElementById('goto-id').value = ${JSON.stringify(SERVER)}; return true; })()`);
+	await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+	await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+	await sleep(150);
+
+	const [open] = await gotoState();
+	const focus = await ev(`godi.state.focus`);
+	await ev(`(() => { document.getElementById('goto').close(); return true; })()`);
+	return (!open && focus === SERVER) || `open=${open}, focus is ${focus}`;
+});
+
+// Going quiet about a node a filter has taken away looks like the id was wrong.
+await test('a node filtered out of the picture says that, rather than nothing', async () => {
+	await toggle('rootsOnly', true);
+	await openGoto();
+	await submitGoto('root/svc:app.(*Config)');
+	const [open, note, bad] = await gotoState();
+
+	await ev(`(() => { document.getElementById('goto').close(); return true; })()`);
+	await toggle('rootsOnly', false);
+
+	return (open && bad && note.includes('filtered out'))
+		|| `open=${open} bad=${bad} note=${JSON.stringify(note)}`;
+});
+
+await test('and Escape puts it away', async () => {
+	await openGoto();
+	await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+	await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+	await sleep(120);
+	const [open] = await gotoState();
+	return open === false || 'Escape left it open';
+});
+
 // --- source locations ------------------------------------------------------
 
 await test('the panel shows where a service was registered and defined', async () => {

@@ -827,6 +827,58 @@ function locationCell(loc) {
 	return cell;
 }
 
+// idCell shows a node's graph id with a way to take it away with you.
+function idCell(id) {
+	const cell = make('dd', 'mono idrow');
+	cell.append(make('code', null, id));
+
+	const button = make('button', 'copy');
+	button.type = 'button';
+	button.title = 'Copy the id';
+	button.append(icon('i-copy'));
+	button.addEventListener('click', async () => {
+		button.classList.toggle('done', await copy(id));
+		button.title = button.classList.contains('done') ? 'Copied' : 'Could not copy it';
+		setTimeout(() => { button.classList.remove('done'); button.title = 'Copy the id'; }, 1200);
+	});
+
+	cell.append(button);
+	return cell;
+}
+
+function icon(name) {
+	const svg = document.createElementNS(SVG_NS, 'svg');
+	svg.setAttribute('class', 'i');
+	const use = document.createElementNS(SVG_NS, 'use');
+	use.setAttribute('href', '#' + name);
+	svg.append(use);
+	return svg;
+}
+
+// A page opened from disk is a secure context, so the clipboard is there - but
+// it is a permission like any other and can be refused, and then the old way
+// still works.
+async function copy(text) {
+	try {
+		await navigator.clipboard.writeText(text);
+		return true;
+	} catch { /* fall through */ }
+
+	const field = make('textarea');
+	field.value = text;
+	field.setAttribute('aria-hidden', 'true');
+	field.style.cssText = 'position:fixed;top:-1000px';
+	document.body.append(field);
+	field.select();
+	try {
+		return document.execCommand('copy');
+	} catch {
+		return false;
+	} finally {
+		field.remove();
+	}
+}
+
 // The panel can be sent away for more canvas. It still fills itself while
 // hidden - building it costs nothing - so bringing it back shows the current
 // selection rather than whatever was there when it went.
@@ -953,6 +1005,9 @@ function showPanel(id) {
 	const dl = make('dl');
 	if (n.package) dl.append(make('dt', null, 'Package'), make('dd', 'mono', n.package));
 	dl.append(make('dt', null, 'Scope'), make('dd', null, scopePath(n.scope)));
+	// A node id names one node in one graph and is stable across builds, so it
+	// is what you paste to a colleague to point at the thing you are discussing.
+	dl.append(make('dt', null, 'ID'), idCell(n.id));
 	if (n.registered) dl.append(make('dt', null, 'Registered'), locationCell(n.registered));
 	if (n.defined) dl.append(make('dt', null, 'Defined'), locationCell(n.defined));
 	parts.push(dl);
@@ -1067,6 +1122,7 @@ const CONTROLS = () => [
 			['t', 'Cycle the colour scheme'],
 			['d', 'Show or hide the detail panel'],
 			['l', 'Show or hide the legend'],
+			['g', 'Go to a node by its graph id'],
 			['?', 'Show or hide this panel'],
 		],
 	},
@@ -1284,6 +1340,75 @@ function installWheel() {
 		}
 		cy.panBy({ x: -ev.deltaX, y: -ev.deltaY });
 	}, { passive: false });
+}
+
+// -------------------------------------------------------------- go to node ---
+
+// A node id is the one thing that names a node exactly, which is what makes it
+// worth pasting into a message. This is the other end of that exchange.
+function installGoto() {
+	const dialog = $('goto');
+	const field = $('goto-id');
+	const note = $('goto-note');
+	const advice = note.textContent;
+
+	const say = (text, bad) => {
+		note.textContent = text;
+		note.classList.toggle('bad', !!bad);
+	};
+
+	$('goto-form').addEventListener('submit', (ev) => {
+		// The form would close the dialog on its own; a miss should leave it
+		// open with the text still in it, to be corrected rather than retyped.
+		ev.preventDefault();
+
+		const id = tidyID(field.value);
+		if (!id) return;
+
+		const node = nodes.get(id);
+		if (!node) {
+			say('No node has that id in this graph.', true);
+			return;
+		}
+
+		// A node a filter has taken away cannot be shown, and going quiet about
+		// it looks like the id was wrong when it was not.
+		if (!cy.getElementById(id).visible()) {
+			say('That node is filtered out of the picture at the moment.', true);
+			return;
+		}
+
+		dialog.close();
+		select(id, true);
+	});
+
+	// Clicking the backdrop is outside every child, which is how a click on it
+	// is told from a click on the dialog.
+	dialog.addEventListener('click', (ev) => {
+		if (ev.target === dialog) dialog.close();
+	});
+
+	dialog.addEventListener('close', () => say(advice, false));
+
+	return () => {
+		say(advice, false);
+		field.value = '';
+		if (!dialog.open) dialog.showModal();
+		field.focus();
+		field.select();
+	};
+}
+
+// tidyID takes what was pasted rather than what was meant. An id travels
+// through chat, which wraps it in backticks, and through mail, which wraps it
+// in quotes.
+function tidyID(text) {
+	const trimmed = text.trim();
+	const first = trimmed[0];
+	if ((first === '`' || first === '"' || first === "'") && trimmed.at(-1) === first) {
+		return trimmed.slice(1, -1).trim();
+	}
+	return trimmed;
 }
 
 // ----------------------------------------------------------------- actions ---
@@ -1513,6 +1638,7 @@ function installControls() {
 		else if (ev.key === 't') cycleTheme();
 		else if (ev.key === 'd') setPanel(!panelOpen());
 		else if (ev.key === 'l') setLegend(!legendOpen());
+		else if (ev.key === 'g') { ev.preventDefault(); openGoto(); }
 		else if (ev.key === '?') toggleHelp();
 	});
 }
@@ -1538,6 +1664,8 @@ rebuildHaystacks();
 paintRules();
 buildLegend();
 setLegend(recall('godi.legend') === 'open');
+
+const openGoto = installGoto();
 
 installControls();
 installPanelResize();
