@@ -535,25 +535,33 @@ function found() {
 
 // neighbourhood walks outwards from the selection, following only the edges
 // still on show: hiding a kind of wiring hides what it reached.
+//
+// Each direction is walked on its own, and the two results are put together.
+// Following both at once would let a path turn around partway - down to a
+// dependency, then back up to something else that uses it - which reaches the
+// selection's siblings and calls them two hops away. They are not on any path
+// through it, and the reader asked what this service is built from and what
+// uses it, not what its dependencies are shared with.
 function neighbourhood(id, live) {
-	const seen = new Set([id]);
-	let frontier = [id];
-	for (let hop = 0; hop < state.hops && frontier.length; hop++) {
-		const next = [];
-		for (const cur of frontier) {
-			if (state.dir !== 'up') {
-				for (const e of out.get(cur) || []) {
-					if (live.has(e.id) && !seen.has(e.to)) { seen.add(e.to); next.push(e.to); }
+	const walk = (adjacent, far) => {
+		const seen = new Set([id]);
+		let frontier = [id];
+		for (let hop = 0; hop < state.hops && frontier.length; hop++) {
+			const next = [];
+			for (const cur of frontier) {
+				for (const e of adjacent.get(cur) || []) {
+					const other = far(e);
+					if (live.has(e.id) && !seen.has(other)) { seen.add(other); next.push(other); }
 				}
 			}
-			if (state.dir !== 'down') {
-				for (const e of into.get(cur) || []) {
-					if (live.has(e.id) && !seen.has(e.from)) { seen.add(e.from); next.push(e.from); }
-				}
-			}
+			frontier = next;
 		}
-		frontier = next;
-	}
+		return seen;
+	};
+
+	const seen = new Set([id]);
+	if (state.dir !== 'up') for (const n of walk(out, (e) => e.to)) seen.add(n);
+	if (state.dir !== 'down') for (const n of walk(into, (e) => e.from)) seen.add(n);
 	return seen;
 }
 

@@ -1263,6 +1263,19 @@ await test('the hop limit follows the wiring, not the drawing', async () => {
 	return !dim.includes('root/svc:app.(*Config)') || 'Config is still dim at two hops';
 });
 
+// Repo and Router both take the Config, and neither knows about the other. A
+// walk that follows both directions at once gets from one to the other by going
+// down to the Config and back up, and calls that two hops - but a sibling is not
+// on any path through the selection.
+await test('a hop never turns around: siblings are not neighbours', async () => {
+	await selectNode('root/svc:app.(*Repo)');
+	await setHops(2);
+	const dim = await dimmed();
+	await selectNode(SERVER);
+	return dim.includes('root/svc:app.(*Router)')
+		|| 'the Router lit up two hops from the Repo, which only shares its Config';
+});
+
 // --- remembered preferences -------------------------------------------------
 //
 // These reload the page, so they come last: everything above runs against the
