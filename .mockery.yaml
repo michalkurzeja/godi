@@ -1,12 +1,19 @@
 log-level: "warn"
-all: true
+all: false
 dir: "{{.InterfaceDir}}/mocks"
 outpkg: "mocks"
 filename: "{{.InterfaceName | snakecase}}.go"
 mockname: "{{.InterfaceName}}"
 recursive: true
+# A functional option is a func type over the package's own unexported config,
+# so the generated mock names a type it cannot reach and will not compile.
+include-regex: ".*"
+exclude-regex: "^Option$"
 packages:
   github.com/michalkurzeja/godi/v2:
+    config:
+      exclude:
+        - examples
 
 # Deprecations compliance
 resolve-type-alias: false

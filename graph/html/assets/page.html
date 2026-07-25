@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-{{.Theme}}" data-layout="{{.Layout}}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{{.CSP}}">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}}</title>
+<style>{{.Style}}</style>
+</head>
+<body>
+<!-- Icons, drawn rather than typed: a Unicode glyph renders differently on
+     every platform and is missing on some. They inherit currentColor, so the
+     colour scheme carries them. -->
+<svg hidden aria-hidden="true">
+	<symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></symbol>
+	<symbol id="i-hops" viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.7"/><circle cx="13" cy="8" r="1.7"/><path d="M5.1 8h5.8"/></symbol>
+	<symbol id="i-dir" viewBox="0 0 16 16"><path d="M2 5.5h12M11 2.5l3 3-3 3M14 10.5H2M5 13.5l-3-3 3-3"/></symbol>
+	<symbol id="i-layout" viewBox="0 0 16 16"><rect x="1.5" y="2" width="5.5" height="4.5" rx="1"/><rect x="9" y="2" width="5.5" height="4.5" rx="1"/><rect x="1.5" y="9.5" width="13" height="4.5" rx="1"/></symbol>
+	<symbol id="i-relayout" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.9 2.2v3.2h-3.2"/></symbol>
+	<symbol id="i-fit" viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></symbol>
+	<symbol id="i-clear" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+	<symbol id="i-auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2"/><path d="M8 2.8a5.2 5.2 0 0 0 0 10.4z" fill="currentColor" stroke="none"/></symbol>
+	<symbol id="i-light" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.05 1.05M11.9 11.9l1.05 1.05M12.95 3.05L11.9 4.1M4.1 11.9l-1.05 1.05"/></symbol>
+	<symbol id="i-dark" viewBox="0 0 16 16"><path d="M13.2 9.7A5.6 5.6 0 0 1 6.3 2.8a5.6 5.6 0 1 0 6.9 6.9z"/></symbol>
+</svg>
+
+<div id="app">
+	<header id="bar">
+		<span id="brand">{{.Title}}</span>
+		<label id="find" title="Find a type, factory or label (/)">
+			<svg class="i"><use href="#i-search"/></svg>
+			<input id="search" type="search" placeholder="Find a type, factory or label" autocomplete="off" spellcheck="false">
+		</label>
+		<span id="found"></span>
+		<span class="grow"></span>
+		<label class="ctl" title="How many injection steps from the selection stay lit; the last stop is the whole subgraph">
+			<svg class="i"><use href="#i-hops"/></svg>
+			Hops
+			<input id="hops" type="range" min="1" max="7" step="1" value="1">
+			<output id="hops-out">1</output>
+		</label>
+		<label class="ctl" title="Which way to follow the wiring from the selection">
+			<svg class="i"><use href="#i-dir"/></svg>
+			<select id="dir">
+				<option value="both">Both ways</option>
+				<option value="down">Dependencies</option>
+				<option value="up">Consumers</option>
+			</select>
+		</label>
+		<label class="ctl" title="How the nodes are placed">
+			<svg class="i"><use href="#i-layout"/></svg>
+			<select id="layout">
+				<option value="layered">Layered</option>
+				<option value="breadthfirst">Breadth first</option>
+				<option value="concentric">Concentric</option>
+				<option value="cose">Force</option>
+				<option value="grid">Grid</option>
+			</select>
+		</label>
+		<button id="relayout" type="button" title="Lay the graph out again (r)">
+			<svg class="i"><use href="#i-relayout"/></svg>Re-layout
+		</button>
+		<button id="theme" type="button" title="Colour scheme: follow the system, light, or dark (t)">
+			<svg class="i"><use id="theme-icon" href="#i-auto"/></svg><span id="theme-label">Auto</span>
+		</button>
+		<button id="fit" type="button" title="Fit the whole graph (f)">
+			<svg class="i"><use href="#i-fit"/></svg>Fit
+		</button>
+		<button id="clear" type="button" title="Drop the selection and the search (esc)">
+			<svg class="i"><use href="#i-clear"/></svg>Clear
+		</button>
+	</header>
+
+	<div id="filters">
+		<span class="group">
+			<span class="glabel">Wired by</span>
+			<label class="chk"><input type="checkbox" data-show="manual" checked><i class="swatch manual"></i>You</label>
+			<label class="chk"><input type="checkbox" data-show="autowiring" checked><i class="swatch auto"></i>godi</label>
+			<label class="chk"><input type="checkbox" data-show="compiler-pass" checked><i class="swatch pass"></i>Compiler pass</label>
+		</span>
+		<span class="group">
+			<span class="glabel">Show</span>
+			<label class="chk"><input type="checkbox" data-show="method" checked>Method calls</label>
+			<label class="chk"><input type="checkbox" data-show="unreachable" checked>Unreachable</label>
+			<label class="chk"><input type="checkbox" data-flag="isolate">Isolate selection</label>
+			<label class="chk"><input type="checkbox" data-flag="args" checked>Arguments</label>
+		</span>
+	</div>
+
+	<main>
+		<div id="canvas"><div id="cy"></div><div id="busy">Laying out…</div></div>
+		<aside id="panel"><p class="empty">Pick a node to see how it is wired.</p></aside>
+	</main>
+
+	<footer id="status"><span id="counts"></span><span class="grow"></span><button id="shortcuts" type="button" class="link" title="Keyboard and mouse shortcuts (?)">Shortcuts</button><button id="about" type="button" class="link">About</button></footer>
+</div>
+<script type="application/json" id="godi-data">{{.Data}}</script>
+{{range .Scripts}}<script>{{.}}</script>
+{{end}}</body>
+</html>

@@ -1,7 +1,9 @@
 package di_test
 
 import (
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -641,3 +643,150 @@ func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 type nilSource struct{}
 
 func (nilSource) Graph(graph.Config) *graph.Graph { return nil }
+
+// --- source locations -------------------------------------------------------
+
+type locService struct{}
+
+func newLocService() *locService { return &locService{} }
+
+func locFunction(*locService) error { return nil }
+
+// here is the file and line of the call site, so a test can say where it
+// expects a registration without writing a line number down and watching it rot
+// on the next edit.
+func here() (string, int) {
+	_, file, line, _ := runtime.Caller(1)
+	return file, line
+}
+
+func TestLocationsPointAtTheWiringAndTheFactory(t *testing.T) {
+	wantFile, wantLine := here()
+	c, err := godi.New().
+		Services(godi.Svc(newLocService)).
+		Functions(godi.Func(locFunction)).
+		Build()
+	require.NoError(t, err)
+
+	g, err := graph.Extract(c)
+	require.NoError(t, err)
+
+	svc := serviceByType(t, g, "locService")
+	fn := nodeByKind(t, g, graph.NodeFunction)
+
+	// The registration is the di.Svc line, three below the marker.
+	require.Equal(t, wantFile, filepath.Join(g.SourceRoot, svc.Registered.File))
+	require.Equal(t, wantLine+2, svc.Registered.Line)
+	require.Contains(t, svc.Registered.Func, "TestLocationsPointAtTheWiringAndTheFactory",
+		"godi's own frames must not be blamed for the registration")
+
+	require.Equal(t, wantLine+3, fn.Registered.Line)
+
+	// The definition is where the factory itself is written.
+	require.Equal(t, wantFile, filepath.Join(g.SourceRoot, svc.Defined.File))
+	require.Equal(t, factoryLine(t, "newLocService"), svc.Defined.Line)
+	require.Equal(t, factoryLine(t, "locFunction"), fn.Defined.Line)
+}
+
+// A factory godi synthesised has no source of the user's behind it, so pointing
+// at godi's own closure would be worse than saying nothing.
+func TestASynthesisedFactoryHasNoDefinitionSite(t *testing.T) {
+	c, err := godi.New().Services(godi.SvcVal("hello")).Build()
+	require.NoError(t, err)
+
+	g, err := graph.Extract(c)
+	require.NoError(t, err)
+
+	node := serviceByType(t, g, "string")
+	require.True(t, node.Defined.IsZero(), "got %s", node.Defined)
+	require.False(t, node.Registered.IsZero(), "the registration is still the caller's")
+	require.Contains(t, node.Registered.Func, "TestASynthesisedFactoryHasNoDefinitionSite")
+}
+
+// Paths come out of the runtime absolute and build-machine specific, which is
+// long to read and unstable to diff.
+func TestPathsAreRelativeToASharedRoot(t *testing.T) {
+	c, err := godi.New().Services(godi.Svc(newLocService)).Build()
+	require.NoError(t, err)
+
+	g, err := graph.Extract(c)
+	require.NoError(t, err)
+
+	require.True(t, filepath.IsAbs(g.SourceRoot), "the root carries the absolute part")
+	for _, node := range g.Nodes {
+		require.False(t, filepath.IsAbs(node.Registered.File), "%s", node.Registered)
+		require.False(t, filepath.IsAbs(node.Defined.File), "%s", node.Defined)
+		require.FileExists(t, filepath.Join(g.SourceRoot, node.Registered.File),
+			"the root and the path must join back into something real")
+	}
+}
+
+// A definition a compiler pass creates is registered by that pass, and saying
+// so is the point: it pairs with the pass name already on the edge.
+func TestAPassIsCreditedWithWhatItRegisters(t *testing.T) {
+	var passFile string
+	var passLine int
+	pass := di.NewCompilerPass("add service", di.PreAutomation, di.CompilerOpFunc(
+		func(b *di.ContainerBuilder) error {
+			factory, err := di.NewFactory(newLocService)
+			if err != nil {
+				return err
+			}
+			passFile, passLine = here()
+			def := di.NewServiceDefinition(factory)
+			def.SetScope(b.RootScope())
+			b.RootScope().AddServiceDefinitions(def)
+			return nil
+		}))
+
+	c, err := godi.New().CompilerPasses(pass).Build()
+	require.NoError(t, err)
+
+	g, err := graph.Extract(c)
+	require.NoError(t, err)
+
+	node := serviceByType(t, g, "locService")
+	require.Equal(t, passFile, filepath.Join(g.SourceRoot, node.Registered.File))
+	require.Equal(t, passLine+1, node.Registered.Line, "the line inside the pass that created it")
+	require.Contains(t, node.Registered.Func, "TestAPassIsCreditedWithWhatItRegisters")
+}
+
+// serviceByType finds a service by a substring of its type. Services only: a
+// function that takes the type has it in its signature too.
+func serviceByType(t *testing.T, g *graph.Graph, want string) *graph.Node {
+	t.Helper()
+
+	for _, node := range g.Nodes {
+		if node.Kind == graph.NodeService && strings.Contains(node.Type, want) {
+			return node
+		}
+	}
+	t.Fatalf("no service whose type contains %q", want)
+	return nil
+}
+
+func nodeByKind(t *testing.T, g *graph.Graph, kind graph.NodeKind) *graph.Node {
+	t.Helper()
+
+	for _, node := range g.Nodes {
+		if node.Kind == kind {
+			return node
+		}
+	}
+	t.Fatalf("no %s node", kind)
+	return nil
+}
+
+// factoryLine is where a function is declared, read the same way the extractor
+// reads it, so the test pins the wiring rather than restating a line number.
+func factoryLine(t *testing.T, name string) int {
+	t.Helper()
+
+	fns := map[string]any{"newLocService": newLocService, "locFunction": locFunction}
+	fn, ok := fns[name]
+	require.True(t, ok)
+
+	pc := reflect.ValueOf(fn).Pointer()
+	_, line := runtime.FuncForPC(pc).FileLine(pc)
+	return line
+}

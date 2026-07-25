@@ -61,12 +61,15 @@ type ServiceDefinition struct {
 	lazy      bool
 	shared    bool
 	autowired bool
+
+	source source
 }
 
 func NewServiceDefinition(factory *Factory) *ServiceDefinition {
 	return &ServiceDefinition{
 		id:      NewID(),
 		factory: factory,
+		source:  captureSource(),
 
 		methodCalls: make(map[string]*Method),
 
@@ -225,12 +228,15 @@ type FunctionDefinition struct {
 	// Properties
 	lazy      bool
 	autowired bool
+
+	source source
 }
 
 func NewFunctionDefinition(function *Func) *FunctionDefinition {
 	return &FunctionDefinition{
 		id:       NewID(),
 		function: function,
+		source:   captureSource(),
 
 		lazy:      defaultLazy,
 		autowired: defaultAutowired,

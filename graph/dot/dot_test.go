@@ -562,3 +562,25 @@ func TestPassNameIsQualifiedOnlyWhenAmbiguous(t *testing.T) {
 		})
 	}
 }
+
+// A location is too long to put in a node box, so it lives in the tooltip where
+// it costs nothing to carry.
+func TestSourceLocationsAreInTheTooltip(t *testing.T) {
+	g := modelWith(nil)
+	g.SourceRoot = "/home/me/app"
+	g.Nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
+	g.Nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
+
+	out := encode(t, g)
+
+	require.Contains(t, out, `registered: wiring.go:42`)
+	require.Contains(t, out, `defined: http/server.go:118`)
+}
+
+// A node godi could find no source for must not grow an empty row.
+func TestAnUnknownLocationIsLeftOut(t *testing.T) {
+	out := encode(t, modelWith(nil))
+
+	require.NotContains(t, out, "registered:")
+	require.NotContains(t, out, "defined:")
+}

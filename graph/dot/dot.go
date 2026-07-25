@@ -104,8 +104,10 @@ func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
 	p.printf("\tsubgraph %s {\n", quote("cluster_"+string(scope.ID)))
 	p.printf("\t\tgraph [label=%s, labeljust=l, style=\"rounded,filled\", fillcolor=%s, color=%s,\n",
 		quote(scopeLabel(scope)), quote(p.palette.clusterFill(scope.Depth)), quote(p.palette.clusterBorder))
+	// A child scope is named after the definition that owns it, so the id needs
+	// the prefix: without it the cluster and its owner collide in the SVG.
 	p.printf("\t\t       fontcolor=%s, class=%s, id=%s];\n",
-		quote(p.palette.text), quote(fmt.Sprintf("scope depth%d", scope.Depth)), quote(string(scope.ID)))
+		quote(p.palette.text), quote(fmt.Sprintf("scope depth%d", scope.Depth)), quote("scope:"+string(scope.ID)))
 
 	for _, node := range g.ScopeNodes(scope.ID) {
 		p.node(node)
@@ -168,11 +170,23 @@ func (p *printer) nodeTooltip(node *graph.Node) string {
 	sb.WriteString(node.Type)
 	sb.WriteString("\n")
 	sb.WriteString(node.Name)
+	if node.Signature != "" {
+		sb.WriteString("\n")
+		sb.WriteString(node.Signature)
+	}
 	sb.WriteString("\nscope: ")
 	sb.WriteString(string(node.Scope))
 	if len(node.Labels) > 0 {
 		sb.WriteString("\nlabels: ")
 		sb.WriteString(strings.Join(node.Labels, ", "))
+	}
+	if !node.Registered.IsZero() {
+		sb.WriteString("\nregistered: ")
+		sb.WriteString(node.Registered.String())
+	}
+	if !node.Defined.IsZero() {
+		sb.WriteString("\ndefined: ")
+		sb.WriteString(node.Defined.String())
 	}
 	if !node.ReachableFromRoots {
 		sb.WriteString("\nnot reachable from any eager service or function")
@@ -301,6 +315,11 @@ func (p *printer) edge(edge *graph.Edge) {
 		fmt.Sprintf("color=%s", quote(p.edgeColour(edge))),
 		fmt.Sprintf("class=%s", quote(edgeClasses(edge))),
 	}
+	if edge.ID != "" {
+		// Graphviz copies id and class into the SVG, which is what lets the HTML
+		// viewer join the drawing back to the model it was drawn from.
+		attrs = append(attrs, fmt.Sprintf("id=%s", quote(string(edge.ID))))
+	}
 	if edge.Origin == graph.ArgOriginCompilerPass {
 		attrs = append(attrs, "penwidth=2")
 	}
@@ -391,31 +410,12 @@ func (p *printer) edgeColour(edge *graph.Edge) string {
 	return p.palette.manual
 }
 
-// edgeLabel names the extension responsible, when one is. godi's own automation
-// needs no label: it is the default the reader already knows.
-//
-// The arrowhead already says whether a pass wired the argument or created the
-// binding, so the name usually stands on its own. Only when two different passes
-// had a hand in the same edge does it need saying which did what.
+// edgeLabel names the extension responsible, when one is, and flags a cycle.
 func edgeLabel(edge *graph.Edge) string {
-	var wiredBy, boundBy string
-	if edge.Origin == graph.ArgOriginCompilerPass {
-		wiredBy = edge.OriginPass
-	}
-	if hop, ok := edge.Binding(); ok && hop.Origin == graph.BindOriginCompilerPass {
-		boundBy = hop.OriginPass
-	}
-
 	var parts []string
-	switch {
-	case wiredBy != "" && boundBy != "" && wiredBy != boundBy:
-		parts = append(parts, "arg: "+wiredBy, "bind: "+boundBy)
-	case wiredBy != "":
-		parts = append(parts, wiredBy)
-	case boundBy != "":
-		parts = append(parts, boundBy)
+	if pass := edge.PassCredit(); pass != "" {
+		parts = append(parts, pass)
 	}
-
 	if edge.Cycle {
 		parts = append(parts, "cycle")
 	}

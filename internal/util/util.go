@@ -47,6 +47,22 @@ func FuncName(val reflect.Value) string {
 	return runtime.FuncForPC(val.Pointer()).Name()
 }
 
+// FuncLocation is where a function is declared: the file, and the line the
+// func keyword is on. Line is zero when the value is not a function, or when
+// the binary carries no line table for it.
+func FuncLocation(val reflect.Value) (file string, line int) {
+	if val.Kind() != reflect.Func {
+		return "", 0
+	}
+
+	pc := val.Pointer()
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "", 0
+	}
+	return fn.FileLine(pc)
+}
+
 func FuncNameShort(val reflect.Value) string {
 	split := strings.Split(FuncName(val), ".")
 	if len(split) == 1 {

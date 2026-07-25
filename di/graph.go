@@ -3,6 +3,7 @@ package di
 import (
 	"errors"
 	"fmt"
+	"path"
 	"reflect"
 	"slices"
 	"strings"
@@ -49,6 +50,7 @@ func (x *extractor) extract() *graph.Graph {
 		x.computeReachability()
 	}
 	x.sortAll()
+	x.trimSourceRoot()
 	return x.out
 }
 
@@ -198,11 +200,14 @@ func (x *extractor) buildNodes() {
 			Scope:        x.scopeIDs[scope],
 			Type:         util.Signature(def.Type()),
 			Name:         def.FactoryName(),
+			Signature:    util.Signature(def.Factory().value().Type()),
 			Labels:       labelStrings(def.Labels()),
 			Lazy:         def.IsLazy(),
 			Shared:       def.IsShared(),
 			Autowired:    def.IsAutowired(),
 			Instantiated: instantiated(scope, def.ID()),
+			Registered:   registered(def.source),
+			Defined:      defined(def.Factory().value()),
 		}
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]
@@ -221,15 +226,18 @@ func (x *extractor) buildNodes() {
 
 	for scope, def := range x.container.functionDefsSeq() {
 		node := &graph.Node{
-			ID:        x.funIDs[def],
-			Kind:      graph.NodeFunction,
-			UUID:      def.ID().String(),
-			Scope:     x.scopeIDs[scope],
-			Type:      util.Signature(def.Type()),
-			Name:      def.Func().Name(),
-			Labels:    labelStrings(def.Labels()),
-			Lazy:      def.IsLazy(),
-			Autowired: def.IsAutowired(),
+			ID:         x.funIDs[def],
+			Kind:       graph.NodeFunction,
+			UUID:       def.ID().String(),
+			Scope:      x.scopeIDs[scope],
+			Type:       util.Signature(def.Type()),
+			Name:       def.Func().Name(),
+			Signature:  util.Signature(def.Func().value().Type()),
+			Labels:     labelStrings(def.Labels()),
+			Lazy:       def.IsLazy(),
+			Autowired:  def.IsAutowired(),
+			Registered: registered(def.source),
+			Defined:    defined(def.Func().value()),
 		}
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]
@@ -242,6 +250,77 @@ func (x *extractor) buildNodes() {
 
 		x.out.Nodes = append(x.out.Nodes, node)
 	}
+}
+
+// registered turns a captured stack into the place the definition was written.
+func registered(s source) graph.Location {
+	file, line, fn := s.Location()
+	return graph.Location{File: file, Line: line, Func: fn}
+}
+
+// defined is where a factory or function is declared.
+//
+// A factory godi synthesised has no source of the user's to point at - SvcVal
+// wraps a value in a closure of godi's own - so those are left empty rather
+// than pointing the reader into godi.
+func defined(fn reflect.Value) graph.Location {
+	file, line := util.FuncLocation(fn)
+	if file == "" || isWiring(util.FuncName(fn)) {
+		return graph.Location{}
+	}
+	return graph.Location{File: file, Line: line}
+}
+
+// trimSourceRoot takes the directory every path shares out of the paths and
+// records it once. Absolute build-machine paths make the output long, unstable
+// between machines, and noisy to diff; the root puts them back together again.
+func (x *extractor) trimSourceRoot() {
+	var paths []string
+	for _, node := range x.out.Nodes {
+		for _, loc := range []graph.Location{node.Registered, node.Defined} {
+			if loc.File != "" {
+				paths = append(paths, loc.File)
+			}
+		}
+	}
+
+	root := commonDir(paths)
+	if root == "" {
+		return
+	}
+
+	x.out.SourceRoot = root
+	for _, node := range x.out.Nodes {
+		node.Registered.File = strings.TrimPrefix(node.Registered.File, root+"/")
+		node.Defined.File = strings.TrimPrefix(node.Defined.File, root+"/")
+	}
+}
+
+// commonDir is the longest directory prefix shared by every path, or empty when
+// that is nothing worth trimming. A container wired partly from the standard
+// library shares only the filesystem root, which is no help to anyone.
+func commonDir(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	shared := strings.Split(path.Dir(paths[0]), "/")
+	for _, p := range paths[1:] {
+		parts := strings.Split(path.Dir(p), "/")
+		shared = shared[:min(len(shared), len(parts))]
+		for i := range shared {
+			if shared[i] != parts[i] {
+				shared = shared[:i]
+				break
+			}
+		}
+	}
+
+	root := strings.Join(shared, "/")
+	if root == "" || root == "/" {
+		return ""
+	}
+	return root
 }
 
 // methodParams emits the arguments of a method call. Slot 0 holds the receiver,
@@ -475,6 +554,7 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 	}
 
 	x.out.Edges = append(x.out.Edges, &graph.Edge{
+		ID:         graph.NewEdgeID(p.ID, p.EdgeCount),
 		From:       p.Node,
 		To:         to,
 		Param:      p.ID,

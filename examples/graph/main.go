@@ -11,6 +11,15 @@
 //	go run ./examples/graph | dot -Tsvg -o graph.svg
 //	go run ./examples/graph -theme dark | dot -Tsvg -o graph-dark.svg
 //
+// Or write the interactive viewer, which lays the graph out with Graphviz and
+// wraps it in a page that searches, filters and explains the wiring:
+//
+//	go run ./examples/graph -format html > graph.html && open graph.html
+//
+// Pass -link to make the source locations in the detail panel clickable:
+//
+//	go run ./examples/graph -format html -link vscode > graph.html
+//
 // Open the SVG in a browser to pan, zoom, and read the tooltips: every node
 // carries its fully qualified type, factory and scope, and every edge carries
 // how it resolved.
@@ -20,8 +29,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	di "github.com/michalkurzeja/godi/v2"
@@ -29,6 +40,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/extras"
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
+	"github.com/michalkurzeja/godi/v2/graph/html"
 )
 
 // An interface with a single implementation: godi binds it on its own, and the
@@ -66,6 +78,21 @@ type OrderHandler struct{}
 
 func (OrderHandler) Handle() {}
 
+type AdminHandler struct{}
+
+func (AdminHandler) Handle() {}
+
+// An interface nothing implements. The variadic slot below asks for it and
+// godi autowires an empty collection, so the argument shows up with no edges
+// leaving it - which is what an optional dependency looks like when nobody
+// supplies one.
+//
+// Leaving a variadic slot unfilled only works while the definition is
+// autowired: argument validation rejects an empty slot on a NotAutowired one,
+// variadic or not, and the container fails to build.
+
+type Plugin interface{ Plug() }
+
 // An interface bound by a compiler pass rather than by godi or by the container.
 // Unusual - most containers never do this - but the graph distinguishes it, so
 // the example covers it.
@@ -90,6 +117,7 @@ type (
 	Conn      struct{}
 	Scheduler struct{}
 	Auditor   struct{}
+	Kernel    struct{}
 )
 
 func NewConsoleLogger() ConsoleLogger { return ConsoleLogger{} }
@@ -109,7 +137,13 @@ func NewCache(Clock, time.Duration) *Cache  { return &Cache{} }
 
 func NewUserHandler(*Repo, *Cache) UserHandler { return UserHandler{} }
 func NewOrderHandler(*Repo) OrderHandler       { return OrderHandler{} }
+func NewAdminHandler(*Repo) AdminHandler       { return AdminHandler{} }
 
+// Nothing implements Plugin, so this variadic slot stays empty.
+func NewKernel(...Plugin) *Kernel { return &Kernel{} }
+
+// Variadic: every Handler in the container is collected into one argument, so
+// this row fans out into as many edges as there are implementations.
 func NewRouter(...Handler) *Router { return &Router{} }
 
 func NewServer(*Router, Logger, *Conn, string) *Server { return &Server{} }
@@ -120,16 +154,19 @@ func (s *Server) SetTimeout(time.Duration) {}
 func migrate(*Repo, Logger, *Scheduler, *Auditor) error { return nil }
 
 func main() {
-	theme := flag.String("theme", "light", "colour palette: light or dark")
+	format := flag.String("format", "dot", "output format: dot or html")
+	theme := flag.String("theme", "", "colour scheme: light, dark, or auto for html")
+	layout := flag.String("layout", "", "html layout engine: graphviz or dagre")
+	link := flag.String("link", "", "html editor for source links: "+strings.Join(html.Editors(), ", ")+", or a template of your own")
 	flag.Parse()
 
-	if err := run(*theme); err != nil {
+	if err := run(*format, *theme, *layout, *link, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(theme string) error {
+func run(format, theme, layout, link string, w io.Writer) error {
 	c, err := build()
 	if err != nil {
 		return err
@@ -143,12 +180,45 @@ func run(theme string) error {
 		return err
 	}
 
-	palette := dot.Light
-	if theme == "dark" {
-		palette = dot.Dark
+	enc, err := encoder(format, theme, layout, link)
+	if err != nil {
+		return err
 	}
+	return g.Encode(w, enc)
+}
 
-	return g.Encode(os.Stdout, dot.New(dot.Theme(palette)))
+func encoder(format, theme, layout, link string) (graph.Encoder, error) {
+	switch format {
+	case "dot":
+		palette := dot.Light
+		if theme == "dark" {
+			palette = dot.Dark
+		}
+		return dot.New(dot.Theme(palette)), nil
+	case "html":
+		opts := []html.Option{html.Title("godi example graph")}
+		if theme != "" {
+			opts = append(opts, html.Theme(html.ThemeName(theme)))
+		}
+		// Graphviz by default. Dagre makes a much smaller page, at the cost of
+		// a plainer layout.
+		if layout != "" {
+			opts = append(opts, html.Layout(html.LayoutEngine(layout)))
+		}
+		// Locations are plain text unless the reader says how to open them.
+		// An editor name is a shorthand for its template; anything else is
+		// taken as a template already.
+		if link != "" {
+			template, ok := html.EditorLink(link)
+			if !ok {
+				template = link
+			}
+			opts = append(opts, html.SourceLink(template))
+		}
+		return html.New(opts...), nil
+	default:
+		return nil, fmt.Errorf("unknown format %q: want dot or html", format)
+	}
 }
 
 // bindReporter is a compiler pass that declares an interface binding itself.
@@ -215,9 +285,15 @@ func build() (di.Container, error) {
 			di.Svc(NewTextReporter),
 			di.Svc(NewAuditor),
 
+			// Three handlers, all collected into the router's variadic slot.
 			di.Svc(NewUserHandler),
 			di.Svc(NewOrderHandler),
+			di.Svc(NewAdminHandler),
 			di.Svc(NewRouter),
+
+			// Its variadic slot asks for a Plugin, and nothing implements one,
+			// so godi autowires an empty collection.
+			di.Svc(NewKernel),
 
 			di.Svc(NewServer, "0.0.0.0:8080").
 				Bind(&serverRef).
@@ -236,6 +312,10 @@ func build() (di.Container, error) {
 		).
 		Functions(
 			di.Func(migrate).Labels("startup"),
+
+			// An anonymous function has no name of its own, so godi falls back
+			// to what the runtime calls it: the enclosing function and a counter.
+			di.Func(func(*Kernel, Logger) error { return nil }).Labels("healthcheck"),
 		).
 		CompilerPasses(
 			// Substitutes a literal after the fact. A constant draws no edge, so

@@ -18,7 +18,17 @@ type (
 	NodeID string
 	// ParamID identifies an injection point: "<NodeID>#f:2", "<NodeID>#m:SetLogger:1".
 	ParamID string
+	// EdgeID identifies one dependency injected into one injection point:
+	// "<ParamID>@0".
+	EdgeID string
 )
+
+// NewEdgeID names the ordinal-th dependency injected into a param. The pair is
+// unique, so it identifies the edge without the model having to hand out
+// counters.
+func NewEdgeID(param ParamID, ordinal int) EdgeID {
+	return EdgeID(fmt.Sprintf("%s@%d", param, ordinal))
+}
 
 // Graph is the dependency graph of a container: what depends on what, how each
 // dependency was wired, and what was passed where.
@@ -33,6 +43,12 @@ type Graph struct {
 	Bindings    []*Binding    `json:"bindings"` // Sorted by (Scope, Interface).
 	Roots       []NodeID      `json:"roots"`    // Where reachability starts.
 	Diagnostics []*Diagnostic `json:"diagnostics,omitempty"`
+
+	// SourceRoot is the directory every file path is relative to, when they
+	// share one. It is empty when they do not, and then the paths are as the
+	// runtime gave them. Trimming it keeps output readable and stable across
+	// machines; joining it back onto a path returns the original.
+	SourceRoot string `json:"sourceRoot,omitzero"`
 
 	// Lookup indexes, built on first use.
 	nodes  map[NodeID]*Node
@@ -67,9 +83,13 @@ type Node struct {
 	UUID  string   `json:"uuid"` // The container's own ID, for runtime lookups.
 	Scope ScopeID  `json:"scope"`
 
-	Type   string   `json:"type"` // Fully qualified: "github.com/acme/app/http.(*Server)".
-	Name   string   `json:"name"` // Factory name for services, function name for functions.
-	Labels []string `json:"labels,omitzero"`
+	Type string `json:"type"` // Fully qualified: "github.com/acme/app/http.(*Server)".
+	Name string `json:"name"` // Factory name for services, function name for functions.
+	// Signature is what the factory or function accepts and returns, as Go
+	// would write it: "func(*http.Router, app.Logger) *http.Server". It says in
+	// one line what the argument rows say one at a time.
+	Signature string   `json:"signature,omitzero"`
+	Labels    []string `json:"labels,omitzero"`
 
 	Lazy      bool `json:"lazy"`
 	Shared    bool `json:"shared"` // Always false for functions.
@@ -77,6 +97,14 @@ type Node struct {
 
 	ChildScope ScopeID  `json:"childScope,omitzero"` // The scope this node declared, if any.
 	Params     []*Param `json:"params,omitzero"`
+
+	// Registered is where the definition was written: the di.Svc or di.Func
+	// call, or the compiler pass that created it.
+	Registered Location `json:"registered,omitzero"`
+	// Defined is where the factory or function itself is declared. It is empty
+	// when the factory is one godi synthesised, as SvcVal does, because then
+	// there is no source of the user's to point at.
+	Defined Location `json:"defined,omitzero"`
 
 	InDegree  int `json:"inDegree"`
 	OutDegree int `json:"outDegree"`
@@ -94,6 +122,33 @@ func (n *Node) TypeShort() string { return render.Short(n.Type) }
 
 // NameShort is Name without the package path, for labels.
 func (n *Node) NameShort() string { return render.Short(n.Name) }
+
+// Location is a place in the source. Paths are relative to the graph's
+// SourceRoot when it has one.
+//
+// What the paths look like depends on how the binary was built: a release built
+// with -trimpath reports module-relative paths that no editor can open, so a
+// location is worth showing but not worth promising to resolve.
+type Location struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Func string `json:"func,omitzero"` // The function that registered it, where that is known.
+}
+
+// IsZero reports whether nothing was recorded. It is what lets a Location be
+// left out of the encoded graph entirely.
+func (l Location) IsZero() bool { return l.File == "" && l.Line == 0 }
+
+func (l Location) String() string {
+	switch {
+	case l.File == "":
+		return ""
+	case l.Line == 0:
+		return l.File
+	default:
+		return fmt.Sprintf("%s:%d", l.File, l.Line)
+	}
+}
 
 // InjectionKind tells where an argument is injected.
 type InjectionKind string
@@ -183,6 +238,7 @@ const (
 // Provenance has two independent facets: who wired the argument (Origin,
 // OriginPass) and how it resolved to this target (Resolution, Bindings).
 type Edge struct {
+	ID    EdgeID        `json:"id"`
 	From  NodeID        `json:"from"` // The consumer.
 	To    NodeID        `json:"to"`   // The dependency.
 	Param ParamID       `json:"param"`
@@ -197,6 +253,35 @@ type Edge struct {
 	Ordinal   int    `json:"ordinal"`   // Position among the param's edges, i.e. in the injected slice.
 	OfMany    bool   `json:"ofMany"`
 	Cycle     bool   `json:"cycle,omitzero"`
+}
+
+// PassCredit names the compiler pass responsible for this edge, and is empty
+// when none is. godi's own automation is deliberately not named: it is the
+// default the reader already knows.
+//
+// A pass can be responsible in either of two ways - by wiring the argument, or
+// by creating the binding the argument resolved through - and the answer is the
+// same either way, so callers need not know which happened. Only when two
+// different passes each had a hand in the same edge does it say which did what.
+//
+// It lives on the model because every encoder owes the reader the same answer.
+func (e *Edge) PassCredit() string {
+	var wiredBy, boundBy string
+	if e.Origin == ArgOriginCompilerPass {
+		wiredBy = e.OriginPass
+	}
+	if hop, ok := e.Binding(); ok && hop.Origin == BindOriginCompilerPass {
+		boundBy = hop.OriginPass
+	}
+
+	switch {
+	case wiredBy != "" && boundBy != "" && wiredBy != boundBy:
+		return "arg: " + wiredBy + ", bind: " + boundBy
+	case wiredBy != "":
+		return wiredBy
+	default:
+		return boundBy
+	}
 }
 
 // Binding returns the first interface binding this edge resolved through, which

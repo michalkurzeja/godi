@@ -71,6 +71,11 @@ func (f *Factory) Creates() reflect.Type {
 	return f.returnedType
 }
 
+// value is the factory function itself, for reading where it was declared.
+func (f *Factory) value() reflect.Value {
+	return f.fn.value()
+}
+
 func (f *Factory) Name() string {
 	return f.fn.Name()
 }
@@ -221,6 +226,11 @@ func (f *Func) AddArgs(args ...Arg) error {
 
 func (f *Func) Type() reflect.Type {
 	return f.fn.Type()
+}
+
+// value is the function itself, for reading where it was declared.
+func (f *Func) value() reflect.Value {
+	return f.fn
 }
 
 func (f *Func) Name() string {
