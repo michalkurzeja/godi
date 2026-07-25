@@ -471,9 +471,17 @@ type Snapshot struct {
 	Stage string `json:"stage,omitzero"`
 	// Pass is the compiler pass in progress. Empty outside a pass.
 	Pass string `json:"pass,omitzero"`
+	// Failed names the pass that returned an error, when compilation stopped
+	// there. The graph is then as far as the container ever got, which is where
+	// whatever went wrong is still visible.
+	Failed string `json:"failed,omitzero"`
 	// Done names the passes that had already finished, in the order they ran.
 	// It is the honest measure of how much of the wiring is here.
 	Done []string `json:"done,omitzero"`
+	// Autowired says godi's autowiring has run. After it, an argument still
+	// unwired is one nothing is going to wire; before it, it is only work not
+	// done yet.
+	Autowired bool `json:"autowired,omitzero"`
 }
 
 // Label says in a few words when the graph was taken.
@@ -481,6 +489,8 @@ func (s *Snapshot) Label() string {
 	switch {
 	case s == nil:
 		return ""
+	case s.Failed != "":
+		return "taken where compilation stopped: the " + s.Failed + " pass failed"
 	case s.Pass != "":
 		return "taken during the " + s.Pass + " pass"
 	case s.Stage != "":

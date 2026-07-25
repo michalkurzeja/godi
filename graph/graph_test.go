@@ -349,6 +349,11 @@ func TestASnapshotSaysWhenItWasTaken(t *testing.T) {
 			&graph.Snapshot{Stage: "automation", Pass: "autowiring"},
 			"taken during the autowiring pass",
 		},
+		{
+			"where it stopped, which beats both",
+			&graph.Snapshot{Stage: "validation", Failed: "argument validation"},
+			"taken where compilation stopped: the argument validation pass failed",
+		},
 	}
 
 	for _, test := range tests {

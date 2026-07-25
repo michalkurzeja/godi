@@ -690,6 +690,32 @@ func TestASnapshotSaysHowFarCompilationHadGot(t *testing.T) {
 	require.False(t, extract(t, c).Partial(), "a built container is not a snapshot")
 }
 
+// The build that failed is the one worth graphing, and the builder is still
+// standing afterwards. What the graph has to say is where the compiler stopped.
+func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
+	t.Parallel()
+
+	// Nothing provides the store, so autowiring fills the slot with a type
+	// argument and validation then finds nothing of that type.
+	b := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+	)
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "argument validation")
+
+	g := extract(t, b)
+
+	require.Equal(t, "argument validation", g.Snapshot.Failed)
+	require.True(t, g.Snapshot.Autowired, "autowiring ran before the pass that failed")
+	require.Equal(t, "taken where compilation stopped: the argument validation pass failed",
+		g.Snapshot.Label())
+
+	p := paramOf(t, g, "v2_test.(*Server)", 1)
+	require.True(t, p.Unresolved, "the argument that stopped the build says so")
+}
+
 func TestABuilderIsAGraphSourceBeforeItIsBuilt(t *testing.T) {
 	t.Parallel()
 

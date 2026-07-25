@@ -140,11 +140,14 @@ func (passes Passes) sort() {
 type Compiler struct {
 	passes Passes
 
-	// running is the pass in progress, and done names the ones that have
-	// finished. A graph taken mid-compilation is only readable if it says how
-	// much of the wiring had happened, and this is where that is known.
-	running *CompilerPass
-	done    []string
+	// running is the pass in progress, done names the ones that have finished,
+	// and failed the one that stopped compilation. A graph taken mid-build is
+	// only readable if it says how much of the wiring had happened, and this is
+	// where that is known.
+	running   *CompilerPass
+	done      []string
+	failed    string
+	autowired bool
 }
 
 func NewCompiler(conf CompilerConfig) *Compiler {
@@ -166,9 +169,15 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		err := pass.Run(builder)
 		c.running = nil
 		if err != nil {
+			// Kept, because the builder is still standing and its graph is the
+			// picture of exactly how far the container got.
+			c.failed = pass.name
 			return errorsx.Wrapf(err, "compiler pass (%s) returned an error", pass)
 		}
 		c.done = append(c.done, pass.name)
+		// Asked of the pass rather than of its name: what a pass fills is what
+		// it says it fills, and nothing stops a user calling theirs "autowiring".
+		c.autowired = c.autowired || pass.argOrigin == argOriginAutowiring
 		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 	}
 	return nil
@@ -177,7 +186,11 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 // snapshot describes how far compilation has got, for a graph taken while it is
 // still going on.
 func (c *Compiler) snapshot() *graph.Snapshot {
-	s := &graph.Snapshot{Done: slices.Clone(c.done)}
+	s := &graph.Snapshot{
+		Failed:    c.failed,
+		Done:      slices.Clone(c.done),
+		Autowired: c.autowired,
+	}
 	if c.running != nil {
 		s.Stage, s.Pass = c.running.stage.String(), c.running.name
 	}
