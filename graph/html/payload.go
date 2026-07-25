@@ -2,6 +2,7 @@ package html
 
 import (
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/internal/render"
 )
 
 // The payload is the model as the page's script wants it: flat, pre-shortened,
@@ -44,6 +45,9 @@ type viewScope struct {
 	Parent graph.ScopeID `json:"parent,omitzero"`
 	Depth  int           `json:"depth"`
 	Label  string        `json:"label"`
+	// Owner is what declared the scope, on its own. The label says "children of
+	// X", which reads well on a box but not repeated at every level of a path.
+	Owner string `json:"owner,omitzero"`
 }
 
 type viewNode struct {
@@ -139,6 +143,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 			Parent: scope.Parent,
 			Depth:  scope.Depth,
 			Label:  scope.Label(),
+			Owner:  render.Short(scope.OwnerName),
 		})
 	}
 	for _, node := range g.Nodes {

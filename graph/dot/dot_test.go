@@ -339,7 +339,10 @@ func TestScopesBecomeNestedClusters(t *testing.T) {
 		Schema: graph.Schema,
 		Scopes: []*graph.Scope{
 			{ID: "root", Name: "root"},
-			{ID: "root/svc:app.(*Server)", Parent: "root", Depth: 1, Owner: "root/svc:app.(*Server)", Name: "uuid-here"},
+			{
+				ID: "root/svc:app.(*Server)", Parent: "root", Depth: 1, Name: "uuid-here",
+				Owner: "root/svc:app.(*Server)", OwnerName: "github.com/acme/app.(*Server)",
+			},
 		},
 		Nodes: []*graph.Node{
 			{ID: "root/svc:app.(*Server)", Kind: graph.NodeService, Scope: "root",

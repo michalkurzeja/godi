@@ -66,6 +66,10 @@ type Scope struct {
 	Depth  int     `json:"depth"`
 	Name   string  `json:"name"`           // The container's own name for it; a uuid for child scopes.
 	Owner  NodeID  `json:"owner,omitzero"` // The node that declared this scope.
+	// OwnerName is what that node is called, fully qualified. Recorded rather
+	// than read back out of Owner, which is a path built for uniqueness and
+	// full of the punctuation and import paths that makes it unreadable.
+	OwnerName string `json:"ownerName,omitzero"`
 }
 
 // Label names a scope for a reader. A child scope's own name is the uuid of the
@@ -73,14 +77,10 @@ type Scope struct {
 // definition instead. Every encoder owes the reader the same answer, which is
 // why this is on the model rather than in each of them.
 func (s *Scope) Label() string {
-	if s.Owner == "" {
+	if s.OwnerName == "" {
 		return string(s.ID)
 	}
-	owner := render.Short(string(s.Owner))
-	if _, name, ok := strings.Cut(owner, ":"); ok {
-		owner = name
-	}
-	return "children of " + owner
+	return "children of " + render.Short(s.OwnerName)
 }
 
 // NodeKind tells a service apart from a function.

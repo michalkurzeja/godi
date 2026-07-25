@@ -41,10 +41,14 @@ const roots = data.nodes.filter((n) => n.root).length;
 const wired = new Map(data.nodes.map((n) =>
 	[n.id, (out.get(n.id) || []).length + (into.get(n.id) || []).length]));
 
+// The path to a scope, a step at a time. Each step is the definition that
+// declared it rather than its full label: "children of" is worth saying once
+// beside a box, but a path of them repeats the phrase at every level and buries
+// the names it is there to show.
 function scopePath(id) {
 	const parts = [];
 	for (let s = scopes.get(id); s; s = s.parent ? scopes.get(s.parent) : null) {
-		parts.unshift(s.label);
+		parts.unshift(s.owner || s.label);
 	}
 	return parts.join(' › ') || id;
 }

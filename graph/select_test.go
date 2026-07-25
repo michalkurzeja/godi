@@ -87,7 +87,7 @@ func model() *graph.Graph {
 		Schema: graph.Schema,
 		Scopes: []*graph.Scope{
 			{ID: "root", Name: "root"},
-			{ID: childScope, Parent: "root", Depth: 1, Name: "uuid-1", Owner: server},
+			{ID: childScope, Parent: "root", Depth: 1, Name: "uuid-1", Owner: server, OwnerName: pkg + ".(*Server)"},
 		},
 		Nodes: nodes,
 		Edges: []*graph.Edge{

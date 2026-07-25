@@ -62,7 +62,10 @@ func model() *graph.Graph {
 		SourceRoot: "/home/me/app",
 		Scopes: []*graph.Scope{
 			{ID: "root", Name: "root"},
-			{ID: "root/svc:app.(*Server)", Parent: "root", Depth: 1, Name: "uuid-1", Owner: "root/svc:app.(*Server)"},
+			{
+				ID: "root/svc:app.(*Server)", Parent: "root", Depth: 1, Name: "uuid-1",
+				Owner: "root/svc:app.(*Server)", OwnerName: pkg + ".(*Server)",
+			},
 		},
 		Nodes: []*graph.Node{
 			{

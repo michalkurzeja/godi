@@ -111,6 +111,7 @@ func (x *extractor) assignScope(scope *Scope, id, parent graph.ScopeID, depth in
 	entry := &graph.Scope{ID: id, Parent: parent, Depth: depth, Name: scope.Name()}
 	if owner, ok := owners[scope]; ok {
 		entry.Owner = x.ownerID(owner)
+		entry.OwnerName = x.ownerName(owner)
 	}
 	x.out.Scopes = append(x.out.Scopes, entry)
 
@@ -145,6 +146,21 @@ func (x *extractor) ownerID(owner any) graph.NodeID {
 		return x.svcIDs[def]
 	case *FunctionDefinition:
 		return x.funIDs[def]
+	}
+	return ""
+}
+
+// ownerName is what to call the definition that declared a scope: the same
+// thing a node of it is called, a service by the type it provides and a
+// function by its name. Recorded on the scope because a node ID is built to be
+// unique rather than to be read, and because the owner may itself be filtered
+// out of a graph that still has to name the scope it left behind.
+func (x *extractor) ownerName(owner any) string {
+	switch def := owner.(type) {
+	case *ServiceDefinition:
+		return util.Signature(def.Type())
+	case *FunctionDefinition:
+		return def.Func().Name()
 	}
 	return ""
 }

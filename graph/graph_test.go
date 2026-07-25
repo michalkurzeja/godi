@@ -123,9 +123,30 @@ func TestAScopeIsNamedAfterWhateverDeclaredIt(t *testing.T) {
 	require.Equal(t, "root", root.Label())
 
 	child := &graph.Scope{
-		ID: "root/svc:app.(*Server)", Name: "0d3f-uuid", Owner: "root/svc:github.com/acme/app.(*Server)",
+		ID: "root/svc:app.(*Server)", Name: "0d3f-uuid",
+		Owner:     "root/svc:github.com/acme/app.(*Server)",
+		OwnerName: "github.com/acme/app.(*Server)",
 	}
 	require.Equal(t, "children of app.(*Server)", child.Label())
+}
+
+// The name is recorded at extraction rather than read back out of the ID. An ID
+// is a path built for uniqueness: it accumulates every scope above it, import
+// paths and all, and shortening that gives the mess this replaced.
+func TestAScopeNameDoesNotGrowWithItsDepth(t *testing.T) {
+	t.Parallel()
+
+	const deep = "root" +
+		"/svc:github.com/acme/app/temporalx.(*Worker)" +
+		"/svc:github.com/acme/app/indexing.(*IndexProfilesActivities)[temporal:activity]" +
+		"/svc:github.com/acme/app/sources/profile.(*Sources)"
+
+	scope := &graph.Scope{
+		ID: graph.ScopeID(deep), Name: "0d3f-uuid", Owner: graph.NodeID(deep),
+		OwnerName: "github.com/acme/app/sources/profile.(*Sources)",
+	}
+
+	require.Equal(t, "children of profile.(*Sources)", scope.Label())
 }
 
 func TestALocationReadsAsAPlace(t *testing.T) {
