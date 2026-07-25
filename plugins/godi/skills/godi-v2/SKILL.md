@@ -348,12 +348,19 @@ Filters work on the model, so every format gets them. Reach for them on any real
 past a hundred nodes a whole-graph picture is unreadable.
 
 ```go
-g, err := graph.Extract(c,
+g, err := graph.Extract(c)
+
+g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
 	graph.ExcludeLabels("infrastructure"),
 	graph.HideMethodCalls(),
 )
 ```
+
+`Extract` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`);
+`Select` takes `Filter`s. They are different types on purpose - neither compiles in the
+other's place. `Focus` limits its reach with `Dependencies(n)` and `Consumers(n)`.
+`view.OpenGraph(g, enc)` opens a graph already narrowed; `view.Open(c, enc)` extracts first.
 
 Matchers are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, plus `All`, `Any` and `Not`.
 Patterns are globs (`*` = any run of characters), matched against the qualified name and

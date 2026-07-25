@@ -9,13 +9,11 @@ type Source interface {
 	Graph(cfg Config) *Graph
 }
 
-// Config tells the extractor what to put in the graph. Build it with New, or
-// leave it zero for the defaults.
+// Config tells the extractor what to put in the graph. Build it with NewConfig,
+// or leave it zero for the defaults.
 //
-// The filtering options in select.go also arrive as an Option, but they are
-// applied by Extract and Select rather than by the extractor: a Source is asked
-// for the whole graph and narrowing it is a separate step. Passing a Config
-// straight to Container.Graph therefore skips them.
+// It says nothing about which nodes to keep: a Source is asked for the whole
+// graph, and narrowing it is a separate step. See Filter and Graph.Select.
 type Config struct {
 	// LiteralValues includes the values of literal arguments, not just their
 	// types. Off by default: literals routinely carry connection strings and API
@@ -32,18 +30,13 @@ type Config struct {
 	Redactor func(typ reflect.Type, value any) (replacement string, redact bool)
 	// NoLiterals drops literal arguments from the graph entirely.
 	NoLiterals bool
-
-	// filters narrow the graph once it has been extracted. They are unexported
-	// because a Source never applies them: it is asked for the whole graph, and
-	// Extract and Select are what narrow it. See select.go.
-	filters []filter
 }
 
-// Option configures extraction.
+// Option configures extraction. Narrowing a graph down is a Filter instead.
 type Option func(*Config)
 
-// New builds a Config from the given options.
-func New(opts ...Option) Config {
+// NewConfig builds a Config from the given options.
+func NewConfig(opts ...Option) Config {
 	var cfg Config
 	for _, opt := range opts {
 		opt(&cfg)

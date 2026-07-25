@@ -79,6 +79,17 @@ func TestOpenReportsAnExtractionFailure(t *testing.T) {
 	require.ErrorContains(t, err, "nil source")
 }
 
+// OpenGraph is what Open becomes once the graph has been narrowed, so it has to
+// fail the same way: nothing written, nothing launched.
+func TestOpenGraphReportsAnEncodeFailure(t *testing.T) {
+	before := tempFiles(t)
+
+	_, err := view.OpenGraph(model(), fake{ext: "html", err: errors.New("ran out of ink")})
+
+	require.ErrorContains(t, err, "ran out of ink")
+	require.Equal(t, before, tempFiles(t))
+}
+
 func TestLaunchReportsAMissingOpener(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // Nothing to find.
 

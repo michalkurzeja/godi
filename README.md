@@ -911,7 +911,8 @@ package, so a binary compiles the ones it asks for and nothing else:
 via a temporary file:
 
 ```go
-path, err := view.Open(c, html.New())
+path, err := view.Open(c, html.New())      // extracts, writes, opens
+path, err := view.OpenGraph(g, html.New()) // a graph you already have
 ```
 
 #### Reading a real container
@@ -920,12 +921,17 @@ Past a hundred or so services no layout engine produces a picture worth looking 
 instead. Filters work on the model, which means every format gets them:
 
 ```go
-g, err := graph.Extract(c,
+g, err := graph.Extract(c)
+
+g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
 	graph.ExcludeLabels("infrastructure"),
 	graph.HideMethodCalls(),
 )
 ```
+
+Narrowing is its own step, so one extraction answers several questions — and a `Filter` is its own type, so
+an extraction option cannot be passed to `Select`, where it would have nothing to do.
 
 `Focus` follows the wiring outwards from what you select — both ways by default, or only the direction you
 name with `Dependencies(n)` or `Consumers(n)`. It never turns a corner: a service that merely shares a dependency with your selection is not a

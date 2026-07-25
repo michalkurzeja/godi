@@ -809,9 +809,8 @@ func factoryLine(t *testing.T, name string) int {
 }
 
 // Filters are exercised in depth against a hand-built model in graph/select_test.go.
-// This is the seam: that Extract runs them at all, and that they line up with
-// the graph a real container produces.
-func TestExtractAppliesFilters(t *testing.T) {
+// This is the seam: that they line up with the graph a real container produces.
+func TestSelectNarrowsAnExtractedGraph(t *testing.T) {
 	t.Parallel()
 
 	build := func(t *testing.T) godi.Container {
@@ -829,7 +828,7 @@ func TestExtractAppliesFilters(t *testing.T) {
 	t.Run("a focus narrows the graph to what surrounds the selection", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t), graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Consumers(1)))
+		g := extract(t, build(t)).Select(graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Consumers(1)))
 
 		require.ElementsMatch(t, []string{"v2_test.(*Store)", "v2_test.(*Server)"}, nodeTypes(g))
 	})
@@ -837,7 +836,7 @@ func TestExtractAppliesFilters(t *testing.T) {
 	t.Run("an exclusion drops what it names", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t), graph.ExcludeLabels("storage"))
+		g := extract(t, build(t)).Select(graph.ExcludeLabels("storage"))
 
 		require.NotContains(t, nodeTypes(g), "v2_test.(*Store)")
 	})
@@ -845,7 +844,7 @@ func TestExtractAppliesFilters(t *testing.T) {
 	t.Run("the graph is whole when nothing is filtered", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t))
+		g := extract(t, build(t)).Select()
 
 		require.Len(t, g.Nodes, 3)
 	})

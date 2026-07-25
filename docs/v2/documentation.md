@@ -1322,10 +1322,12 @@ One package per format, following `image`/`image/png`, so nothing is compiled in
 ```go
 func Extract(src Source, opts ...Option) (*Graph, error)
 func (g *Graph) Encode(w io.Writer, enc Encoder) error
-func (g *Graph) Select(opts ...Option) *Graph
+func (g *Graph) Select(filters ...Filter) *Graph
 ```
 
 `Source` is anything with `Graph(Config) *Graph`: a built container, or a `*di.ContainerBuilder` inside a compiler pass, which gives the pre-autowiring picture. `Extract` guards against a nil graph, which is what a generated mock returns.
+
+`Option` and `Filter` are separate types because they answer separate questions: an `Option` tells the `Source` what to build (and cannot be revisited afterwards), a `Filter` narrows the result. Neither compiles in the other's place, so nothing is silently ignored. `Filter` is a struct with unexported fields, so this package's functions are the only way to make one; the zero value is skipped rather than dereferenced. `Config` therefore carries extraction settings only.
 
 #### The model
 
@@ -1373,7 +1375,7 @@ Filtering copies: nodes and params are cloned because their counts change, edges
 
 `graph/text` is an indented outline, and the format `Print` now delegates to.
 
-`graph/view` writes to a temporary file created private to the user (a graph asked for literal values carries whatever those are) and hands it to `open`/`xdg-open`/`start`. It is a separate package so that nothing on the root package's import path can run another program.
+`graph/view` writes to a temporary file created private to the user (a graph asked for literal values carries whatever those are) and hands it to `open`/`xdg-open`/`start`. It is a separate package so that nothing on the root package's import path can run another program. `Open` extracts and opens; `OpenGraph` opens a graph already in hand, which is what narrowing with `Select` leaves you holding.
 
 ---
 

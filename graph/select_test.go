@@ -132,7 +132,7 @@ func ids(g *graph.Graph) []string {
 
 // only keeps exactly what the matcher accepts, so a test of what a matcher
 // matches is not also a test of what Focus reaches from there.
-func only(match graph.Matcher) graph.Option { return graph.Exclude(graph.Not(match)) }
+func only(match graph.Matcher) graph.Filter { return graph.Exclude(graph.Not(match)) }
 
 func node(t *testing.T, g *graph.Graph, id string) *graph.Node {
 	t.Helper()
@@ -459,6 +459,16 @@ func TestNoFiltersChangesNothing(t *testing.T) {
 	g := model()
 
 	require.Same(t, g, g.Select())
+}
+
+// A Filter can only be built by the functions in this package, but the zero
+// value is still writable, so it has to mean "no question asked".
+func TestAZeroFilterAsksNothing(t *testing.T) {
+	t.Parallel()
+
+	got := model().Select(graph.Filter{})
+
+	require.ElementsMatch(t, ids(model()), ids(got))
 }
 
 // Encode is defensive about a nil graph, and these are the two things anyone

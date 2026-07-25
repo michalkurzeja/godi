@@ -32,7 +32,12 @@ func Open(src graph.Source, enc graph.Encoder, opts ...graph.Option) (string, er
 	if err != nil {
 		return "", err
 	}
+	return OpenGraph(g, enc)
+}
 
+// OpenGraph writes out a graph you already have and opens it. It is what Open
+// becomes once you have narrowed the graph with Graph.Select.
+func OpenGraph(g *graph.Graph, enc graph.Encoder) (string, error) {
 	path, err := WriteToTmpFile(g, enc)
 	if err != nil {
 		return "", err

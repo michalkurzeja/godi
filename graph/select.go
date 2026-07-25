@@ -113,10 +113,13 @@ func Not(match Matcher) Matcher {
 
 // ---------------------------------------------------------------- filters ---
 
-// filter narrows a selection. It sees the whole graph, because a filter that
-// follows edges has to look past what is currently selected to know what it is
-// cutting off.
-type filter struct {
+// Filter narrows a graph. Select takes them; the functions below build them,
+// and there is no other way to make one, so a Filter is always a question about
+// the graph rather than about how it was extracted.
+//
+// A filter sees the whole graph, because one that follows edges has to look
+// past what is currently kept to know what it is cutting off.
+type Filter struct {
 	// wiring marks a filter that takes away a kind of wiring rather than a set
 	// of nodes. Those run first, whatever order they were given in, because
 	// they change what "reachable" means: hiding method calls has to hide what
@@ -126,14 +129,12 @@ type filter struct {
 	apply  func(*Graph, *selection)
 }
 
-func withFilter(apply func(*Graph, *selection)) Option {
-	return func(cfg *Config) { cfg.filters = append(cfg.filters, filter{apply: apply}) }
+func newFilter(apply func(*Graph, *selection)) Filter {
+	return Filter{apply: apply}
 }
 
-func withWiringFilter(apply func(*Graph, *selection)) Option {
-	return func(cfg *Config) {
-		cfg.filters = append(cfg.filters, filter{wiring: true, apply: apply})
-	}
+func newWiringFilter(apply func(*Graph, *selection)) Filter {
+	return Filter{wiring: true, apply: apply}
 }
 
 // unlimited is a hop count with no limit; unset is a direction the caller did
@@ -160,7 +161,7 @@ func Consumers(hops int) FocusOption { return func(r *reach) { r.consumers = hop
 // which is the whole connected component. Naming one direction takes the other
 // out: Focus(match, Dependencies(3)) is "this and the three levels it is built
 // from", not "and also everything that uses it".
-func Focus(match Matcher, opts ...FocusOption) Option {
+func Focus(match Matcher, opts ...FocusOption) Filter {
 	r := reach{consumers: unset, dependencies: unset}
 	for _, opt := range opts {
 		opt(&r)
@@ -174,7 +175,7 @@ func Focus(match Matcher, opts ...FocusOption) Option {
 		r.dependencies = 0
 	}
 
-	return withFilter(func(g *Graph, s *selection) {
+	return newFilter(func(g *Graph, s *selection) {
 		var seeds []NodeID
 		for _, n := range g.Nodes {
 			if s.has(n.ID) && match(n) {
@@ -193,8 +194,8 @@ func Focus(match Matcher, opts ...FocusOption) Option {
 
 // Exclude drops the nodes the matcher accepts. Unlike Focus it says nothing
 // about what it removed: you named these, so their absence is not news.
-func Exclude(match Matcher) Option {
-	return withFilter(func(g *Graph, s *selection) {
+func Exclude(match Matcher) Filter {
+	return newFilter(func(g *Graph, s *selection) {
 		for _, n := range g.Nodes {
 			if match(n) {
 				s.drop(n.ID)
@@ -204,15 +205,15 @@ func Exclude(match Matcher) Option {
 }
 
 // ExcludeTypes drops services by the type they provide.
-func ExcludeTypes(patterns ...string) Option { return Exclude(ByType(patterns...)) }
+func ExcludeTypes(patterns ...string) Filter { return Exclude(ByType(patterns...)) }
 
 // ExcludeLabels drops nodes carrying any of the given labels.
-func ExcludeLabels(patterns ...string) Option { return Exclude(ByLabel(patterns...)) }
+func ExcludeLabels(patterns ...string) Filter { return Exclude(ByLabel(patterns...)) }
 
 // OnlyScope keeps the nodes of the matching scopes. A scope matches on its ID,
 // on the container's own name for it, or on the name a reader would see.
-func OnlyScope(patterns ...string) Option {
-	return withFilter(func(g *Graph, s *selection) {
+func OnlyScope(patterns ...string) Filter {
+	return newFilter(func(g *Graph, s *selection) {
 		wanted := make(map[ScopeID]bool)
 		for _, scope := range g.Scopes {
 			if matches(patterns, string(scope.ID)) ||
@@ -234,8 +235,8 @@ func OnlyScope(patterns ...string) Option {
 // It takes IDs rather than patterns because its caller usually has a scope in
 // hand rather than a name to match, and because a scope ID is itself a path -
 // full of the punctuation a pattern would read as wildcards.
-func OnlyScopeTree(ids ...ScopeID) Option {
-	return withFilter(func(g *Graph, s *selection) {
+func OnlyScopeTree(ids ...ScopeID) Filter {
+	return newFilter(func(g *Graph, s *selection) {
 		roots := make(map[ScopeID]bool, len(ids))
 		for _, id := range ids {
 			roots[id] = true
@@ -272,8 +273,8 @@ func OnlyScopeTree(ids ...ScopeID) Option {
 // OnlyRoots keeps the nodes nothing injects: the top of every dependency tree.
 // It is how you find the entry points of an application, and the wiring nothing
 // uses, which look the same from here.
-func OnlyRoots() Option {
-	return withFilter(func(g *Graph, s *selection) {
+func OnlyRoots() Filter {
+	return newFilter(func(g *Graph, s *selection) {
 		for _, n := range g.Nodes {
 			if !n.Root {
 				s.drop(n.ID)
@@ -286,8 +287,8 @@ func OnlyRoots() Option {
 // edges into them. The services stay; only that way of reaching them goes - so
 // a service nothing else asks for is left standing on its own, which is the
 // honest picture of what hiding that wiring does.
-func HideMethodCalls() Option {
-	return withWiringFilter(func(g *Graph, s *selection) {
+func HideMethodCalls() Filter {
+	return newWiringFilter(func(g *Graph, s *selection) {
 		for _, n := range g.Nodes {
 			for _, p := range n.Params {
 				if p.Kind == InjectMethodArg || p.Kind == InjectMethodReceiver {
@@ -302,8 +303,8 @@ func HideMethodCalls() Option {
 // survivor how many of its neighbours went. It is a last resort for a graph too
 // big to draw at all: which n nodes matter is a question only you can answer,
 // and Focus is how you answer it.
-func MaxNodes(n int) Option {
-	return withFilter(func(g *Graph, s *selection) {
+func MaxNodes(n int) Filter {
+	return newFilter(func(g *Graph, s *selection) {
 		alive := make([]*Node, 0, len(g.Nodes))
 		for _, node := range g.Nodes {
 			if s.has(node.ID) {
@@ -412,17 +413,14 @@ func (s *selection) neighbourhood(g *Graph, seeds []NodeID, r reach) map[NodeID]
 
 // ---------------------------------------------------------------- rebuild ---
 
-// Select returns the graph narrowed by the given filters. Options that are not
-// filters are ignored: what a literal looks like is settled during extraction
-// and cannot be revisited here.
+// Select returns the graph narrowed by the given filters. Narrowing is a
+// separate step from extraction: what a literal looks like is settled while the
+// graph is built and cannot be revisited here, which is why an extraction
+// Option is not a Filter.
 //
 // The result is a new graph. Nodes and params are copied, because their counts
 // change; edges and scopes are shared, because they do not.
-func (g *Graph) Select(opts ...Option) *Graph {
-	return g.selected(New(opts...).filters)
-}
-
-func (g *Graph) selected(filters []filter) *Graph {
+func (g *Graph) Select(filters ...Filter) *Graph {
 	// Nothing to narrow, and nothing to narrow it with. Encode is defensive
 	// about a nil graph for the same reason: these are the two things you do to
 	// one, and neither should be the call that panics.
@@ -431,14 +429,14 @@ func (g *Graph) selected(filters []filter) *Graph {
 	}
 
 	sel := newSelection(g)
-	for _, f := range filters {
-		if f.wiring {
-			f.apply(g, sel)
-		}
-	}
-	for _, f := range filters {
-		if !f.wiring {
-			f.apply(g, sel)
+	// Two passes, so that a filter taking away a kind of wiring runs before any
+	// filter that follows it. A zero Filter is skipped: it is reachable only by
+	// writing graph.Filter{}, and that should do nothing rather than panic.
+	for _, wiring := range []bool{true, false} {
+		for _, f := range filters {
+			if f.apply != nil && f.wiring == wiring {
+				f.apply(g, sel)
+			}
 		}
 	}
 	return g.rebuild(sel)

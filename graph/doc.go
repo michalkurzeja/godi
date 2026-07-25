@@ -30,16 +30,16 @@
 //
 // Past a hundred or so nodes no format produces a picture worth reading, so
 // readability comes from asking a narrower question rather than from a better
-// renderer. Filters are options like any other, and they work on the model, so
-// every format gets them:
+// renderer. Filters work on the model, so every format gets them:
 //
-//	g, err := graph.Extract(c,
+//	g = g.Select(
 //		graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
 //		graph.HideMethodCalls(),
 //	)
 //
-// Select does the same to a graph already in hand, which is how one extraction
-// becomes several views.
+// Narrowing is a separate call from Extract, which is how one extraction
+// becomes several views - and why a Filter is its own type: an extraction
+// Option cannot be passed to Select, where it would have nothing to do.
 //
 // Where a limit rather than a name cut the graph, the nodes left at the edge
 // carry Node.Elided: how many of their neighbours went. A picture that stops
