@@ -29,6 +29,7 @@
 	<symbol id="i-route" viewBox="0 0 16 16"><path d="M1 12c3.5 0 3.5-8 7-8s3.5 8 7 8"/></symbol>
 	<symbol id="i-input" viewBox="0 0 16 16"><rect x="4.5" y="1.5" width="7" height="13" rx="3.5"/><path d="M8 4.3v2.6"/></symbol>
 	<symbol id="i-dark" viewBox="0 0 16 16"><path d="M13.2 9.7A5.6 5.6 0 0 1 6.3 2.8a5.6 5.6 0 1 0 6.9 6.9z"/></symbol>
+	<symbol id="i-snapshot" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.6V8l2.4 1.6"/></symbol>
 </svg>
 
 <div id="app">
@@ -102,6 +103,16 @@
 				<button type="button" data-flag="isolate" aria-pressed="false">Isolate selection</button>
 				<button type="button" data-flag="rootsOnly" aria-pressed="false" title="Nodes nothing injects: the top of each dependency tree">Roots only</button>
 			</div>
+		</span>
+	</div>
+
+	<!-- A graph taken while the container was still being built looks exactly
+	     like a finished one with dependencies missing. Only this says which. -->
+	<div id="snapshot" role="status" hidden>
+		<svg class="i"><use href="#i-snapshot"/></svg>
+		<span>
+			<b id="snapshot-label"></b>
+			<span id="snapshot-note"></span>
 		</span>
 	</div>
 

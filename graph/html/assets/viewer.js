@@ -54,8 +54,12 @@ function scopePath(id) {
 }
 
 // Only an extension is worth naming. godi's own automation runs under a pass
-// too, but "autowiring (autowiring)" tells the reader nothing.
-const named = (origin, pass) => origin === 'compiler-pass' && pass ? origin + ': ' + pass : origin;
+// too, but "autowiring (autowiring)" tells the reader nothing. "none" is the
+// one origin whose name says nothing at all: nobody has wired the argument yet.
+const named = (origin, pass) => {
+	if (origin === 'none') return 'not wired';
+	return origin === 'compiler-pass' && pass ? origin + ': ' + pass : origin;
+};
 const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 
 // A service is known by the type it provides; a function by its name, since a
@@ -685,6 +689,24 @@ function apply() {
 	$('counts').title = notices.join('\n');
 
 	return changed;
+}
+
+// ---------------------------------------------------------------- snapshot ---
+
+// A graph taken while the container was still being built is missing whatever
+// the passes after it would have added. Nothing else on the page gives that
+// away - it looks like a finished container with dependencies lost - so it is
+// said once, across the top, where it applies to everything below.
+function showSnapshot() {
+	const snap = data.snapshot;
+	if (!snap) return;
+
+	const note = [snap.caveat[0].toUpperCase() + snap.caveat.slice(1)];
+	if (snap.done && snap.done.length) note.push('Passes run: ' + snap.done.join(', '));
+
+	$('snapshot-label').textContent = 'Snapshot: ' + snap.label + '.';
+	$('snapshot-note').textContent = note.join('. ') + '.';
+	$('snapshot').hidden = false;
 }
 
 // ------------------------------------------------------------------ legend ---
@@ -1667,6 +1689,7 @@ function rebuildLabels() {
 // the console: godi.cy is the Cytoscape instance, godi.data the model.
 window.godi = { cy, data, state, apply, relayout };
 
+showSnapshot();
 setPanel(recall('godi.panel') !== 'hidden');
 rebuildHaystacks();
 paintRules();

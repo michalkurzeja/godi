@@ -432,9 +432,9 @@ func (x *extractor) param(node *graph.Node, scope *Scope, slot *Slot, kind graph
 
 	if !slot.IsFilled() {
 		// Only reachable before autowiring runs: the argument validation pass
-		// rejects an unfilled slot, so a built container never has one.
+		// rejects an unfilled slot, so a built container never has one. The
+		// origin is the whole story, and each encoder has its own words for it.
 		p.Origin, p.Arg = graph.ArgOriginNone, graph.ArgKindNone
-		p.Note = "not wired yet"
 		return
 	}
 

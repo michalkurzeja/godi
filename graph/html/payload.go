@@ -18,11 +18,24 @@ type payload struct {
 	Notices []string    `json:"notices,omitzero"`
 	Credits []credit    `json:"credits"`
 
+	// Snapshot is set when the graph was taken while the container was still
+	// being built. Nothing else on the page would give that away.
+	Snapshot *viewSnapshot `json:"snapshot,omitzero"`
+
 	// SourceRoot is the directory the file paths hang off, and SourceLink the
 	// template that turns one into something clickable. Empty means the page
 	// shows locations as plain text.
 	SourceRoot string `json:"sourceRoot,omitzero"`
 	SourceLink string `json:"sourceLink,omitzero"`
+}
+
+// viewSnapshot carries the wording rather than the parts: what a partial graph
+// has to tell the reader is the same in every format, so it is written once, in
+// the model.
+type viewSnapshot struct {
+	Label  string   `json:"label"`
+	Caveat string   `json:"caveat"`
+	Done   []string `json:"done,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -155,6 +168,13 @@ func newPayload(g *graph.Graph, cfg config) payload {
 	}
 	for _, d := range g.Diagnostics {
 		p.Notices = append(p.Notices, d.Message)
+	}
+	if g.Partial() {
+		p.Snapshot = &viewSnapshot{
+			Label:  g.Snapshot.Label(),
+			Caveat: g.Snapshot.Caveat(),
+			Done:   g.Snapshot.Done,
+		}
 	}
 
 	return p

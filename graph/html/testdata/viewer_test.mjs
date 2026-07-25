@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const [, , pagePath, chromePath, profileDir] = process.argv;
+const [, , pagePath, chromePath, profileDir, snapshotPath] = process.argv;
 const PAGE = 'file://' + pagePath;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1754,6 +1754,40 @@ await test('the controls are read at load rather than assumed', async () => {
 });
 
 await ev(`(() => { localStorage.clear(); return true; })()`);
+
+// ---------------------------------------------------------------- snapshot ---
+
+// A graph taken while the container was still being built is missing whatever
+// the remaining passes would have added. Read without knowing that, it is a
+// finished container with dependencies mysteriously gone.
+
+await test('a finished graph says nothing about snapshots', async () =>
+	await ev(`document.getElementById('snapshot').hidden`) === true ||
+		'the strip showed on a graph that is not a snapshot');
+
+await ev(`location.href = ${JSON.stringify('file://' + snapshotPath)}`);
+await sleep(500);
+await settle();
+
+await test('a graph taken mid-build says so across the top', async () => {
+	const strip = await ev(`(() => {
+		const el = document.getElementById('snapshot');
+		return { hidden: el.hidden, text: el.textContent.replace(/\\s+/g, ' ').trim() };
+	})()`);
+
+	if (strip.hidden) return 'the strip stayed hidden on a snapshot';
+	if (!strip.text.includes('taken during the autowiring pass')) return strip.text;
+	if (!strip.text.includes('Passes run: interface binding')) return strip.text;
+	return strip.text.includes('reads as a root') || strip.text;
+});
+
+await test('an argument nothing has wired yet says so, rather than saying none', async () => {
+	await tapNode('root/svc:app.(*Metrics)');
+	const text = await panelText();
+
+	if (!text.includes('Not wired')) return text;
+	return !/\bnone\b/i.test(text) || 'the panel called an unwired argument "none"';
+});
 
 // --------------------------------------------------------------------- done ---
 

@@ -36,11 +36,18 @@ func TestViewerRegressions(t *testing.T) {
 	)))
 	require.NoError(t, os.WriteFile(page, buf.Bytes(), 0o600))
 
+	// A second page, because a snapshot of a container still being built is a
+	// different document, not a state the first page can be put into.
+	snapshot := filepath.Join(dir, "snapshot.html")
+	var snapBuf bytes.Buffer
+	require.NoError(t, snapshotModel().Encode(&snapBuf, html.New(html.Title("snapshot"))))
+	require.NoError(t, os.WriteFile(snapshot, snapBuf.Bytes(), 0o600))
+
 	script := filepath.Join("testdata", "viewer_test.mjs")
 	profile := filepath.Join(dir, "profile")
 
 	//nolint:gosec // G204: the binaries are resolved above and the arguments are ours.
-	cmd := exec.Command(node, script, page, chrome, profile)
+	cmd := exec.Command(node, script, page, chrome, profile, snapshot)
 	cmd.Env = append(os.Environ(), "NODE_OPTIONS=--no-warnings")
 
 	out, err := runWithTimeout(t, cmd, 3*time.Minute)
@@ -252,6 +259,32 @@ func regressionModel() *graph.Graph {
 	for _, node := range g.Nodes {
 		node.Root = !injected[node.ID]
 	}
+
+	return g
+}
+
+// snapshotModel is the same container as it looks partway through compilation:
+// one argument nobody has wired yet, and a graph that says why.
+func snapshotModel() *graph.Graph {
+	g := regressionModel()
+	g.Snapshot = &graph.Snapshot{
+		Stage: "automation", Pass: "autowiring",
+		Done: []string{"interface binding"},
+	}
+
+	metrics, ok := g.Node("root/svc:app.(*Metrics)")
+	if !ok {
+		panic("the fixture no longer has the node this snapshot leaves unwired")
+	}
+	metrics.Params = []*graph.Param{{
+		ID:   graph.ParamID(metrics.ID + "#f:0"),
+		Node: metrics.ID,
+		Kind: graph.InjectFactoryArg,
+		Type: "github.com/acme/app.(*Config)",
+		// What an unfilled slot looks like: nothing has decided anything yet.
+		Origin: graph.ArgOriginNone,
+		Arg:    graph.ArgKindNone,
+	}}
 
 	return g
 }
