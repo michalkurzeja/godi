@@ -960,13 +960,20 @@ function showPanel(id) {
 	// The signature says in one line what the argument rows say one at a time,
 	// so it goes above them. For a service it belongs to the factory rather than
 	// to the service itself, and the headings say so.
+	// What implements the service, which for one registered as a value is the
+	// function itself. Its name is the one thing the type above does not say, so
+	// it goes here beside the signature - unless the runtime made the name up,
+	// and then the signature is all there is to say.
 	if (n.signature) {
-		parts.push(make('h3', null, service ? 'Factory signature' : 'Signature'));
+		parts.push(make('h3', null, n.fromValue ? 'Value' : (service ? 'Factory signature' : 'Signature')));
+
+		const sig = make('div', 'mono sig');
+		if (n.fromValue && !n.anonymous && n.name) sig.append(make('div', null, short(n.name)));
 		// Shortened for the same reason the qualified rows above it went: a
 		// generic names its type arguments in full, and a signature carrying
 		// several of those is unreadable. The whole thing is a hover away.
-		const sig = make('div', 'mono sig', short(n.signature));
-		if (sig.textContent !== n.signature) sig.title = n.signature;
+		sig.append(make('div', null, short(n.signature)));
+		if (short(n.signature) !== n.signature) sig.title = n.signature;
 		parts.push(sig);
 	}
 

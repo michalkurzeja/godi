@@ -1265,6 +1265,53 @@ await test('the grip goes away with the panel', async () => {
 	return hidden === 'none' || `the grip was ${hidden} with nothing to resize`;
 });
 
+// --- a service registered as a value ----------------------------------------
+
+// A value registered as a service is described by that value. Its name is the
+// one thing the type above does not say, so it goes beside the signature -
+// unless the runtime made the name up, and then the signature is all there is.
+const asValue = (props) => ev(`(() => {
+	const n = godi.data.nodes.find((x) => x.id === ${JSON.stringify(SERVER)});
+	Object.assign(n, ${JSON.stringify(props)});
+	return true;
+})()`);
+
+const sigLines = async () => {
+	await selectNode(SERVER);
+	return ev(`[...document.querySelectorAll('#panel .sig div')].map(d => d.textContent)`);
+};
+
+await test('a named value is its name and its signature, under a heading of its own', async () => {
+	await asValue({ fromValue: true, anonymous: false, name: 'github.com/acme/app.validateEmail' });
+	const lines = await sigLines();
+	const heading = await ev(`[...document.querySelectorAll('#panel h3')].map(h => h.textContent)[0]`);
+
+	await asValue({ fromValue: false, anonymous: false, name: 'github.com/acme/app.NewServer' });
+	await selectNode(SERVER);
+
+	return (heading === 'Value' && eq(lines, ['app.validateEmail', 'func(app.Handler[app.Request], app.Logger) app.(*Server)'], 'x') === true)
+		|| `heading ${JSON.stringify(heading)}, lines ${JSON.stringify(lines)}`;
+});
+
+await test('and an anonymous one is the signature alone', async () => {
+	await asValue({ fromValue: true, anonymous: true, name: 'github.com/acme/app.build.func1' });
+	const lines = await sigLines();
+
+	await asValue({ fromValue: false, anonymous: false, name: 'github.com/acme/app.NewServer' });
+	await selectNode(SERVER);
+
+	return (lines.length === 1 && !lines[0].includes('func1'))
+		|| `the block reads ${JSON.stringify(lines)}`;
+});
+
+await test('a factory-built service keeps its own heading and no name', async () => {
+	await selectNode(SERVER);
+	const heading = await ev(`[...document.querySelectorAll('#panel h3')].map(h => h.textContent)[0]`);
+	const lines = await sigLines();
+	return (heading === 'Factory signature' && lines.length === 1)
+		|| `heading ${JSON.stringify(heading)}, lines ${JSON.stringify(lines)}`;
+});
+
 // --- source locations ------------------------------------------------------
 
 await test('the panel shows where a service was registered and defined', async () => {

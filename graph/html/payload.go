@@ -64,6 +64,7 @@ type viewNode struct {
 	Labels []string `json:"labels,omitzero"`
 
 	Anonymous    bool `json:"anonymous,omitzero"`
+	FromValue    bool `json:"fromValue,omitzero"`
 	Lazy         bool `json:"lazy"`
 	Shared       bool `json:"shared"`
 	Autowired    bool `json:"autowired"`
@@ -171,6 +172,7 @@ func newViewNode(node *graph.Node) viewNode {
 		Signature:    node.Signature,
 		Labels:       node.Labels,
 		Anonymous:    node.Anonymous(),
+		FromValue:    node.FromValue,
 		Lazy:         node.Lazy,
 		Shared:       node.Shared,
 		Autowired:    node.Autowired,

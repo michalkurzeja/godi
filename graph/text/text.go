@@ -166,14 +166,14 @@ func (p *printer) nodes(g *graph.Graph, heading string, nodes []*graph.Node, dep
 func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 	// A service is known by the type it provides; a function by its name, since
 	// a function's type is only its signature.
-	title, other := n.TypeShort(), n.NameShort()
+	title := n.TypeShort()
 	if n.Kind == graph.NodeFunction {
-		title, other = n.NameShort(), n.TypeShort()
+		title = n.NameShort()
 	}
 
 	p.line(depth, "%s%s", title, bracketed(nodeFlags(n)))
-	if other != "" && other != title {
-		p.line(depth+1, "%s: %s", map[bool]string{true: "signature", false: "factory"}[n.Kind == graph.NodeFunction], other)
+	if label, what := implementation(n); what != "" && what != title {
+		p.line(depth+1, "%s: %s", label, what)
 	}
 	if p.cfg.locations {
 		if !n.Registered.IsZero() {
@@ -189,6 +189,28 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 	if n.Elided > 0 {
 		p.line(depth+1, "... %d neighbours were filtered out", n.Elided)
 	}
+}
+
+// implementation describes what provides a node, for the line under its
+// heading: the factory that builds a service, the value it was registered as,
+// or the signature of a function.
+//
+// A name the runtime made up describes nothing, so where there is one the
+// signature goes in its place - that being the only thing that says what an
+// anonymous function is.
+func implementation(n *graph.Node) (label, what string) {
+	if n.Kind == graph.NodeFunction {
+		return "signature", n.TypeShort()
+	}
+
+	label = "factory"
+	if n.FromValue {
+		label = "value"
+	}
+	if n.Anonymous() {
+		return label, render.Short(n.Signature)
+	}
+	return label, n.NameShort()
 }
 
 // nodeFlags are the properties worth naming. Only the surprising half of each

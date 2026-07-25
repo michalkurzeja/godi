@@ -850,3 +850,97 @@ func TestExtractAppliesFilters(t *testing.T) {
 		require.Len(t, g.Nodes, 3)
 	})
 }
+
+// A function is a value like any other, so SvcVal is how one becomes a service.
+// The factory holding it is godi's own, and reporting that as the implementation
+// would point the reader into godi rather than at the function they registered.
+
+type Validate func(string) error
+
+type Rules struct{}
+
+func (Rules) Check(string) error { return nil }
+
+func validateEmail(string) error { return nil }
+
+type Settings struct{ Addr string }
+
+func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
+	t.Parallel()
+
+	rules := Rules{}
+
+	c, err := godi.New().Services(
+		godi.SvcVal[Validate](validateEmail),
+		godi.SvcVal[Greeter](EnGreeter{}),
+		godi.SvcVal(Settings{Addr: "localhost"}),
+		godi.Svc(NewStore),
+	).Build()
+	require.NoError(t, err)
+
+	g := extract(t, c)
+
+	t.Run("a named function is named, and points at its own source", func(t *testing.T) {
+		n := nodeOf(t, g, "v2_test.Validate")
+
+		require.True(t, n.FromValue)
+		require.False(t, n.Anonymous())
+		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.validateEmail", n.Name)
+		require.Equal(t, "func(string) error", n.Signature,
+			"the value's own type is the named one, which says nothing about what it takes")
+		require.Equal(t, "graph_test.go", filepath.Base(n.Defined.File))
+		require.NotZero(t, n.Defined.Line)
+	})
+
+	t.Run("and nothing of godi's is reported as the implementation", func(t *testing.T) {
+		for _, n := range g.Nodes {
+			require.NotContains(t, n.Name, "SvcVal", "the wrapper godi built to hold the value")
+			require.NotContains(t, n.Defined.File, "definition.go")
+		}
+	})
+
+	t.Run("a value that is no function has nothing to describe it", func(t *testing.T) {
+		n := nodeOf(t, g, "v2_test.Settings")
+
+		require.True(t, n.FromValue)
+		require.Empty(t, n.Name, "there is no name for a struct someone handed over")
+		require.Empty(t, n.Signature)
+		require.True(t, n.Defined.IsZero(), "and nowhere to point at for it")
+	})
+
+	t.Run("a factory-built service is unaffected", func(t *testing.T) {
+		n := nodeOf(t, g, "v2_test.(*Store)")
+
+		require.False(t, n.FromValue)
+		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.NewStore", n.Name)
+		// reflect names the package rather than its path in a func type, which
+		// is how every signature in the graph has always read.
+		require.Equal(t, "func() *di_test.Store", n.Signature)
+	})
+
+	t.Run("a method value is named after the method", func(t *testing.T) {
+		c, err := godi.New().Services(godi.SvcVal[Validate](rules.Check)).Build()
+		require.NoError(t, err)
+
+		n := nodeOf(t, extract(t, c), "v2_test.Validate")
+
+		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.Rules.Check", n.Name,
+			"the suffix the compiler puts on a method value is not part of the name")
+		require.True(t, n.Defined.IsZero(),
+			"the wrapper it points at is generated, so there is no source to offer")
+	})
+
+	t.Run("an anonymous function has only its signature", func(t *testing.T) {
+		c, err := godi.New().Services(
+			godi.SvcVal[Validate](func(string) error { return nil }),
+		).Build()
+		require.NoError(t, err)
+
+		n := nodeOf(t, extract(t, c), "v2_test.Validate")
+
+		require.True(t, n.Anonymous())
+		require.Equal(t, "func(string) error", n.Signature)
+		require.Equal(t, "graph_test.go", filepath.Base(n.Defined.File),
+			"the literal itself is the implementation, and it has a line of its own")
+	})
+}

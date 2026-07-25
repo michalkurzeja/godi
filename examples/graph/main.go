@@ -127,10 +127,19 @@ type Validate func(string) error
 
 type Middleware func(*Router) *Router
 
+type Audit func(string)
+
 // A function with a name of its own, registered as it is.
 func validateEmail(string) error { return nil }
 
-func NewGateway(Validate, Middleware) *Gateway { return &Gateway{} }
+// And a method, whose value carries the receiver with it. The graph names the
+// method, but has no source to point at: what a method value points at is a
+// wrapper the compiler writes.
+type Rules struct{}
+
+func (Rules) Check(string) {}
+
+func NewGateway(Validate, Middleware, Audit) *Gateway { return &Gateway{} }
 
 type (
 	Gateway   struct{}
@@ -353,6 +362,7 @@ func build() (di.Container, error) {
 			// autowired into the gateway by their types.
 			di.SvcVal[Validate](validateEmail),
 			di.SvcVal[Middleware](func(r *Router) *Router { return r }),
+			di.SvcVal[Audit](Rules{}.Check),
 			di.Svc(NewGateway),
 
 			// Registered and wired to nothing, so it comes out a root with no

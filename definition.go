@@ -79,8 +79,14 @@ func Svc(factory any, args ...any) *ServiceDefinitionBuilder {
 	return b
 }
 
+// SvcVal registers a value as a service, as it stands. The value is wrapped in
+// a factory of godi's own to hold it; the definition remembers the value itself,
+// because that wrapper is not something anyone wrote and reporting it as the
+// implementation would point readers into godi.
 func SvcVal[T any](svc T) *ServiceDefinitionBuilder {
-	return Svc(func() T { return svc })
+	b := Svc(func() T { return svc })
+	b.def.SetVal(reflect.ValueOf(svc))
+	return b
 }
 
 func (b *ServiceDefinitionBuilder) Bind(ref *SvcReference) *ServiceDefinitionBuilder {

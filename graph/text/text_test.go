@@ -316,3 +316,32 @@ func TestAnEmptyGraphIsStillReadable(t *testing.T) {
 
 	require.Equal(t, "0 services, 0 functions, 0 dependencies, 0 roots\n", out)
 }
+
+// A service registered as a value is described by that value, not by the
+// wrapper godi built to hold it.
+func TestAValueRegisteredAsAServiceIsNamedByWhatItIs(t *testing.T) {
+	t.Parallel()
+
+	named := func() *graph.Graph {
+		g := model()
+		n := g.Nodes[2] // app.Router
+		n.FromValue, n.Name, n.Signature = true, pkg+".validateEmail", "func(string) error"
+		return g
+	}
+
+	require.Contains(t, encode(t, named()), "value: app.validateEmail",
+		"a value, not a factory: nobody wrote a factory for it")
+	require.NotContains(t, encode(t, named()), "factory: app.validateEmail")
+
+	anonymous := named()
+	anonymous.Nodes[2].Name = pkg + ".build.func1"
+	require.Contains(t, encode(t, anonymous), "value: func(string) error",
+		"a name the runtime made up describes nothing, so the signature stands in for it")
+	require.NotContains(t, encode(t, anonymous), "build.func1")
+
+	plain := model()
+	plain.Nodes[2].FromValue, plain.Nodes[2].Name, plain.Nodes[2].Signature = true, "", ""
+	out := encode(t, plain)
+	require.NotContains(t, out, "value:", "a struct handed over has nothing to name")
+	require.NotContains(t, out, "factory:  ")
+}

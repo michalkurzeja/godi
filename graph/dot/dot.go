@@ -168,8 +168,10 @@ func (p *printer) node(node *graph.Node) {
 func (p *printer) nodeTooltip(node *graph.Node) string {
 	var sb strings.Builder
 	sb.WriteString(node.Type)
-	sb.WriteString("\n")
-	sb.WriteString(node.Name)
+	if node.Name != "" {
+		sb.WriteString("\n")
+		sb.WriteString(node.Name)
+	}
 	if node.Signature != "" {
 		sb.WriteString("\n")
 		sb.WriteString(node.Signature)
@@ -214,6 +216,11 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 	if node.Kind == graph.NodeFunction {
 		marker += "ƒ "
 		title, subtitle = node.NameShort(), node.TypeShort()
+	}
+	// A name the runtime made up describes nothing; the signature is what says
+	// what an anonymous function is.
+	if node.Anonymous() && node.Kind == graph.NodeService {
+		subtitle = render.Short(node.Signature)
 	}
 
 	p.labelRow(&sb, "", fmt.Sprintf("<B>%s</B>", esc(marker+title)))

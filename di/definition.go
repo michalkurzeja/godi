@@ -54,6 +54,12 @@ type ServiceDefinition struct {
 	factory     *Factory
 	methodCalls map[string]*Method
 
+	// val is the value the definition was built from, for the ones built from
+	// one. The factory holding it is godi's own, so it is this that anything
+	// reporting on the definition should report.
+	val     reflect.Value
+	fromVal bool
+
 	scope      *Scope
 	childScope *Scope
 
@@ -191,6 +197,20 @@ func (d *ServiceDefinition) IsAutowired() bool {
 func (d *ServiceDefinition) SetAutowired(autowired bool) *ServiceDefinition {
 	d.autowired = autowired
 	return d
+}
+
+// SetVal records that this definition serves a value it was handed, rather than
+// one it builds. The factory is then a wrapper godi wrote to hold it, which is
+// nobody's idea of the implementation.
+func (d *ServiceDefinition) SetVal(val reflect.Value) *ServiceDefinition {
+	d.val, d.fromVal = val, true
+	return d
+}
+
+// Val is the value this definition was built from, and whether it was built
+// from one at all. The value may be invalid even so: nil is a value.
+func (d *ServiceDefinition) Val() (reflect.Value, bool) {
+	return d.val, d.fromVal
 }
 
 func (d *ServiceDefinition) FactoryName() string {

@@ -308,8 +308,19 @@ func TestAFunctionLiteralIsRecognisedByItsRuntimeName(t *testing.T) {
 			false,
 		},
 		{
-			"a service, whatever it is called",
+			// A service can be built by a literal too, or registered as one.
+			"a service built by a literal",
 			graph.Node{Kind: graph.NodeService, Name: "main.build.func1"},
+			true,
+		},
+		{
+			"a service built by a factory of its own",
+			graph.Node{Kind: graph.NodeService, Name: "main.NewServer"},
+			false,
+		},
+		{
+			"a service registered as a value that is not a function at all",
+			graph.Node{Kind: graph.NodeService, Name: ""},
 			false,
 		},
 	}

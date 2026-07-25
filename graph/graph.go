@@ -109,6 +109,11 @@ type Node struct {
 	Lazy      bool `json:"lazy"`
 	Shared    bool `json:"shared"` // Always false for functions.
 	Autowired bool `json:"autowired"`
+	// FromValue reports that the service was handed to the container as a value
+	// rather than built by a factory. Name, Signature and Defined then describe
+	// that value, when it is a function, and are empty when it is not: there is
+	// nothing to name in a struct someone passed in.
+	FromValue bool `json:"fromValue,omitzero"`
 
 	ChildScope ScopeID  `json:"childScope,omitzero"` // The scope this node declared, if any.
 	Params     []*Param `json:"params,omitzero"`
@@ -149,10 +154,12 @@ func (n *Node) TypeShort() string { return render.Short(n.Type) }
 // NameShort is Name without the package path, for labels.
 func (n *Node) NameShort() string { return render.Short(n.Name) }
 
-// Anonymous reports whether this node is a function literal.
+// Anonymous reports whether what implements this node is a function literal:
+// the function itself for a function node, and for a service either the factory
+// that builds it or the value it was registered as.
 //
-// Those have no name of their own, so what the graph carries is what the
-// runtime calls them: the function that encloses them and a counter, as in
+// A literal has no name of its own, so what the graph carries is what the
+// runtime calls it: the function that encloses it and a counter, as in
 // "main.build.func1", with a further counter for each level of nesting. Worth
 // knowing because a name like that identifies a function without describing it,
 // and its signature is the only thing that does.
@@ -167,10 +174,6 @@ func (n *Node) NameShort() string { return render.Short(n.Name) }
 // in the name distinguishes them, and the cost of being wrong is a line of
 // signature shown or not shown.
 func (n *Node) Anonymous() bool {
-	if n.Kind != NodeFunction {
-		return false
-	}
-
 	// What the name says within its own package: "build.func1" for a literal
 	// declared inside build, "migrate" for a function of its own.
 	local := strings.TrimPrefix(n.Name, render.Package(n.Name)+".")
