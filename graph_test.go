@@ -735,6 +735,32 @@ func TestTheNodeThatStoppedTheBuildIsMarkedIncomplete(t *testing.T) {
 		"a service with nothing wrong with it must not be flagged")
 }
 
+// An argument nothing filled fails no lookup, so nothing reported it and the
+// list of what was wrong came up one short of the nodes marked wrong.
+func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
+	t.Parallel()
+
+	b := godi.New().
+		Services(
+			// Not autowired, and the address was never supplied.
+			godi.Svc(NewServer, godi.Type[Greeter](), godi.Type[*Store]()).NotAutowired(),
+			godi.Svc(NewEnGreeter),
+			godi.Svc(NewStore),
+		).
+		// Nothing autowires this definition, so nothing binds the interface for
+		// it either: without this the graph would have two faults in it.
+		Bindings(godi.BindType[Greeter, EnGreeter]())
+	_, err := b.Build()
+	require.ErrorContains(t, err, "argument 2 is not set")
+
+	g := extract(t, b)
+
+	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete)
+	require.Len(t, g.Diagnostics, 1, "one thing is wrong, so one thing is reported")
+	require.Equal(t, "argument 2 is not set", g.Diagnostics[0].Message)
+	require.Equal(t, nodeOf(t, g, "v2_test.(*Server)").ID, g.Diagnostics[0].Node)
+}
+
 // Before autowiring runs every argument is unwired, so marking each of them
 // would point at everything, which is the same as pointing at nothing.
 func TestNothingIsIncompleteBeforeAutowiringHasRun(t *testing.T) {

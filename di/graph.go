@@ -726,12 +726,30 @@ func (x *extractor) markIncomplete() {
 
 	for _, node := range x.out.Nodes {
 		for _, p := range node.Params {
+			// An argument naming something that is not there was reported where
+			// it failed to resolve. One nothing filled fails no lookup, so it is
+			// reported here - and reported, rather than only marked, so that a
+			// reader counting what is wrong is not told a number short of one.
+			if wired && p.Origin == graph.ArgOriginNone {
+				x.diag("warning", graph.Diagnostic{
+					Node: node.ID, Param: p.ID, Message: notSet(p),
+				})
+			}
 			if p.Unresolved || (wired && p.Origin == graph.ArgOriginNone) {
 				node.Incomplete = true
-				break
 			}
 		}
 	}
+}
+
+// notSet words an argument nobody filled the way the compiler does, naming the
+// method when the argument belongs to one: "argument 2" alone means two
+// different slots on a service with a method call.
+func notSet(p *graph.Param) string {
+	if p.Method != "" {
+		return fmt.Sprintf("argument %d of %s is not set", p.Index, p.Method)
+	}
+	return fmt.Sprintf("argument %d is not set", p.Index)
 }
 
 func (x *extractor) countDegrees() {
@@ -772,6 +790,17 @@ func (x *extractor) sortAll() {
 			return c
 		}
 		return strings.Compare(a.Interface, b.Interface)
+	})
+	// By what they are about, so that everything wrong with one node is read
+	// together, whatever order the two passes that found it ran in.
+	slices.SortFunc(x.out.Diagnostics, func(a, b *graph.Diagnostic) int {
+		if c := strings.Compare(string(a.Node), string(b.Node)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(string(a.Param), string(b.Param)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Message, b.Message)
 	})
 }
 
