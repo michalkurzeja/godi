@@ -1070,7 +1070,6 @@ const CONTROLS = () => [
 			['Wheel', 'Zoom'],
 			[MOD_LABEL + ' + wheel', 'Zoom, whatever the wheel is set to do'],
 			['Shift + wheel', 'Pan sideways'],
-			['Drag the panel edge', 'Make the detail panel wider or narrower; double-click it to put it back'],
 		],
 	},
 	{
