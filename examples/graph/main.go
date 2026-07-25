@@ -6,6 +6,10 @@
 // autowired, one resolved through a binding godi created for you, one resolved
 // through a binding you declared, and one substituted by a compiler pass.
 //
+// Read it in the terminal, which needs nothing installed:
+//
+//	go run ./examples/graph -format text
+//
 // Render it with Graphviz:
 //
 //	go run ./examples/graph | dot -Tsvg -o graph.svg
@@ -41,6 +45,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
 	"github.com/michalkurzeja/godi/v2/graph/html"
+	"github.com/michalkurzeja/godi/v2/graph/text"
 	"github.com/michalkurzeja/godi/v2/graph/view"
 )
 
@@ -155,7 +160,7 @@ func (s *Server) SetTimeout(time.Duration) {}
 func migrate(*Repo, Logger, *Scheduler, *Auditor) error { return nil }
 
 func main() {
-	format := flag.String("format", "dot", "output format: dot or html")
+	format := flag.String("format", "dot", "output format: dot, html or text")
 	theme := flag.String("theme", "", "colour scheme: light, dark, or auto for html")
 	layout := flag.String("layout", "", "html layout engine: graphviz or dagre")
 	link := flag.String("link", "", "html editor for source links: "+strings.Join(html.Editors(), ", ")+", or a template of your own")
@@ -237,8 +242,10 @@ func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 			opts = append(opts, html.SourceLink(template))
 		}
 		return html.New(opts...), nil
+	case "text":
+		return text.New(), nil
 	default:
-		return nil, fmt.Errorf("unknown format %q: want dot or html", format)
+		return nil, fmt.Errorf("unknown format %q: want dot, html or text", format)
 	}
 }
 

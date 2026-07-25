@@ -221,6 +221,46 @@ func OnlyScope(patterns ...string) Option {
 	})
 }
 
+// OnlyScopeTree keeps the named scopes and everything nested inside them.
+//
+// It takes IDs rather than patterns because its caller usually has a scope in
+// hand rather than a name to match, and because a scope ID is itself a path -
+// full of the punctuation a pattern would read as wildcards.
+func OnlyScopeTree(ids ...ScopeID) Option {
+	return withFilter(func(g *Graph, s *selection) {
+		roots := make(map[ScopeID]bool, len(ids))
+		for _, id := range ids {
+			roots[id] = true
+		}
+
+		// Walked from each scope up to the root, rather than down from the
+		// named ones, so the answer does not depend on the order of g.Scopes.
+		within := func(id ScopeID) bool {
+			for id != "" {
+				if roots[id] {
+					return true
+				}
+				scope, ok := g.Scope(id)
+				if !ok {
+					return false
+				}
+				id = scope.Parent
+			}
+			return false
+		}
+
+		keep := make(map[ScopeID]bool, len(g.Scopes))
+		for _, scope := range g.Scopes {
+			keep[scope.ID] = within(scope.ID)
+		}
+		for _, n := range g.Nodes {
+			if !keep[n.Scope] {
+				s.drop(n.ID)
+			}
+		}
+	})
+}
+
 // OnlyRoots keeps the nodes nothing injects: the top of every dependency tree.
 // It is how you find the entry points of an application, and the wiring nothing
 // uses, which look the same from here.

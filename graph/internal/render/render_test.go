@@ -29,6 +29,13 @@ func TestShort(t *testing.T) {
 		{"empty interface", "interface {}", "interface {}"},
 		{"directional channel", "chan<- int", "chan<- int"},
 		{"already short", "http.Server", "http.Server"},
+		// The last slash in these is inside the type arguments, so shortening
+		// only around it leaves the name itself qualified.
+		{"generic with qualified arguments",
+			"github.com/acme/app.Handler[github.com/acme/app.Request, github.com/acme/app.Response]",
+			"app.Handler[app.Request, app.Response]"},
+		{"generic over a builtin", "github.com/acme/app.Slot[string]", "app.Slot[string]"},
+		{"several signatures at once", "github.com/acme/a.A, github.com/acme/b.B", "a.A, b.B"},
 		{"empty", "", ""},
 	}
 
