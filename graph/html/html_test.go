@@ -526,3 +526,22 @@ func TestDiagnosticsReachThePayload(t *testing.T) {
 func TestAGraphWithNothingWrongCarriesNoDiagnostics(t *testing.T) {
 	require.NotContains(t, capture(t, dataRe, encode(t, model())), `"diagnostics"`)
 }
+
+// The page walks nodes, edges and scopes without checking, so an empty one has
+// to arrive as an empty array. A container registered but never wired has no
+// edges, and a null there threw at boot and left the reader a blank canvas with
+// no clue why.
+func TestTheListsThePageWalksAreNeverNull(t *testing.T) {
+	g := model()
+	g.Edges = nil
+	for _, node := range g.Nodes {
+		node.Params = nil
+	}
+
+	require.Contains(t, capture(t, dataRe, encode(t, g)), `"edges":[]`)
+
+	empty := capture(t, dataRe, encode(t, &graph.Graph{Schema: graph.Schema}))
+	for _, list := range []string{"scopes", "nodes", "edges"} {
+		require.Contains(t, empty, `"`+list+`":[]`, "a graph with nothing in it at all")
+	}
+}

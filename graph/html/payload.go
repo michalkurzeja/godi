@@ -158,12 +158,19 @@ type viewEdge struct {
 }
 
 func newPayload(g *graph.Graph, cfg config) payload {
+	// Sized rather than grown, and never nil: the page iterates these three
+	// without checking, and a nil slice marshals to null rather than to an empty
+	// array. A container whose services are all unwired has no edges at all, and
+	// that null stopped the viewer dead at boot.
 	p := payload{
 		Schema:     g.Schema,
 		Title:      cfg.title,
 		Credits:    cfg.credits(),
 		SourceRoot: g.SourceRoot,
 		SourceLink: cfg.sourceLink,
+		Scopes:     make([]viewScope, 0, len(g.Scopes)),
+		Nodes:      make([]viewNode, 0, len(g.Nodes)),
+		Edges:      make([]viewEdge, 0, len(g.Edges)),
 	}
 
 	for _, scope := range g.Scopes {
@@ -287,18 +294,4 @@ func decidedBy(origin graph.BindOrigin) graph.ArgOrigin {
 		return graph.ArgOriginCompilerPass
 	}
 	return graph.ArgOriginNone
-}
-
-// literalText renders one constant for display. The type is not repeated: it is
-// already on the argument row this sits beside. A value is only ever present
-// when the caller asked for values.
-func literalText(lit graph.Literal) string {
-	switch {
-	case lit.Value == "":
-		return "‹literal›"
-	case lit.Truncated:
-		return lit.Value + "…"
-	default:
-		return lit.Value
-	}
 }
