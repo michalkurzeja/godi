@@ -49,7 +49,6 @@ import (
 	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/html"
 	"github.com/michalkurzeja/godi/v2/graph/text"
-	"github.com/michalkurzeja/godi/v2/graph/view"
 )
 
 // An interface with a single implementation: godi binds it on its own, and the
@@ -263,7 +262,7 @@ func extractGraph(snapshot bool, opts []graph.Option) (*graph.Graph, error) {
 // openGraph is a variable so a test can watch what it is handed: -open used to
 // extract without the options the stdout path used, and quietly drew a
 // different graph.
-var openGraph = view.OpenGraph
+var openGraph = openGraphFile
 
 func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 	switch format {

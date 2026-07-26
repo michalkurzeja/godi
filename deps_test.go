@@ -8,9 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Nothing a godi binary links should be able to draw a graph or run another
-// program. Renderers mean an embedded Graphviz and a viewer nobody asked for,
-// and os/exec means a library that can start processes.
+// Nothing a godi binary links should be able to draw a graph. Renderers mean an
+// embedded Graphviz and a viewer nobody asked for.
 //
 // The rule is what lets the failure snapshot exist at all: it writes JSON,
 // because JSON is the only thing this package can produce without breaking the
@@ -25,7 +24,6 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 		"github.com/michalkurzeja/godi/v2/graph/html",
 		"github.com/michalkurzeja/godi/v2/graph/serve",
 		"github.com/michalkurzeja/godi/v2/graph/text",
-		"github.com/michalkurzeja/godi/v2/graph/view",
 		"os/exec",
 		// cmd/godi is in this module, so cobra is a requirement of it. Nothing
 		// but the CLI may import it: a library that drags a command-line
@@ -53,6 +51,36 @@ func TestTheGraphModelCarriesNoEngine(t *testing.T) {
 		require.NotContains(t, deps, "github.com/michalkurzeja/godi/v2/di", "%s would carry the engine", pkg)
 		require.NotContains(t, deps, "github.com/michalkurzeja/godi/v2", "%s would carry the facade", pkg)
 	}
+}
+
+// No godi library package may start a process, and this is asserted over the
+// library as a whole rather than over the root package: it is now true by
+// construction - the only os/exec left in the module is in cmd/godi, where a
+// command-line tool opening a browser is unremarkable - and this is what keeps
+// it that way.
+func TestNothingInTheLibraryCanStartAProcess(t *testing.T) {
+	t.Parallel()
+
+	for _, pkg := range packagesOf(t, "./...") {
+		if strings.HasPrefix(pkg, "github.com/michalkurzeja/godi/v2/cmd/") ||
+			strings.HasPrefix(pkg, "github.com/michalkurzeja/godi/v2/examples/") {
+			continue
+		}
+		require.NotContains(t, depsOf(t, pkg), "os/exec", "%s can start a process", pkg)
+	}
+}
+
+func packagesOf(t *testing.T, pattern string) []string {
+	t.Helper()
+
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain to ask about packages")
+	}
+
+	out, err := exec.Command("go", "list", pattern).Output()
+	require.NoError(t, err)
+
+	return strings.Fields(string(out))
 }
 
 func depsOf(t *testing.T, pkg string) []string {

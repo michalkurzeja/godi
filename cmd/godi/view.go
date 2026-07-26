@@ -9,7 +9,6 @@ import (
 
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/serve"
-	"github.com/michalkurzeja/godi/v2/graph/view"
 )
 
 func newViewCmd() *cobra.Command {
@@ -46,7 +45,7 @@ runs until you stop it.`,
 			fmt.Fprintf(cmd.ErrOrStderr(), "godi: serving on %s\n", srv.URL())
 
 			if !noOpen {
-				err = view.Launch(srv.URL())
+				err = launch(srv.URL())
 				if err != nil {
 					// The address is on screen either way, so this is a
 					// nuisance rather than a failure.
