@@ -16,7 +16,7 @@ import (
 
 func NewScope(name string, container *Container, parent *Scope) *Scope {
 	s := &Scope{
-		name:      name,
+		name:      unusedScopeName(container, name),
 		container: container,
 		parent:    parent,
 		svcs:      NewDefinitionRegistry[*ServiceDefinition](),
@@ -24,8 +24,28 @@ func NewScope(name string, container *Container, parent *Scope) *Scope {
 		bindings:  orderedmap.NewOrderedMap[reflect.Type, *InterfaceBinding](),
 		instances: make(map[ID]any),
 	}
-	container.scopes.Set(name, s)
+	container.scopes.Set(s.name, s)
 	return s
+}
+
+// unusedScopeName keeps a second scope of a name from taking the first one's
+// place in the container: the container knows its scopes by name, and the
+// replaced one would go on existing in the parent tree while nothing iterating
+// the container - argument validation, eager initialisation, the graph - ever
+// saw it again. Its definitions would simply never be built.
+//
+// godi's own child scopes are named after the definition that declared them, so
+// they never collide; two calls to NewChild("plugins") from a compiler pass do.
+func unusedScopeName(container *Container, name string) string {
+	if _, taken := container.scopes.Get(name); !taken {
+		return name
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s#%d", name, n)
+		if _, taken := container.scopes.Get(candidate); !taken {
+			return candidate
+		}
+	}
 }
 
 type Scope struct {
