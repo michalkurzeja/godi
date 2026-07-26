@@ -10,3 +10,9 @@ graph/html/assets/vendor/*.js linguist-vendored=true -diff
 # NOTICE.md is deliberately not marked: it is the licence roll for the bundles
 # above, hand-maintained and checked by a test, and a change to it is exactly
 # the kind a reviewer has to see.
+
+# The mocks are written by mockery from .mockery.yaml and regenerated wholesale,
+# so reviewing them is reviewing the interface they were made from. Collapsed in
+# a diff rather than hidden from one: unlike the bundles above they are ordinary
+# Go, and worth expanding when an interface has moved under them.
+**/mocks/*.go linguist-generated=true
