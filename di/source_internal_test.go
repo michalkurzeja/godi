@@ -1,6 +1,7 @@
 package di
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -49,6 +50,24 @@ func TestOnlyTheWiringPackagesAreWalkedPast(t *testing.T) {
 	for _, tt := range tests {
 		require.Equal(t, tt.want, isWiring(tt.fn), tt.fn)
 	}
+}
+
+// A library wrapping godi on its users' behalf is in the same position as
+// godi's own extras package, and the reader wants their own wiring pointed at,
+// not the library's.
+func TestAMarkedPackageIsWalkedPastLikeGodisOwn(t *testing.T) {
+	original := slices.Clone(wiringPackages)
+	t.Cleanup(func() { wiringPackages = original })
+
+	const wrapper = "github.com/acme/wiring"
+	require.False(t, isWiring(wrapper+".Register"))
+
+	MarkWiringPackage(wrapper)
+	require.True(t, isWiring(wrapper+".Register"))
+	require.False(t, isWiring(wrapper+"/internal.Register"), "the path exactly, never a prefix")
+
+	MarkWiringPackage(wrapper)
+	require.Len(t, wiringPackages, len(original)+1, "marking it twice marks it once")
 }
 
 func TestAnEmptySourceResolvesToNothing(t *testing.T) {

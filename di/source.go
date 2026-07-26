@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
@@ -31,6 +32,34 @@ var wiringPackages = []string{
 	godiModule,             // The facade: Svc, Func, SvcVal.
 	godiModule + "/di",     // The engine.
 	godiModule + "/extras", // Helpers that build definitions.
+}
+
+// wiringMu guards wiringPackages. Registration happens once, usually from an
+// init, and reading happens when something asks a definition where it came
+// from - so this is uncontended in practice and is here to make the race
+// impossible rather than unlikely.
+var wiringMu sync.RWMutex
+
+// MarkWiringPackage says that the package at path registers definitions on
+// someone else's behalf, so that a definition it creates is reported against
+// the caller rather than against the helper.
+//
+// A library that wraps godi.Svc for its users is in exactly the position godi's
+// own extras package is in, and without this it is the only thing a graph can
+// point at: every service the library registers appears to have been declared
+// on the same line of it.
+//
+//	func init() { di.MarkWiringPackage("github.com/acme/wiring") }
+//
+// The path is the import path exactly, never a prefix: a package's own examples
+// and tests register services too, and they are the caller, not the machinery.
+func MarkWiringPackage(path string) {
+	wiringMu.Lock()
+	defer wiringMu.Unlock()
+
+	if !slices.Contains(wiringPackages, path) {
+		wiringPackages = append(wiringPackages, path)
+	}
 }
 
 // sourceDepth is how far up the stack to keep. Three frames covers the deepest
@@ -100,6 +129,9 @@ func declaredAt(fn reflect.Value) Location {
 }
 
 func isWiring(fn string) bool {
+	wiringMu.RLock()
+	defer wiringMu.RUnlock()
+
 	return slices.Contains(wiringPackages, packageOf(fn))
 }
 
