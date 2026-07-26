@@ -99,16 +99,26 @@ func (c *Container) Graph(cfg graph.Config) *graph.Graph {
 	return newExtractor(c, cfg, nil).extract()
 }
 
-// scopesSeq yields every scope in the container, in the order they were created.
-func (c *Container) scopesSeq() iter.Seq[*Scope] {
+// Root is the scope everything else hangs off.
+func (c *Container) Root() *Scope {
+	return c.root
+}
+
+// Scope finds a scope by name.
+func (c *Container) Scope(name string) (*Scope, bool) {
+	return c.scopes.Get(name)
+}
+
+// Scopes yields every scope in the container, in the order they were created.
+func (c *Container) Scopes() iter.Seq[*Scope] {
 	return iterx.Values(c.scopes.Iterator())
 }
 
-// serviceDefsSeq yields every service definition in the container, with the
-// scope it is registered in.
-func (c *Container) serviceDefsSeq() iter.Seq2[*Scope, *ServiceDefinition] {
+// ServiceDefinitionsSeq yields every service definition in the container, with
+// the scope it is registered in.
+func (c *Container) ServiceDefinitionsSeq() iter.Seq2[*Scope, *ServiceDefinition] {
 	return func(yield func(*Scope, *ServiceDefinition) bool) {
-		for scope := range c.scopesSeq() {
+		for scope := range c.Scopes() {
 			for def := range scope.ServiceDefinitionsSeq() {
 				if !yield(scope, def) {
 					return
@@ -118,11 +128,11 @@ func (c *Container) serviceDefsSeq() iter.Seq2[*Scope, *ServiceDefinition] {
 	}
 }
 
-// functionDefsSeq yields every function definition in the container, with the
-// scope it is registered in.
-func (c *Container) functionDefsSeq() iter.Seq2[*Scope, *FunctionDefinition] {
+// FunctionDefinitionsSeq yields every function definition in the container,
+// with the scope it is registered in.
+func (c *Container) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionDefinition] {
 	return func(yield func(*Scope, *FunctionDefinition) bool) {
-		for scope := range c.scopesSeq() {
+		for scope := range c.Scopes() {
 			for def := range scope.FunctionDefinitionsSeq() {
 				if !yield(scope, def) {
 					return
@@ -136,7 +146,7 @@ func (c *Container) functionDefsSeq() iter.Seq2[*Scope, *FunctionDefinition] {
 // method call arguments and function arguments, across all scopes.
 func (c *Container) slotsSeq() iter.Seq[*Slot] {
 	return func(yield func(*Slot) bool) {
-		for _, def := range c.serviceDefsSeq() {
+		for _, def := range c.ServiceDefinitionsSeq() {
 			for _, slot := range def.Factory().Args().Slots() {
 				if !yield(slot) {
 					return
@@ -150,7 +160,7 @@ func (c *Container) slotsSeq() iter.Seq[*Slot] {
 				}
 			}
 		}
-		for _, def := range c.functionDefsSeq() {
+		for _, def := range c.FunctionDefinitionsSeq() {
 			for _, slot := range def.Func().Args().Slots() {
 				if !yield(slot) {
 					return
@@ -163,7 +173,7 @@ func (c *Container) slotsSeq() iter.Seq[*Slot] {
 // bindingsSeq yields every interface binding in every scope.
 func (c *Container) bindingsSeq() iter.Seq[*InterfaceBinding] {
 	return func(yield func(*InterfaceBinding) bool) {
-		for scope := range c.scopesSeq() {
+		for scope := range c.Scopes() {
 			for binding := range scope.BindingsSeq() {
 				if !yield(binding) {
 					return

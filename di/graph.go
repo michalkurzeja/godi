@@ -66,11 +66,11 @@ func (x *extractor) extract() *graph.Graph {
 func (x *extractor) assignIDs() {
 	owners := x.childScopeOwners()
 
-	x.assignScope(x.container.root, graph.ScopeID(RootScope), "", 0, owners)
+	x.assignScope(x.container.Root(), graph.ScopeID(RootScope), "", 0, owners)
 
 	// Scopes created directly through Scope.NewChild belong to no definition, so
 	// the walk above never reaches them. Attach them to their parent by raw name.
-	for scope := range x.container.scopesSeq() {
+	for scope := range x.container.Scopes() {
 		if _, ok := x.scopeIDs[scope]; ok {
 			continue
 		}
@@ -93,12 +93,12 @@ func (x *extractor) assignIDs() {
 // childScopeOwners maps every child scope to the definition that declared it.
 func (x *extractor) childScopeOwners() map[*Scope]any {
 	owners := make(map[*Scope]any)
-	for _, def := range x.container.serviceDefsSeq() {
+	for _, def := range x.container.ServiceDefinitionsSeq() {
 		if cs := def.ChildScope(); cs != nil {
 			owners[cs] = def
 		}
 	}
-	for _, def := range x.container.functionDefsSeq() {
+	for _, def := range x.container.FunctionDefinitionsSeq() {
 		if cs := def.ChildScope(); cs != nil {
 			owners[cs] = def
 		}
@@ -212,7 +212,7 @@ func (x *extractor) mint(scope graph.ScopeID, kind, name string, labels []Label)
 }
 
 func (x *extractor) buildNodes() {
-	for scope, def := range x.container.serviceDefsSeq() {
+	for scope, def := range x.container.ServiceDefinitionsSeq() {
 		node := &graph.Node{
 			ID:           x.svcIDs[def],
 			Kind:         graph.NodeService,
@@ -223,8 +223,8 @@ func (x *extractor) buildNodes() {
 			Lazy:         def.IsLazy(),
 			Shared:       def.IsShared(),
 			Autowired:    def.IsAutowired(),
-			Instantiated: instantiated(scope, def.ID()),
-			Registered:   registered(def.source),
+			Instantiated: scope.Instantiated(def.ID()),
+			Registered:   registered(def.RegisteredAt()),
 		}
 		node.Name, node.Signature, node.Defined = implementation(def)
 		_, node.FromValue = def.Val()
@@ -243,7 +243,7 @@ func (x *extractor) buildNodes() {
 		x.out.Nodes = append(x.out.Nodes, node)
 	}
 
-	for scope, def := range x.container.functionDefsSeq() {
+	for scope, def := range x.container.FunctionDefinitionsSeq() {
 		node := &graph.Node{
 			ID:         x.funIDs[def],
 			Kind:       graph.NodeFunction,
@@ -251,12 +251,12 @@ func (x *extractor) buildNodes() {
 			Scope:      x.scopeIDs[scope],
 			Type:       util.Signature(def.Type()),
 			Name:       def.Func().Name(),
-			Signature:  util.Signature(def.Func().value().Type()),
+			Signature:  util.Signature(def.Func().Type()),
 			Labels:     labelStrings(def.Labels()),
 			Lazy:       def.IsLazy(),
 			Autowired:  def.IsAutowired(),
-			Registered: registered(def.source),
-			Defined:    defined(def.Func().value()),
+			Registered: registered(def.RegisteredAt()),
+			Defined:    registered(def.DefinedAt()),
 		}
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]
@@ -271,29 +271,21 @@ func (x *extractor) buildNodes() {
 	}
 }
 
-// registered turns a captured stack into the place the definition was written.
-func registered(s source) graph.Location {
-	file, line, fn := s.Location()
-	return graph.Location{File: file, Line: line, Func: fn}
+// registered turns a definition's registration site into the model's own.
+func registered(loc Location) graph.Location {
+	return graph.Location{File: loc.File, Line: loc.Line, Func: loc.Func}
 }
 
-// implementation is whatever actually provides a service: the factory that
-// builds it, or - when the service was registered as a value - the value
-// itself. A function is a value like any other, and one registered that way is
-// the whole of the service, so it is what deserves to be named and pointed at.
-//
-// A value that is not a function has none of this to give. There is no name for
-// a struct someone handed over and nowhere to point at for it, and the factory
-// holding it is godi's own.
+// implementation is how the model names whatever provides a service. The engine
+// picks it - the factory, or the value when the service was registered as one -
+// and this is the display half: a name a reader would recognise, and a
+// signature rather than a type.
 func implementation(def *ServiceDefinition) (name, signature string, at graph.Location) {
-	impl := def.Factory().value()
-	if val, ok := def.Val(); ok {
-		if !val.IsValid() || val.Kind() != reflect.Func {
-			return "", "", graph.Location{}
-		}
-		impl = val
+	implName, typ, loc := def.Implementation()
+	if typ == nil {
+		return "", "", graph.Location{}
 	}
-	return funcName(impl), funcSignature(impl), defined(impl)
+	return trimMethodWrapper(implName), funcSignature(typ), registered(loc)
 }
 
 // funcSignature is what a function takes and returns, as Go would write it.
@@ -301,9 +293,7 @@ func implementation(def *ServiceDefinition) (name, signature string, at graph.Lo
 // Not the value's own type, which for a service registered as a value is
 // usually a named one - and a name is exactly what a signature is not. Rebuilt
 // unnamed, which leaves an ordinary factory's type as it already was.
-func funcSignature(fn reflect.Value) string {
-	typ := fn.Type()
-
+func funcSignature(typ reflect.Type) string {
 	in := make([]reflect.Type, typ.NumIn())
 	for i := range in {
 		in[i] = typ.In(i)
@@ -315,25 +305,11 @@ func funcSignature(fn reflect.Value) string {
 	return util.Signature(reflect.FuncOf(in, out, typ.IsVariadic()))
 }
 
-// funcName is what to call a function. A method value is a wrapper the compiler
-// writes, and it names it after the method with a suffix of its own; the method
-// is what the reader means.
-func funcName(fn reflect.Value) string {
-	return strings.TrimSuffix(util.FuncName(fn), "-fm")
-}
-
-// defined is where a function is declared.
-//
-// A factory godi synthesised has no source of the user's to point at - SvcVal
-// wraps a value in a closure of godi's own - so those are left empty rather
-// than pointing the reader into godi. So is a method value, whose wrapper the
-// compiler writes and marks as generated.
-func defined(fn reflect.Value) graph.Location {
-	file, line := util.FuncLocation(fn)
-	if file == "" || file == "<autogenerated>" || isWiring(util.FuncName(fn)) {
-		return graph.Location{}
-	}
-	return graph.Location{File: file, Line: line}
+// trimMethodWrapper is what to call a function. A method value is a wrapper the
+// compiler writes, and it names it after the method with a suffix of its own;
+// the method is what the reader means.
+func trimMethodWrapper(name string) string {
+	return strings.TrimSuffix(name, "-fm")
 }
 
 // trimSourceRoot takes the directory every path shares out of the paths and
@@ -665,7 +641,7 @@ func (x *extractor) markCollected() {
 }
 
 func (x *extractor) buildBindings() {
-	for scope := range x.container.scopesSeq() {
+	for scope := range x.container.Scopes() {
 		scopeID := x.scopeIDs[scope]
 		for _, binding := range scope.GetBindings() {
 			entry := &graph.Binding{
@@ -813,11 +789,6 @@ func bindingInChain(scope *Scope, typ reflect.Type) (*Scope, *InterfaceBinding, 
 		}
 	}
 	return nil, nil, false
-}
-
-func instantiated(scope *Scope, id ID) bool {
-	_, ok := scope.instances[id]
-	return ok
 }
 
 func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {

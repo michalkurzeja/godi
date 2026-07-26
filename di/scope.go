@@ -85,6 +85,13 @@ func (s *Scope) HasService(id ID) bool {
 	return s.svcs.Contains(id)
 }
 
+// Instantiated reports whether this scope has already built the service, which
+// for a shared one means the container is holding it.
+func (s *Scope) Instantiated(id ID) bool {
+	_, ok := s.instances[id]
+	return ok
+}
+
 func (s *Scope) HasServiceInChain(id ID) bool {
 	for scope := range s.Chain() {
 		if scope.HasService(id) {

@@ -225,7 +225,7 @@ func requireEdgesMatchResolver(t *testing.T, c *Container, g *graph.Graph) {
 	}
 
 	var checked int
-	for _, def := range c.serviceDefsSeq() {
+	for _, def := range c.ServiceDefinitionsSeq() {
 		scope := def.EffectiveScope()
 
 		for _, slot := range def.Factory().Args().Slots() {

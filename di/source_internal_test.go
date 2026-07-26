@@ -52,11 +52,7 @@ func TestOnlyTheWiringPackagesAreWalkedPast(t *testing.T) {
 }
 
 func TestAnEmptySourceResolvesToNothing(t *testing.T) {
-	file, line, fn := source{}.Location()
-
-	require.Empty(t, file)
-	require.Zero(t, line)
-	require.Empty(t, fn)
+	require.Zero(t, source{}.Location())
 }
 
 func BenchmarkCaptureSource(b *testing.B) {

@@ -82,6 +82,13 @@ func (b *ContainerBuilder) Graph(cfg graph.Config) *graph.Graph {
 	return newExtractor(b.container, cfg, b.compiler.snapshot()).extract()
 }
 
+// Container is the container being built, and nil once Build has handed it
+// over. A failed Build keeps it, which is deliberate: the container of where
+// the compiler stopped is the one worth looking at.
+func (b *ContainerBuilder) Container() *Container {
+	return b.container
+}
+
 func (b *ContainerBuilder) Compiler() *Compiler {
 	return b.compiler
 }

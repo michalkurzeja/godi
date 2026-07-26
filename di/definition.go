@@ -217,6 +217,31 @@ func (d *ServiceDefinition) FactoryName() string {
 	return d.factory.Name()
 }
 
+// RegisteredAt is where this definition was declared: the first frame outside
+// godi at the moment it was created.
+func (d *ServiceDefinition) RegisteredAt() Location {
+	return d.source.Location()
+}
+
+// Implementation is whatever actually provides the service: the factory that
+// builds it, or - when the service was registered as a value - the value
+// itself. A function is a value like any other, and one registered that way is
+// the whole of the service, so it is what deserves to be named and pointed at.
+//
+// A value that is not a function has none of this to give. There is no name for
+// a struct someone handed over and nowhere to point at for it, and the factory
+// holding it is godi's own.
+func (d *ServiceDefinition) Implementation() (name string, typ reflect.Type, at Location) {
+	impl := d.factory.value()
+	if d.fromVal {
+		if !d.val.IsValid() || d.val.Kind() != reflect.Func {
+			return "", nil, Location{}
+		}
+		impl = d.val
+	}
+	return util.FuncName(impl), impl.Type(), declaredAt(impl)
+}
+
 func (d *ServiceDefinition) String() string {
 	var bld strings.Builder
 	if d.factory != nil {
@@ -343,6 +368,17 @@ func (d *FunctionDefinition) IsAutowired() bool {
 func (d *FunctionDefinition) SetAutowired(autowired bool) *FunctionDefinition {
 	d.autowired = autowired
 	return d
+}
+
+// RegisteredAt is where this definition was declared: the first frame outside
+// godi at the moment it was created.
+func (d *FunctionDefinition) RegisteredAt() Location {
+	return d.source.Location()
+}
+
+// DefinedAt is where the function itself is declared.
+func (d *FunctionDefinition) DefinedAt() Location {
+	return declaredAt(d.function.value())
 }
 
 func (d *FunctionDefinition) String() string {

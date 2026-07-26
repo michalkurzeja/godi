@@ -186,18 +186,48 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	return nil
 }
 
-// snapshot describes how far compilation has got, for a graph taken while it is
-// still going on.
-func (c *Compiler) snapshot() *graph.Snapshot {
-	s := &graph.Snapshot{
+// CompilerProgress says how far compilation has got. Anything reading a
+// container mid-compilation needs it: wiring a later pass would have added is
+// simply not there yet, and without this it reads as wiring that is missing.
+type CompilerProgress struct {
+	// Stage in progress, and Pass within it. Both are empty outside a pass.
+	Stage string
+	Pass  string
+	// Failed names the pass that returned an error, when compilation stopped
+	// there.
+	Failed string
+	// Done names the passes that have finished, in the order they ran.
+	Done []string
+	// Autowired says godi's autowiring has run. After it, an argument still
+	// unwired is one nothing is going to wire.
+	Autowired bool
+}
+
+// Progress describes how far compilation has got, for anything reading the
+// container while it is still going on.
+func (c *Compiler) Progress() CompilerProgress {
+	p := CompilerProgress{
 		Failed:    c.failed,
 		Done:      slices.Clone(c.done),
 		Autowired: c.autowired,
 	}
 	if c.running != nil {
-		s.Stage, s.Pass = c.running.stage.String(), c.running.name
+		p.Stage, p.Pass = c.running.stage.String(), c.running.name
 	}
-	return s
+	return p
+}
+
+// snapshot describes how far compilation has got, for a graph taken while it is
+// still going on.
+func (c *Compiler) snapshot() *graph.Snapshot {
+	p := c.Progress()
+	return &graph.Snapshot{
+		Stage:     p.Stage,
+		Pass:      p.Pass,
+		Failed:    p.Failed,
+		Done:      p.Done,
+		Autowired: p.Autowired,
+	}
 }
 
 // creditPendingWiring names whoever is responsible for the wiring changed since
