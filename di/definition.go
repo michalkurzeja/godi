@@ -48,8 +48,7 @@ func (l Label) String() string {
 }
 
 type ServiceDefinition struct {
-	id     ID
-	labels []Label
+	definition[*ServiceDefinition]
 
 	factory     *Factory
 	methodCalls map[string]*Method
@@ -60,76 +59,21 @@ type ServiceDefinition struct {
 	val     reflect.Value
 	fromVal bool
 
-	scope      *Scope
-	childScope *Scope
-
-	// Properties
-	lazy      bool
-	shared    bool
-	autowired bool
-
-	source source
+	shared bool
 }
 
 func NewServiceDefinition(factory *Factory) *ServiceDefinition {
-	return &ServiceDefinition{
-		id:      NewID(),
-		factory: factory,
-		source:  captureSource(),
-
+	d := &ServiceDefinition{
+		factory:     factory,
 		methodCalls: make(map[string]*Method),
-
-		lazy:      defaultLazy,
-		shared:    defaultShared,
-		autowired: defaultAutowired,
+		shared:      defaultShared,
 	}
-}
-
-func (d *ServiceDefinition) ID() ID {
-	return d.id
+	d.init(d, captureSource())
+	return d
 }
 
 func (d *ServiceDefinition) Type() reflect.Type {
 	return d.factory.Creates()
-}
-
-func (d *ServiceDefinition) Scope() *Scope {
-	return d.scope
-}
-
-func (d *ServiceDefinition) SetScope(scope *Scope) *ServiceDefinition {
-	d.scope = scope
-	return d
-}
-
-func (d *ServiceDefinition) ChildScope() *Scope {
-	return d.childScope
-}
-
-func (d *ServiceDefinition) SetChildScope(scope *Scope) *ServiceDefinition {
-	d.childScope = scope
-	return d
-}
-
-// NewChildScope creates a scope of this definition's own inside parent: named
-// after the definition, and back-linked to it.
-//
-// Both halves matter, and doing them by hand means knowing a convention nobody
-// wrote down. A scope made with Scope.NewChild belongs to no definition, and
-// everything that reports on a container can only describe it as such.
-func (d *ServiceDefinition) NewChildScope(parent *Scope) *Scope {
-	d.childScope = parent.NewChild(d.id.String())
-	return d.childScope
-}
-
-// EffectiveScope returns the scope in which all the dependencies should be resolved.
-// For most services this is the scope where that service is defined.
-// But if a service has a child-scope, then the dependencies should be resolved with that scope included.
-func (d *ServiceDefinition) EffectiveScope() *Scope {
-	if d.childScope != nil {
-		return d.childScope
-	}
-	return d.scope
 }
 
 func (d *ServiceDefinition) Factory() *Factory {
@@ -164,49 +108,12 @@ func (d *ServiceDefinition) RemoveMethodCalls(names ...string) *ServiceDefinitio
 	return d
 }
 
-func (d *ServiceDefinition) Labels() []Label {
-	return d.labels
-}
-
-func (d *ServiceDefinition) SetLabels(labels ...Label) *ServiceDefinition {
-	d.labels = labels
-	return d
-}
-
-func (d *ServiceDefinition) AddLabels(labels ...Label) *ServiceDefinition {
-	d.labels = append(d.labels, labels...)
-	return d
-}
-
-func (d *ServiceDefinition) RemoveLabels(labels ...Label) *ServiceDefinition {
-	d.labels = lo.Without(d.labels, labels...)
-	return d
-}
-
-func (d *ServiceDefinition) IsLazy() bool {
-	return d.lazy
-}
-
-func (d *ServiceDefinition) SetLazy(lazy bool) *ServiceDefinition {
-	d.lazy = lazy
-	return d
-}
-
 func (d *ServiceDefinition) IsShared() bool {
 	return d.shared
 }
 
 func (d *ServiceDefinition) SetShared(shared bool) *ServiceDefinition {
 	d.shared = shared
-	return d
-}
-
-func (d *ServiceDefinition) IsAutowired() bool {
-	return d.autowired
-}
-
-func (d *ServiceDefinition) SetAutowired(autowired bool) *ServiceDefinition {
-	d.autowired = autowired
 	return d
 }
 
@@ -226,12 +133,6 @@ func (d *ServiceDefinition) Val() (reflect.Value, bool) {
 
 func (d *ServiceDefinition) FactoryName() string {
 	return d.factory.Name()
-}
-
-// RegisteredAt is where this definition was declared: the first frame outside
-// godi at the moment it was created.
-func (d *ServiceDefinition) RegisteredAt() Location {
-	return d.source.Location()
 }
 
 // Implementation is whatever actually provides the service: the factory that
@@ -260,87 +161,24 @@ func (d *ServiceDefinition) String() string {
 	} else {
 		bld.WriteString("service")
 	}
-	if len(d.labels) > 0 {
-		bld.WriteString(" (")
-		for i, label := range d.labels {
-			if i > 0 {
-				bld.WriteString(", ")
-			}
-			bld.WriteString(label.String())
-		}
-		bld.WriteString(")")
-	}
+	bld.WriteString(d.labelSuffix())
 	return bld.String()
 }
 
 type FunctionDefinition struct {
-	id       ID
+	definition[*FunctionDefinition]
+
 	function *Func
-	labels   []Label
-
-	scope      *Scope
-	childScope *Scope
-
-	// Properties
-	lazy      bool
-	autowired bool
-
-	source source
 }
 
 func NewFunctionDefinition(function *Func) *FunctionDefinition {
-	return &FunctionDefinition{
-		id:       NewID(),
-		function: function,
-		source:   captureSource(),
-
-		lazy:      defaultLazy,
-		autowired: defaultAutowired,
-	}
-}
-
-func (d *FunctionDefinition) ID() ID {
-	return d.id
+	d := &FunctionDefinition{function: function}
+	d.init(d, captureSource())
+	return d
 }
 
 func (d *FunctionDefinition) Type() reflect.Type {
 	return d.function.Type()
-}
-
-func (d *FunctionDefinition) Scope() *Scope {
-	return d.scope
-}
-
-func (d *FunctionDefinition) SetScope(scope *Scope) *FunctionDefinition {
-	d.scope = scope
-	return d
-}
-
-func (d *FunctionDefinition) ChildScope() *Scope {
-	return d.childScope
-}
-
-func (d *FunctionDefinition) SetChildScope(scope *Scope) *FunctionDefinition {
-	d.childScope = scope
-	return d
-}
-
-// NewChildScope creates a scope of this definition's own inside parent: named
-// after the definition, and back-linked to it. See
-// ServiceDefinition.NewChildScope.
-func (d *FunctionDefinition) NewChildScope(parent *Scope) *Scope {
-	d.childScope = parent.NewChild(d.id.String())
-	return d.childScope
-}
-
-// EffectiveScope returns the scope in which all the dependencies should be resolved.
-// For most services this is the scope where that service is defined.
-// But if a service has a child-scope, then the dependencies should be resolved with that scope includes.
-func (d *FunctionDefinition) EffectiveScope() *Scope {
-	if d.childScope != nil {
-		return d.childScope
-	}
-	return d.scope
 }
 
 func (d *FunctionDefinition) Func() *Func {
@@ -350,49 +188,6 @@ func (d *FunctionDefinition) Func() *Func {
 func (d *FunctionDefinition) SetFunc(fn *Func) *FunctionDefinition {
 	d.function = fn
 	return d
-}
-
-func (d *FunctionDefinition) Labels() []Label {
-	return d.labels
-}
-
-func (d *FunctionDefinition) SetLabels(labels ...Label) *FunctionDefinition {
-	d.labels = labels
-	return d
-}
-
-func (d *FunctionDefinition) AddLabels(labels ...Label) *FunctionDefinition {
-	d.labels = append(d.labels, labels...)
-	return d
-}
-
-func (d *FunctionDefinition) RemoveLabels(labels ...Label) *FunctionDefinition {
-	d.labels = lo.Without(d.labels, labels...)
-	return d
-}
-
-func (d *FunctionDefinition) IsLazy() bool {
-	return d.lazy
-}
-
-func (d *FunctionDefinition) SetLazy(lazy bool) *FunctionDefinition {
-	d.lazy = lazy
-	return d
-}
-
-func (d *FunctionDefinition) IsAutowired() bool {
-	return d.autowired
-}
-
-func (d *FunctionDefinition) SetAutowired(autowired bool) *FunctionDefinition {
-	d.autowired = autowired
-	return d
-}
-
-// RegisteredAt is where this definition was declared: the first frame outside
-// godi at the moment it was created.
-func (d *FunctionDefinition) RegisteredAt() Location {
-	return d.source.Location()
 }
 
 // DefinedAt is where the function itself is declared.
@@ -407,15 +202,6 @@ func (d *FunctionDefinition) String() string {
 	} else {
 		bld.WriteString("function")
 	}
-	if len(d.labels) > 0 {
-		bld.WriteString(" (")
-		for i, label := range d.labels {
-			if i > 0 {
-				bld.WriteString(", ")
-			}
-			bld.WriteString(label.String())
-		}
-		bld.WriteString(")")
-	}
+	bld.WriteString(d.labelSuffix())
 	return bld.String()
 }
