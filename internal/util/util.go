@@ -1,13 +1,12 @@
 package util
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"runtime"
 	"sort"
 	"strings"
-
-	"golang.org/x/exp/constraints"
 )
 
 // Signature returns the fully qualified name of a type.
@@ -22,7 +21,7 @@ func Signature(typ reflect.Type) string {
 
 	named := typ
 	var isPtr bool
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		named = typ.Elem()
 		isPtr = true
 	}
@@ -97,7 +96,7 @@ func Zero[T any]() T {
 }
 
 // SortedAsc returns the given slice, sorted by the given property in ascending order.
-func SortedAsc[T any, O constraints.Ordered](s []T, by func(v T) O) []T {
+func SortedAsc[T any, O cmp.Ordered](s []T, by func(v T) O) []T {
 	sort.Slice(s, func(i, j int) bool {
 		return by(s[i]) < by(s[j])
 	})

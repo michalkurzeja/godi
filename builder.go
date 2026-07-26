@@ -139,6 +139,6 @@ type BuilderOption func(*di.Config)
 
 func SkipCycleValidation() BuilderOption {
 	return func(b *di.Config) {
-		b.CompilerConfig.SkipCycleValidation = true
+		b.SkipCycleValidation = true
 	}
 }

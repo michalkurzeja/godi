@@ -96,8 +96,11 @@ func (s CompilerStage) String() string {
 		return "finalization"
 	case PostFinalization:
 		return "post-finalization"
+	default:
+		// compilerPassStageCount lands here: it counts the stages rather than
+		// naming one, and there is nothing to call it.
+		return fmt.Sprintf("stage %d", uint8(s))
 	}
-	return fmt.Sprintf("stage %d", uint8(s))
 }
 
 // Passes contains an ordered list of Compiler passes.

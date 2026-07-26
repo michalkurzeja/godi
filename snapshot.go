@@ -94,6 +94,11 @@ func writeSnapshot(g *graph.Graph) (string, error) {
 // createSnapshotFile makes the file private to you: a graph asked for literal
 // values carries whatever those literals are, and a temporary directory is not
 // a private place.
+// The path is GODI_SNAPSHOT_PATH, set by whoever runs the program to say where
+// they want the graph written. Choosing it is the point of the variable, so
+// there is no untrusted end to the taint gosec follows.
+//
+//nolint:gosec // G703: the path is the operator's own, by design.
 func createSnapshotFile() (*os.File, error) {
 	path := os.Getenv(envSnapshotPath)
 	if path == "" {

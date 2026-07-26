@@ -54,17 +54,17 @@ func (p *printer) printf(format string, args ...any) {
 	_, _ = fmt.Fprintf(p.w, format, args...)
 }
 
-// line writes one indented line. Indentation is the whole of the structure
+// linef writes one indented line. Indentation is the whole of the structure
 // here, so it goes through one place.
-func (p *printer) line(depth int, format string, args ...any) {
+func (p *printer) linef(depth int, format string, args ...any) {
 	p.printf("%s%s\n", strings.Repeat("  ", depth), fmt.Sprintf(format, args...))
 }
 
 func (p *printer) write(g *graph.Graph) {
-	p.line(0, "%s", p.summary(g))
+	p.linef(0, "%s", p.summary(g))
 	p.snapshot(g)
 	if p.cfg.locations && g.SourceRoot != "" {
-		p.line(0, "under %s", g.SourceRoot)
+		p.linef(0, "under %s", g.SourceRoot)
 	}
 
 	for _, scope := range g.Scopes {
@@ -107,9 +107,9 @@ func (p *printer) snapshot(g *graph.Graph) {
 		return
 	}
 
-	p.line(0, "snapshot: %s", g.Snapshot.Label())
+	p.linef(0, "snapshot: %s", g.Snapshot.Label())
 	if len(g.Snapshot.Done) > 0 {
-		p.line(1, "passes run: %s", strings.Join(g.Snapshot.Done, ", "))
+		p.linef(1, "passes run: %s", strings.Join(g.Snapshot.Done, ", "))
 	}
 }
 
@@ -122,7 +122,7 @@ func count(n int, one, many string) string {
 
 func (p *printer) scope(g *graph.Graph, scope *graph.Scope, depth int) {
 	p.printf("\n")
-	p.line(depth, "scope %s", scope.Label())
+	p.linef(depth, "scope %s", scope.Label())
 
 	p.bindings(g, scope, depth+1)
 
@@ -156,13 +156,13 @@ func (p *printer) bindings(g *graph.Graph, scope *graph.Scope, depth int) {
 		return
 	}
 
-	p.line(depth, "bindings:")
+	p.linef(depth, "bindings:")
 	for _, b := range declared {
 		unused := ""
 		if b.EdgeCount == 0 {
 			unused = "  (nothing uses it)"
 		}
-		p.line(depth+1, "%s -> %s  [%s]%s",
+		p.linef(depth+1, "%s -> %s  [%s]%s",
 			render.Short(b.Interface), render.Short(b.BoundTo), bindingOrigin(b.Origin, b.OriginPass), unused)
 	}
 }
@@ -172,7 +172,7 @@ func (p *printer) nodes(g *graph.Graph, heading string, nodes []*graph.Node, dep
 		return
 	}
 
-	p.line(depth, "%s:", heading)
+	p.linef(depth, "%s:", heading)
 	for _, n := range nodes {
 		p.node(g, n, depth+1)
 	}
@@ -186,23 +186,23 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 		title = n.NameShort()
 	}
 
-	p.line(depth, "%s%s", title, bracketed(nodeFlags(n)))
+	p.linef(depth, "%s%s", title, bracketed(nodeFlags(n)))
 	if label, what := implementation(n); what != "" && what != title {
-		p.line(depth+1, "%s: %s", label, what)
+		p.linef(depth+1, "%s: %s", label, what)
 	}
 	if p.cfg.locations {
 		if !n.Registered.IsZero() {
-			p.line(depth+1, "registered: %s", n.Registered)
+			p.linef(depth+1, "registered: %s", n.Registered)
 		}
 		if !n.Defined.IsZero() {
-			p.line(depth+1, "defined: %s", n.Defined)
+			p.linef(depth+1, "defined: %s", n.Defined)
 		}
 	}
 
 	p.params(g, n, depth+1)
 
 	if n.Elided > 0 {
-		p.line(depth+1, "... %d neighbours were filtered out", n.Elided)
+		p.linef(depth+1, "... %d neighbours were filtered out", n.Elided)
 	}
 }
 
@@ -262,7 +262,7 @@ func (p *printer) params(g *graph.Graph, n *graph.Node, depth int) {
 	}
 
 	if len(args) > 0 {
-		p.line(depth, "args:")
+		p.linef(depth, "args:")
 		for _, param := range args {
 			p.param(g, param, depth+1)
 		}
@@ -273,11 +273,11 @@ func (p *printer) params(g *graph.Graph, n *graph.Node, depth int) {
 	var method string
 	for i, param := range calls {
 		if i == 0 {
-			p.line(depth, "method calls:")
+			p.linef(depth, "method calls:")
 		}
 		if param.Method != method {
 			method = param.Method
-			p.line(depth+1, "%s():", method)
+			p.linef(depth+1, "%s():", method)
 		}
 		p.param(g, param, depth+2)
 	}
@@ -290,15 +290,15 @@ func (p *printer) param(g *graph.Graph, param *graph.Param, depth int) {
 	edges := paramEdges(g, param)
 	switch {
 	case len(param.Literals) > 0:
-		p.line(depth, "%s = %s%s", head, param.LiteralsText(), bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s = %s%s", head, param.LiteralsText(), bracketed(argOrigin(param.Origin, param.OriginPass)))
 	case len(edges) == 0:
-		p.line(depth, "%s%s%s", head, unresolved(param), bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s%s%s", head, unresolved(param), bracketed(argOrigin(param.Origin, param.OriginPass)))
 	default:
-		p.line(depth, "%s%s", head, bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s%s", head, bracketed(argOrigin(param.Origin, param.OriginPass)))
 	}
 
 	for _, e := range edges {
-		p.line(depth+1, "-> %s%s", p.name(e.To), bracketed(resolution(e)))
+		p.linef(depth+1, "-> %s%s", p.name(e.To), bracketed(resolution(e)))
 	}
 }
 
@@ -385,8 +385,8 @@ func (p *printer) diagnostics(g *graph.Graph) {
 	}
 
 	p.printf("\n")
-	p.line(0, "notices:")
+	p.linef(0, "notices:")
 	for _, d := range g.Diagnostics {
-		p.line(1, "%s: %s", d.Severity, d.Message)
+		p.linef(1, "%s: %s", d.Severity, d.Message)
 	}
 }
