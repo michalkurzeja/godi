@@ -70,8 +70,15 @@ type ServiceDefinitionBuilder struct {
 	methods  []*funcBuilder
 	children []*ServiceDefinitionBuilder
 
+	// chose records the properties the caller decided for themselves, so that
+	// the container's defaults fill in the rest and nothing else.
+	chose         propertiesChosen
 	factoryParsed bool
 }
+
+// propertiesChosen is which of a definition's properties were asked for rather
+// than left to the container.
+type propertiesChosen struct{ lazy, shared, autowired bool }
 
 // Svc creates a new ServiceDefinitionBuilder.
 func Svc(factory any, args ...any) *ServiceDefinitionBuilder {
@@ -109,37 +116,61 @@ func (b *ServiceDefinitionBuilder) Labels(labels ...Label) *ServiceDefinitionBui
 
 func (b *ServiceDefinitionBuilder) Lazy() *ServiceDefinitionBuilder {
 	b.def.SetLazy(true)
+	b.chose.lazy = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Eager() *ServiceDefinitionBuilder {
 	b.def.SetLazy(false)
+	b.chose.lazy = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Shared() *ServiceDefinitionBuilder {
 	b.def.SetShared(true)
+	b.chose.shared = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) NotShared() *ServiceDefinitionBuilder {
 	b.def.SetShared(false)
+	b.chose.shared = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Autowired() *ServiceDefinitionBuilder {
 	b.def.SetAutowired(true)
+	b.chose.autowired = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) NotAutowired() *ServiceDefinitionBuilder {
 	b.def.SetAutowired(false)
+	b.chose.autowired = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *ServiceDefinitionBuilder {
 	b.children = append(b.children, services...)
 	return b
+}
+
+// applyDefaults fills in the properties the caller did not choose. It runs when
+// the definition is registered rather than when it is created, which is what
+// lets the defaults belong to a container instead of to the process.
+func (b *ServiceDefinitionBuilder) applyDefaults(defaults di.Defaults) {
+	if !b.chose.lazy {
+		b.def.SetLazy(defaults.Lazy)
+	}
+	if !b.chose.shared {
+		b.def.SetShared(defaults.Shared)
+	}
+	if !b.chose.autowired {
+		b.def.SetAutowired(defaults.Autowired)
+	}
+	for _, child := range b.children {
+		child.applyDefaults(defaults)
+	}
 }
 
 func (b *ServiceDefinitionBuilder) ParseAndBuild(scope *di.Scope) error {
@@ -233,6 +264,8 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 // It offers a fluent interface that does all the heavy lifting for the user.
 // This is the recommended way of building a di.FunctionDefinition.
 type FunctionDefinitionBuilder struct {
+	chose propertiesChosen
+
 	def      *di.FunctionDefinition
 	setFunc  func() error
 	children []*ServiceDefinitionBuilder
@@ -270,27 +303,45 @@ func (b *FunctionDefinitionBuilder) Labels(labels ...Label) *FunctionDefinitionB
 
 func (b *FunctionDefinitionBuilder) Lazy() *FunctionDefinitionBuilder {
 	b.def.SetLazy(true)
+	b.chose.lazy = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Eager() *FunctionDefinitionBuilder {
 	b.def.SetLazy(false)
+	b.chose.lazy = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Autowired() *FunctionDefinitionBuilder {
 	b.def.SetAutowired(true)
+	b.chose.autowired = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) NotAutowired() *FunctionDefinitionBuilder {
 	b.def.SetAutowired(false)
+	b.chose.autowired = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *FunctionDefinitionBuilder {
 	b.children = append(b.children, services...)
 	return b
+}
+
+// applyDefaults fills in the properties the caller did not choose. See
+// ServiceDefinitionBuilder.applyDefaults.
+func (b *FunctionDefinitionBuilder) applyDefaults(defaults di.Defaults) {
+	if !b.chose.lazy {
+		b.def.SetLazy(defaults.Lazy)
+	}
+	if !b.chose.autowired {
+		b.def.SetAutowired(defaults.Autowired)
+	}
+	for _, child := range b.children {
+		child.applyDefaults(defaults)
+	}
 }
 
 func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {

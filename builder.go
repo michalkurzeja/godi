@@ -9,7 +9,8 @@ import (
 // New creates a new Builder.
 // This is the recommended entrypoint to the godi library.
 func New(opts ...BuilderOption) *Builder {
-	return &Builder{cb: di.NewContainerBuilder(newConfig(opts))}
+	conf := newConfig(opts)
+	return &Builder{cb: di.NewContainerBuilder(conf), defaults: conf.Defaults}
 }
 
 // Builder is a helper for building a container.
@@ -23,6 +24,10 @@ type Builder struct {
 	functions []*FunctionDefinitionBuilder
 	bindings  []*InterfaceBindingBuilder
 	passes    []*di.CompilerPass
+
+	// defaults are what a definition takes for the properties its own
+	// registration did not choose.
+	defaults di.Defaults
 
 	// prepared counts how many of each have been handed to the container
 	// builder already, so that reading the graph and then registering more
@@ -79,6 +84,7 @@ func (b *Builder) prepare() error {
 	b.prepared.services = len(b.services)
 
 	for _, builder := range services {
+		builder.applyDefaults(b.defaults)
 		if err := builder.ParseFactory(); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue
@@ -93,6 +99,7 @@ func (b *Builder) prepare() error {
 	}
 
 	for _, builder := range b.functions[b.prepared.functions:] {
+		builder.applyDefaults(b.defaults)
 		if err := builder.Build(b.cb.RootScope()); err != nil {
 			b.prepErr = errors.Join(b.prepErr, err)
 			continue

@@ -12,23 +12,34 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// Defaults for Definition properties. Change them
-// to change the default configuration of services.
-// These can be overridden per Definition.
+// Defaults for Definition properties, for a definition built without a Config
+// to take them from. These are what NewDefaults returns.
 var (
 	defaultLazy      = true
 	defaultShared    = true
 	defaultAutowired = true
 )
 
+// SetDefaultLazy sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container. A package-level
+// default means two containers in one process cannot disagree, a library that
+// sets one changes its host's containers, and a test that flips one leaks into
+// the next.
 func SetDefaultLazy(b bool) {
 	defaultLazy = b
 }
 
+// SetDefaultShared sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container.
 func SetDefaultShared(b bool) {
 	defaultShared = b
 }
 
+// SetDefaultAutowired sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container.
 func SetDefaultAutowired(b bool) {
 	defaultAutowired = b
 }
