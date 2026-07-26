@@ -25,10 +25,10 @@ type Builder struct {
 	bindings  []*InterfaceBindingBuilder
 	passes    []*di.CompilerPass
 
-	// prepared counts how many of each have been turned into definitions
-	// already, so that reading the graph and then registering more still
-	// builds the lot.
-	prepared struct{ services, functions, bindings int }
+	// prepared counts how many of each have been handed to the container
+	// builder already, so that reading the graph and then registering more
+	// still builds the lot.
+	prepared struct{ services, functions, bindings, passes int }
 	prepErr  error
 }
 
@@ -59,10 +59,6 @@ func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {
 func (b *Builder) Build() (Container, error) {
 	prepErr := b.prepare()
 
-	for _, pass := range b.passes {
-		b.cb.Compiler().AddPass(pass)
-	}
-
 	container, err := b.cb.Build()
 	err = errors.Join(prepErr, err)
 	if err != nil {
@@ -83,13 +79,18 @@ func (b *Builder) Graph(cfg graph.Config) *graph.Graph {
 	return b.cb.Graph(cfg)
 }
 
-// prepare turns the definition builders registered since last time into
-// definitions in the container builder, collecting everything that went wrong
-// rather than stopping at the first.
+// prepare hands everything registered since last time to the container builder:
+// the definition builders as definitions, and the compiler passes to the
+// compiler. It collects everything that went wrong rather than stopping at the
+// first.
 //
 // Each builder is prepared exactly once: the definitions it produces are the
 // same objects Build compiles, so preparing one twice would fill its arguments
 // twice. Anything registered after a graph was read is still waiting here.
+//
+// The passes go in here rather than in Build so that a prepared builder is
+// prepared: one still missing the passes the user registered would compile into
+// a different container than the one its graph describes.
 func (b *Builder) prepare() error {
 	services := b.services[b.prepared.services:]
 	b.prepared.services = len(b.services)
@@ -123,6 +124,11 @@ func (b *Builder) prepare() error {
 		}
 	}
 	b.prepared.bindings = len(b.bindings)
+
+	for _, pass := range b.passes[b.prepared.passes:] {
+		b.cb.Compiler().AddPass(pass)
+	}
+	b.prepared.passes = len(b.passes)
 
 	return b.prepErr
 }
