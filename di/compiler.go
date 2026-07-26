@@ -14,6 +14,12 @@ type CompilerPass struct {
 	priority int
 	op       CompilerOp
 
+	// seq is when this pass was added, and the last word on the order two
+	// passes run in. Sorting is not stable, and stability would say nothing
+	// across repeated sorts of a slice that has grown in between, so the order
+	// the docs promise is written down rather than hoped for.
+	seq int
+
 	argOrigin  ArgOrigin  // What a slot filled by this pass means.
 	bindOrigin BindOrigin // What a binding created by this pass means.
 }
@@ -127,13 +133,13 @@ func BasePasses(skipCycleValidation bool) Passes {
 
 func (passes Passes) sort() {
 	slices.SortFunc(passes, func(a, b *CompilerPass) int {
-		if a.stage != b.stage {
-			return cmp.Compare(a.stage, b.stage)
+		if c := cmp.Compare(a.stage, b.stage); c != 0 {
+			return c
 		}
-		if a.priority != b.priority {
-			return cmp.Compare(a.priority, b.priority)
+		if c := cmp.Compare(a.priority, b.priority); c != 0 {
+			return c
 		}
-		return 0
+		return cmp.Compare(a.seq, b.seq)
 	})
 }
 
@@ -142,6 +148,9 @@ func (passes Passes) sort() {
 // it possible to create services dynamically and automatically.
 type Compiler struct {
 	passes Passes
+	// added counts the passes registered so far, and is what each of them is
+	// stamped with.
+	added int
 
 	// running is the pass in progress, done names the ones that have finished,
 	// and failed the one that stopped compilation. A graph taken mid-build is
@@ -154,10 +163,16 @@ type Compiler struct {
 }
 
 func NewCompiler(conf CompilerConfig) *Compiler {
-	return &Compiler{passes: BasePasses(conf.SkipCycleValidation)}
+	c := &Compiler{}
+	for _, pass := range BasePasses(conf.SkipCycleValidation) {
+		c.AddPass(pass)
+	}
+	return c
 }
 
 func (c *Compiler) AddPass(pass *CompilerPass) {
+	pass.seq = c.added
+	c.added++
 	c.passes = append(c.passes, pass)
 }
 
