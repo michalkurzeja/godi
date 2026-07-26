@@ -27,6 +27,7 @@ import (
 
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/html"
+	"github.com/michalkurzeja/godi/v2/graph/json"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )
 
@@ -58,7 +59,7 @@ func (h *handler) page(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *handler) model(w http.ResponseWriter, _ *http.Request) {
-	h.write(w, graph.JSON())
+	h.write(w, json.New())
 }
 
 // write encodes into a buffer first. A page cut off halfway still arrives under

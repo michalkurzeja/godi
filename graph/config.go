@@ -8,22 +8,34 @@ import "reflect"
 // It says nothing about which nodes to keep: a source is asked for the whole
 // graph, and narrowing it is a separate step. See Filter and Graph.Select.
 type Config struct {
-	// LiteralValues includes the values of literal arguments, not just their
-	// types. Off by default: literals routinely carry connection strings and API
-	// keys, and graphs get committed and pasted into issues.
-	//
-	// Values that format as a machine address - a func, a channel, a plain
-	// pointer - are left out even when this is set, unless the type formats
-	// itself: an address says nothing and differs on every run.
-	LiteralValues bool
+	// Literals says how much of a literal argument to put in the graph.
+	Literals LiteralMode
 	// LiteralMax truncates included values to this many runes.
 	LiteralMax int
 	// Redactor, when set, is consulted for every literal value that would be
 	// included. Returning redact replaces the value with the given text.
 	Redactor func(typ reflect.Type, value any) (replacement string, redact bool)
-	// NoLiterals drops literal arguments from the graph entirely.
-	NoLiterals bool
 }
+
+// LiteralMode says how much of a literal argument a graph carries. Two
+// independent flags could contradict each other, and only one of the three
+// states they describe is worth having.
+type LiteralMode uint8
+
+const (
+	// LiteralTypes carries the type of each literal and not its value. The
+	// default: literals routinely carry connection strings and API keys, and
+	// graphs get committed and pasted into issues.
+	LiteralTypes LiteralMode = iota
+	// LiteralValues carries the values too.
+	//
+	// Values that format as a machine address - a func, a channel, a plain
+	// pointer - are left out even so, unless the type formats itself: an
+	// address says nothing and differs on every run.
+	LiteralValues
+	// LiteralNone leaves literal arguments out of the graph entirely.
+	LiteralNone
+)
 
 // Option configures extraction. Narrowing a graph down is a Filter instead.
 type Option func(*Config)
@@ -44,7 +56,7 @@ func NewConfig(opts ...Option) Config {
 // a DSN or a token.
 func WithLiteralValues(maxRunes int) Option {
 	return func(cfg *Config) {
-		cfg.LiteralValues = true
+		cfg.Literals = LiteralValues
 		cfg.LiteralMax = maxRunes
 	}
 }
@@ -57,5 +69,5 @@ func WithRedactor(fn func(typ reflect.Type, value any) (replacement string, reda
 
 // WithoutLiterals leaves literal arguments out of the graph entirely.
 func WithoutLiterals() Option {
-	return func(cfg *Config) { cfg.NoLiterals = true }
+	return func(cfg *Config) { cfg.Literals = LiteralNone }
 }

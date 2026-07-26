@@ -9,6 +9,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
 	"github.com/michalkurzeja/godi/v2/graph/html"
+	"github.com/michalkurzeja/godi/v2/graph/json"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
 
@@ -159,7 +160,7 @@ normalising it before a diff:
 	godi export json --indent '  ' graph.json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return export(cmd, args, graph.JSON(graph.Indent(indent)))
+			return export(cmd, args, json.New(json.Indent(indent)))
 		},
 	}
 

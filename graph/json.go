@@ -36,14 +36,17 @@ type envelope struct {
 // WriteJSON writes the graph as JSON, wrapped in an envelope carrying the schema
 // it was written against.
 //
-// This is the interchange format. It is how a container that failed to build
-// hands its graph to something that can draw it, without the library having to
-// depend on a renderer to do so.
+// This is the interchange format, and it lives on the model rather than in an
+// encoder package of its own: a container that failed to build hands its graph
+// to something that can draw it this way, and that must cost a godi binary no
+// new dependency at all. graph/json is the same thing as an Encoder.
 func (g *Graph) WriteJSON(w io.Writer) error {
-	return g.writeJSON(w, "")
+	return g.WriteJSONIndented(w, "")
 }
 
-func (g *Graph) writeJSON(w io.Writer, indent string) error {
+// WriteJSONIndented is WriteJSON with each level of nesting written out, for a
+// file meant to be read by eye.
+func (g *Graph) WriteJSONIndented(w io.Writer, indent string) error {
 	if g == nil {
 		return fmt.Errorf("graph: cannot write a nil graph")
 	}
@@ -107,41 +110,6 @@ func schemaMismatch(found string) string {
 		return fmt.Sprintf("this graph names no schema and was read as %s; some of it may be wrong", Schema)
 	}
 	return fmt.Sprintf("this graph was written as %s and read as %s; some of it may be wrong", found, Schema)
-}
-
-// JSONOption configures the JSON encoder.
-type JSONOption func(*jsonConfig)
-
-type jsonConfig struct {
-	indent string
-}
-
-// Indent writes each level of nesting with the given string. Defaults to none:
-// the format is written far more often than it is read by eye.
-func Indent(indent string) JSONOption {
-	return func(cfg *jsonConfig) { cfg.indent = indent }
-}
-
-// JSON returns an encoder for the interchange format, so that it can be reached
-// the same way as any other format. It writes what WriteJSON writes.
-func JSON(opts ...JSONOption) Encoder {
-	var cfg jsonConfig
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-	return &jsonEncoder{cfg: cfg}
-}
-
-type jsonEncoder struct {
-	cfg jsonConfig
-}
-
-func (e *jsonEncoder) Format() Format {
-	return Format{Name: "json", Ext: "json", MediaType: "application/json"}
-}
-
-func (e *jsonEncoder) Encode(g *Graph, w io.Writer) error {
-	return g.writeJSON(w, e.cfg.indent)
 }
 
 func godiVersion() string {

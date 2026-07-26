@@ -234,28 +234,6 @@ func TestStaticPresentsAGraphYouAlreadyHaveAsASource(t *testing.T) {
 	require.Same(t, want, got, "extraction already happened; the config has nothing left to say")
 }
 
-func TestTheEncoderWritesWhatReadJSONReads(t *testing.T) {
-	t.Parallel()
-
-	want := builtGraph(t)
-
-	var buf bytes.Buffer
-	require.NoError(t, want.Encode(&buf, graph.JSON(graph.Indent("  "))))
-	require.Contains(t, buf.String(), "\n  \"metadata\": {", "the indent reaches the output")
-
-	got, _, err := graph.ReadJSON(&buf)
-	require.NoError(t, err)
-	require.Equal(t, want.Nodes, got.Nodes)
-}
-
-func TestTheJSONEncoderNamesItsFormat(t *testing.T) {
-	t.Parallel()
-
-	require.Equal(t,
-		graph.Format{Name: "json", Ext: "json", MediaType: "application/json"},
-		graph.JSON().Format())
-}
-
 func TestReadJSONRejectsWhatItCannotUse(t *testing.T) {
 	t.Parallel()
 

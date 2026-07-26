@@ -143,14 +143,14 @@ func (x *extractor) hops(hops []di.BindingHop) []graph.BindingHop {
 }
 
 func (x *extractor) literal(p *graph.Param, v any) {
-	if x.cfg.NoLiterals {
+	if x.cfg.Literals == graph.LiteralNone {
 		return
 	}
 
 	typ := reflect.TypeOf(v)
 	lit := graph.Literal{Type: util.Signature(typ)}
 
-	if x.cfg.LiteralValues {
+	if x.cfg.Literals == graph.LiteralValues {
 		if x.cfg.Redactor != nil {
 			if replacement, redact := x.cfg.Redactor(typ, v); redact {
 				lit.Value, lit.Redacted = replacement, true

@@ -22,6 +22,7 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 	for _, pkg := range []string{
 		"github.com/michalkurzeja/godi/v2/graph/dot",
 		"github.com/michalkurzeja/godi/v2/graph/html",
+		"github.com/michalkurzeja/godi/v2/graph/json",
 		"github.com/michalkurzeja/godi/v2/graph/serve",
 		"github.com/michalkurzeja/godi/v2/graph/text",
 		"os/exec",
@@ -46,6 +47,7 @@ func TestTheGraphModelCarriesNoEngine(t *testing.T) {
 		"github.com/michalkurzeja/godi/v2/graph/dot",
 		"github.com/michalkurzeja/godi/v2/graph/text",
 		"github.com/michalkurzeja/godi/v2/graph/html",
+		"github.com/michalkurzeja/godi/v2/graph/json",
 	} {
 		deps := depsOf(t, pkg)
 		require.NotContains(t, deps, "github.com/michalkurzeja/godi/v2/di", "%s would carry the engine", pkg)
