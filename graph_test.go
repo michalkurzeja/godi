@@ -13,6 +13,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/extras"
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 )
 
 // The wiring fixtures. Kept deliberately small: each test builds the container
@@ -50,12 +51,50 @@ type Collector struct{ greeters []Greeter }
 
 func NewCollector(greeters ...Greeter) *Collector { return &Collector{greeters: greeters} }
 
-func extract(t *testing.T, src graph.Source, opts ...graph.Option) *graph.Graph {
+// graphOf extracts the graph of a built container. Build returns the Container
+// interface, so the concrete container - which is what extraction reads - comes
+// back out of it here.
+func graphOf(t *testing.T, c godi.Container, opts ...graph.Option) *graph.Graph {
 	t.Helper()
 
-	g, err := graph.Extract(src, opts...)
+	container, ok := c.(*di.Container)
+	require.True(t, ok, "a container godi built is a *di.Container")
+
+	g, err := extract.From(container, opts...)
 	require.NoError(t, err)
 	return g
+}
+
+// graphOfFailedBuild is the graph of a build that stopped partway: the builder
+// keeps its container so that the picture of where the compiler stopped
+// survives, and the failure snapshot is how a caller gets hold of it.
+func graphOfFailedBuild(t *testing.T, b *godi.Builder) *graph.Graph {
+	t.Helper()
+
+	dir := t.TempDir()
+	t.Setenv("GODI_SNAPSHOT_ON_BUILD_ERR", "true")
+	t.Setenv("GODI_SNAPSHOT_PATH", dir)
+
+	_, err := b.Build()
+	require.Error(t, err)
+
+	return snapshotIn(t, dir)
+}
+
+// graphAtPreAutomation is the wiring as declared, taken by a pass of the test's
+// own before godi has worked anything out. The build itself may fail - that is
+// what half the callers here are about - and the graph is taken either way.
+func graphAtPreAutomation(t *testing.T, b *godi.Builder) *graph.Graph {
+	t.Helper()
+
+	var seen *graph.Graph
+	_, _ = b.CompilerPasses(extras.CaptureGraph(di.PreAutomation, func(g *graph.Graph) error {
+		seen = g
+		return nil
+	})).Build()
+
+	require.NotNil(t, seen, "the capturing pass never ran")
+	return seen
 }
 
 // paramOf returns the single param of the node with the given type suffix at the
@@ -116,7 +155,7 @@ func TestGraphProvenance(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		p := paramOf(t, extract(t, c), "v2_test.(*Server)", 2)
+		p := paramOf(t, graphOf(t, c), "v2_test.(*Server)", 2)
 		require.Equal(t, graph.ArgOriginManual, p.Origin)
 		require.Empty(t, p.OriginPass)
 		require.Equal(t, graph.ArgKindLiteral, p.Arg)
@@ -134,7 +173,7 @@ func TestGraphProvenance(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		p := paramOf(t, extract(t, c), "v2_test.(*Server)", 1)
+		p := paramOf(t, graphOf(t, c), "v2_test.(*Server)", 1)
 		require.Equal(t, graph.ArgOriginManual, p.Origin)
 		require.Equal(t, graph.ArgKindType, p.Arg)
 	})
@@ -149,7 +188,7 @@ func TestGraphProvenance(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		p := paramOf(t, g, "v2_test.(*Server)", 1)
 		require.Equal(t, graph.ArgOriginAutowiring, p.Origin)
 		require.Equal(t, "autowiring", p.OriginPass)
@@ -170,7 +209,7 @@ func TestGraphProvenance(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		p := paramOf(t, g, "v2_test.(*Server)", 0)
 		require.Equal(t, graph.ArgOriginAutowiring, p.Origin)
 
@@ -198,7 +237,7 @@ func TestGraphProvenance(t *testing.T) {
 			Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		p := paramOf(t, g, "v2_test.(*Server)", 0)
 		require.Equal(t, graph.ArgOriginAutowiring, p.Origin, "the argument itself was still autowired")
 
@@ -222,7 +261,7 @@ func TestGraphProvenance(t *testing.T) {
 			Build()
 		require.NoError(t, err)
 
-		p := paramOf(t, extract(t, c), "v2_test.(*Server)", 2)
+		p := paramOf(t, graphOf(t, c), "v2_test.(*Server)", 2)
 		require.Equal(t, graph.ArgOriginCompilerPass, p.Origin)
 		require.Equal(t, "override arg", p.OriginPass,
 			"an overridden argument must not read as something the user typed")
@@ -240,7 +279,7 @@ func TestGraphProvenance(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		for _, n := range g.Nodes {
 			for _, p := range n.Params {
 				require.NotEqual(t, graph.ArgOriginCompilerPass, p.Origin,
@@ -263,7 +302,7 @@ func TestGraphSliceSemantics(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		p := paramOf(t, g, "v2_test.(*Collector)", 0)
 		require.True(t, p.Slice)
 		require.True(t, p.Variadic)
@@ -292,7 +331,7 @@ func TestGraphSliceSemantics(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		edges := edgesOf(g, paramOf(t, g, "v2_test.(*StoreGroup)", 0))
 
 		require.Len(t, edges, 1)
@@ -313,7 +352,7 @@ func TestGraphSliceSemantics(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		edges := edgesOf(g, paramOf(t, g, "v2_test.(*GreeterList)", 0))
 
 		require.Len(t, edges, 1, "the []Greeter service satisfies the slot on its own")
@@ -344,7 +383,7 @@ func TestGraphStructure(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		node := nodeOf(t, g, "v2_test.(*Server)")
 
 		var methodParams []*graph.Param
@@ -374,7 +413,7 @@ func TestGraphStructure(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		owner := nodeOf(t, g, "v2_test.(*Server)")
 		require.NotEmpty(t, owner.ChildScope)
 
@@ -408,7 +447,7 @@ func TestGraphIsDeterministic(t *testing.T) {
 
 	// Definition uuids differ between the two builds, so anything keyed by them
 	// would show up here.
-	require.Equal(t, stripUUIDs(extract(t, build())), stripUUIDs(extract(t, build())))
+	require.Equal(t, stripUUIDs(graphOf(t, build())), stripUUIDs(graphOf(t, build())))
 }
 
 func stripUUIDs(g *graph.Graph) *graph.Graph {
@@ -439,7 +478,7 @@ func TestGraphLiterals(t *testing.T) {
 	t.Run("values are left out by default", func(t *testing.T) {
 		t.Parallel()
 
-		p := paramOf(t, extract(t, newContainer(t)), "v2_test.(*Server)", 2)
+		p := paramOf(t, graphOf(t, newContainer(t)), "v2_test.(*Server)", 2)
 		require.Len(t, p.Literals, 1)
 		require.Equal(t, "string", p.Literals[0].Type)
 		require.Empty(t, p.Literals[0].Value, "a literal is often a secret")
@@ -448,7 +487,7 @@ func TestGraphLiterals(t *testing.T) {
 	t.Run("values are included and truncated on request", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, newContainer(t), graph.WithLiteralValues(8))
+		g := graphOf(t, newContainer(t), graph.WithLiteralValues(8))
 		p := paramOf(t, g, "v2_test.(*Server)", 2)
 		require.Equal(t, "postgres", p.Literals[0].Value)
 		require.True(t, p.Literals[0].Truncated)
@@ -457,7 +496,7 @@ func TestGraphLiterals(t *testing.T) {
 	t.Run("a redactor can filter them", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, newContainer(t),
+		g := graphOf(t, newContainer(t),
 			graph.WithLiteralValues(0),
 			graph.WithRedactor(func(_ reflect.Type, v any) (string, bool) {
 				if s, ok := v.(string); ok && strings.Contains(s, "@") {
@@ -475,7 +514,7 @@ func TestGraphLiterals(t *testing.T) {
 	t.Run("they can be dropped entirely", func(t *testing.T) {
 		t.Parallel()
 
-		p := paramOf(t, extract(t, newContainer(t), graph.WithoutLiterals()), "v2_test.(*Server)", 2)
+		p := paramOf(t, graphOf(t, newContainer(t), graph.WithoutLiterals()), "v2_test.(*Server)", 2)
 		require.Empty(t, p.Literals)
 	})
 
@@ -494,7 +533,7 @@ func TestGraphLiterals(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c, graph.WithLiteralValues(0))
+		g := graphOf(t, c, graph.WithLiteralValues(0))
 		for i, wantType := range []string{"func(int) string", "chan int", "*int"} {
 			p := paramOf(t, g, "v2_test.(*Oddments)", i)
 			require.Len(t, p.Literals, 1)
@@ -509,7 +548,7 @@ func TestGraphLiterals(t *testing.T) {
 		c, err := godi.New().Services(godi.Svc(NewSelfDescribing, SelfDescribing{})).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c, graph.WithLiteralValues(0))
+		g := graphOf(t, c, graph.WithLiteralValues(0))
 		p := paramOf(t, g, "v2_test.(*Described)", 0)
 		require.Equal(t, "I describe myself", p.Literals[0].Value)
 	})
@@ -543,7 +582,7 @@ func TestGraphRoots(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		server := nodeOf(t, g, "v2_test.(*Server)")
 		store := nodeOf(t, g, "v2_test.(*Store)")
 
@@ -562,7 +601,7 @@ func TestGraphRoots(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		require.True(t, nodeOf(t, g, "v2_test.(*Store)").Root)
 	})
 
@@ -576,7 +615,7 @@ func TestGraphRoots(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		g := extract(t, c)
+		g := graphOf(t, c)
 		server := nodeOf(t, g, "v2_test.(*Server)")
 		store := nodeOf(t, g, "v2_test.(*Store)")
 
@@ -597,7 +636,7 @@ func TestGraphSurvivesCycles(t *testing.T) {
 	).Build()
 	require.NoError(t, err)
 
-	g := extract(t, c) // Terminates: the walk must not assume the graph is acyclic.
+	g := graphOf(t, c) // Terminates: the walk must not assume the graph is acyclic.
 
 	var cycles int
 	for _, e := range g.Edges {
@@ -627,7 +666,7 @@ func TestGraphFromBuilderShowsWiringBeforeAutowiring(t *testing.T) {
 		CompilerPasses(di.NewCompilerPass("snapshot", di.PreAutomation, di.CompilerOpFunc(
 			func(b *di.ContainerBuilder) error {
 				var err error
-				seen, err = graph.Extract(b)
+				seen, err = extract.FromBuilder(b)
 				return err
 			},
 		))).
@@ -658,7 +697,7 @@ func TestASnapshotSaysHowFarCompilationHadGot(t *testing.T) {
 		return di.NewCompilerPass(name, stage, di.CompilerOpFunc(
 			func(b *di.ContainerBuilder) error {
 				var err error
-				*into, err = graph.Extract(b)
+				*into, err = extract.FromBuilder(b)
 				return err
 			},
 		))
@@ -687,25 +726,18 @@ func TestASnapshotSaysHowFarCompilationHadGot(t *testing.T) {
 	require.Equal(t, []string{"look early", "interface binding", "autowiring"}, late.Snapshot.Done,
 		"the passes that had run are what says how much of the wiring is here")
 
-	require.False(t, extract(t, c).Partial(), "a built container is not a snapshot")
+	require.False(t, graphOf(t, c).Partial(), "a built container is not a snapshot")
 }
 
 // The build that failed is the one worth graphing, and the builder is still
 // standing afterwards. What the graph has to say is where the compiler stopped.
 func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
-	t.Parallel()
-
 	// Nothing provides the store, so autowiring fills the slot with a type
 	// argument and validation then finds nothing of that type.
-	b := godi.New().Services(
+	g := graphOfFailedBuild(t, godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
 		godi.Svc(NewEnGreeter),
-	)
-
-	_, err := b.Build()
-	require.ErrorContains(t, err, "argument validation")
-
-	g := extract(t, b)
+	))
 
 	require.Equal(t, "argument validation", g.Snapshot.Failed)
 	require.True(t, g.Snapshot.Autowired, "autowiring ran before the pass that failed")
@@ -718,16 +750,10 @@ func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
 // Finding the service that failed by reading every argument of every service is
 // the work the graph is supposed to save.
 func TestTheNodeThatStoppedTheBuildIsMarkedIncomplete(t *testing.T) {
-	t.Parallel()
-
-	b := godi.New().Services(
+	g := graphOfFailedBuild(t, godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
 		godi.Svc(NewEnGreeter),
-	)
-	_, err := b.Build()
-	require.Error(t, err)
-
-	g := extract(t, b)
+	))
 
 	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete,
 		"the service missing a dependency is the one to find")
@@ -738,8 +764,6 @@ func TestTheNodeThatStoppedTheBuildIsMarkedIncomplete(t *testing.T) {
 // An argument nothing filled fails no lookup, so nothing reported it and the
 // list of what was wrong came up one short of the nodes marked wrong.
 func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
-	t.Parallel()
-
 	b := godi.New().
 		Services(
 			// Not autowired, and the address was never supplied.
@@ -750,10 +774,8 @@ func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
 		// Nothing autowires this definition, so nothing binds the interface for
 		// it either: without this the graph would have two faults in it.
 		Bindings(godi.BindType[Greeter, EnGreeter]())
-	_, err := b.Build()
-	require.ErrorContains(t, err, "argument 2 is not set")
 
-	g := extract(t, b)
+	g := graphOfFailedBuild(t, b)
 
 	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete)
 	require.Len(t, g.Diagnostics, 1, "one thing is wrong, so one thing is reported")
@@ -764,14 +786,12 @@ func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
 // Before autowiring runs every argument is unwired, so marking each of them
 // would point at everything, which is the same as pointing at nothing.
 func TestNothingIsIncompleteBeforeAutowiringHasRun(t *testing.T) {
-	t.Parallel()
-
 	b := godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
 		godi.Svc(NewEnGreeter),
 	)
 
-	for _, n := range extract(t, b).Nodes {
+	for _, n := range graphAtPreAutomation(t, b).Nodes {
 		require.False(t, n.Incomplete, "%s is only waiting to be wired", n.ID)
 	}
 }
@@ -786,24 +806,24 @@ func TestABuiltContainerHasNothingIncompleteInIt(t *testing.T) {
 	).Build()
 	require.NoError(t, err)
 
-	for _, n := range extract(t, c).Nodes {
+	for _, n := range graphOf(t, c).Nodes {
 		require.False(t, n.Incomplete, "%s", n.ID)
 	}
 }
 
-func TestABuilderIsAGraphSourceBeforeItIsBuilt(t *testing.T) {
-	t.Parallel()
-
+// The wiring as declared is a graph too, and the one to read when the container
+// will not build - the point at which there is no container to read.
+func TestTheWiringIsAGraphBeforeGodiHasWorkedAnythingOut(t *testing.T) {
 	b := godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
 		godi.Svc(NewEnGreeter),
 		godi.Svc(NewStore),
 	)
 
-	g := extract(t, b)
+	g := graphAtPreAutomation(t, b)
 
 	require.True(t, g.Partial())
-	require.Empty(t, g.Snapshot.Pass, "nothing is compiling yet")
+	require.Empty(t, g.Snapshot.Done, "nothing had run yet")
 	require.ElementsMatch(t,
 		[]string{"v2_test.(*Server)", "v2_test.EnGreeter", "v2_test.(*Store)"}, nodeTypes(g))
 
@@ -813,66 +833,12 @@ func TestABuilderIsAGraphSourceBeforeItIsBuilt(t *testing.T) {
 	require.Empty(t, g.Edges)
 }
 
-// The definitions the graph is read from are the ones Build compiles, so
-// reading has to leave them exactly as it found them.
-func TestReadingTheGraphDoesNotDisturbTheBuild(t *testing.T) {
-	t.Parallel()
-
-	b := godi.New().Services(
-		godi.Svc(NewServer, "localhost:8080"),
-		godi.Svc(NewEnGreeter),
-		godi.Svc(NewStore),
-	)
-
-	extract(t, b)
-	extract(t, b)
-
-	c, err := b.Build()
-	require.NoError(t, err)
-
-	server, err := godi.SvcByType[*Server](c)
-	require.NoError(t, err)
-	require.Equal(t, "localhost:8080", server.addr)
-
-	g := extract(t, c)
-	require.False(t, g.Partial())
-	require.Len(t, paramOf(t, g, "v2_test.(*Server)", 2).Literals, 1, "the argument was filled once")
-}
-
-// Reading the graph is not a commitment to build what it showed: whatever you
-// register afterwards has to end up in the container, and nothing would say so
-// if it did not.
-func TestRegisteringAfterReadingTheGraphStillBuilds(t *testing.T) {
-	t.Parallel()
-
-	b := godi.New().Services(godi.Svc(NewStore))
-
-	require.ElementsMatch(t, []string{"v2_test.(*Store)"}, nodeTypes(extract(t, b)))
-
-	b.Services(godi.Svc(NewEnGreeter))
-
-	require.ElementsMatch(t,
-		[]string{"v2_test.(*Store)", "v2_test.EnGreeter"}, nodeTypes(extract(t, b)))
-
-	c, err := b.Build()
-	require.NoError(t, err)
-
-	_, err = godi.SvcByType[EnGreeter](c)
-	require.NoError(t, err, "a service registered after the graph was read is missing")
-}
-
 func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 	t.Parallel()
 
-	_, err := graph.Extract(nilSource{})
+	_, err := graph.Extract(func(graph.Config) (*graph.Graph, error) { return nil, nil })
 	require.ErrorContains(t, err, "produced no graph")
 }
-
-// nilSource stands in for a mock container: it satisfies Source but has no
-// wiring to describe.
-type nilSource struct{}
-
-func (nilSource) Graph(graph.Config) *graph.Graph { return nil }
 
 // --- source locations -------------------------------------------------------
 
@@ -898,8 +864,7 @@ func TestLocationsPointAtTheWiringAndTheFactory(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
-	require.NoError(t, err)
+	g := graphOf(t, c)
 
 	svc := serviceByType(t, g, "locService")
 	fn := nodeByKind(t, g, graph.NodeFunction)
@@ -924,8 +889,7 @@ func TestASynthesisedFactoryHasNoDefinitionSite(t *testing.T) {
 	c, err := godi.New().Services(godi.SvcVal("hello")).Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
-	require.NoError(t, err)
+	g := graphOf(t, c)
 
 	node := serviceByType(t, g, "string")
 	require.True(t, node.Defined.IsZero(), "got %s", node.Defined)
@@ -939,8 +903,7 @@ func TestPathsAreRelativeToASharedRoot(t *testing.T) {
 	c, err := godi.New().Services(godi.Svc(newLocService)).Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
-	require.NoError(t, err)
+	g := graphOf(t, c)
 
 	require.True(t, filepath.IsAbs(g.SourceRoot), "the root carries the absolute part")
 	for _, node := range g.Nodes {
@@ -972,8 +935,7 @@ func TestAPassIsCreditedWithWhatItRegisters(t *testing.T) {
 	c, err := godi.New().CompilerPasses(pass).Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
-	require.NoError(t, err)
+	g := graphOf(t, c)
 
 	node := serviceByType(t, g, "locService")
 	require.Equal(t, passFile, filepath.Join(g.SourceRoot, node.Registered.File))
@@ -1041,7 +1003,7 @@ func TestSelectNarrowsAnExtractedGraph(t *testing.T) {
 	t.Run("a focus narrows the graph to what surrounds the selection", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t)).Select(graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Consumers(1)))
+		g := graphOf(t, build(t)).Select(graph.Focus(graph.ByType("*v2_test.(*Store)"), graph.Consumers(1)))
 
 		require.ElementsMatch(t, []string{"v2_test.(*Store)", "v2_test.(*Server)"}, nodeTypes(g))
 	})
@@ -1049,7 +1011,7 @@ func TestSelectNarrowsAnExtractedGraph(t *testing.T) {
 	t.Run("an exclusion drops what it names", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t)).Select(graph.ExcludeLabels("storage"))
+		g := graphOf(t, build(t)).Select(graph.ExcludeLabels("storage"))
 
 		require.NotContains(t, nodeTypes(g), "v2_test.(*Store)")
 	})
@@ -1057,7 +1019,7 @@ func TestSelectNarrowsAnExtractedGraph(t *testing.T) {
 	t.Run("the graph is whole when nothing is filtered", func(t *testing.T) {
 		t.Parallel()
 
-		g := extract(t, build(t)).Select()
+		g := graphOf(t, build(t)).Select()
 
 		require.Len(t, g.Nodes, 3)
 	})
@@ -1090,7 +1052,7 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 	).Build()
 	require.NoError(t, err)
 
-	g := extract(t, c)
+	g := graphOf(t, c)
 
 	t.Run("a named function is named, and points at its own source", func(t *testing.T) {
 		n := nodeOf(t, g, "v2_test.Validate")
@@ -1134,7 +1096,7 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 		c, err := godi.New().Services(godi.SvcVal[Validate](rules.Check)).Build()
 		require.NoError(t, err)
 
-		n := nodeOf(t, extract(t, c), "v2_test.Validate")
+		n := nodeOf(t, graphOf(t, c), "v2_test.Validate")
 
 		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.Rules.Check", n.Name,
 			"the suffix the compiler puts on a method value is not part of the name")
@@ -1148,7 +1110,7 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 		).Build()
 		require.NoError(t, err)
 
-		n := nodeOf(t, extract(t, c), "v2_test.Validate")
+		n := nodeOf(t, graphOf(t, c), "v2_test.Validate")
 
 		require.True(t, n.Anonymous())
 		require.Equal(t, "func(string) error", n.Signature)

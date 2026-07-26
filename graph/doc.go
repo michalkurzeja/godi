@@ -5,22 +5,25 @@
 //
 //	c, err := di.New().Services(...).Build()
 //
-//	g, err := graph.Extract(c)
+//	g, err := extract.From(c.(*di.Container))
 //	err = g.Encode(os.Stdout, dot.New())
+//
+// Reading a container is graph/extract's job, not this package's: the model is
+// a leaf, and stays one, so that anything holding a graph - an encoder, a tool
+// reading a file - carries none of the container engine.
 //
 // Encoders live in their own packages - graph/dot, graph/text, graph/html - so
 // that a program only compiles the formats it asks for. The model itself is
-// plain data with no dependency on the container, so a third party can add a
-// format by implementing Encoder.
+// plain data, so a third party can add a format by implementing Encoder.
 //
 // # Wiring that is not finished yet
 //
-// A graph can also be taken from a container that is still being built: from a
-// *di.ContainerBuilder, from the fluent builder before Build, or from inside a
-// compiler pass. What a later pass would have wired is simply not there, so
-// those graphs carry a Snapshot saying when they were taken and which passes
-// had run, and every encoder passes that on. Without it a half-wired graph
-// reads as a finished one with dependencies missing.
+// A graph can also be taken from a container that is still being built: with
+// extract.FromBuilder, from inside a compiler pass or after a build that
+// failed. What a later pass would have wired is simply not there, so those
+// graphs carry a Snapshot saying when they were taken and which passes had run,
+// and every encoder passes that on. Without it a half-wired graph reads as a
+// finished one with dependencies missing.
 //
 // # Provenance
 //

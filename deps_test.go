@@ -19,14 +19,7 @@ import (
 func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 	t.Parallel()
 
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("no go toolchain to ask about dependencies")
-	}
-
-	out, err := exec.Command("go", "list", "-deps", "github.com/michalkurzeja/godi/v2").Output()
-	require.NoError(t, err)
-
-	deps := strings.Fields(string(out))
+	deps := depsOf(t, "github.com/michalkurzeja/godi/v2")
 	for _, pkg := range []string{
 		"github.com/michalkurzeja/godi/v2/graph/dot",
 		"github.com/michalkurzeja/godi/v2/graph/html",
@@ -42,4 +35,35 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 	} {
 		require.NotContains(t, deps, pkg, "every godi binary would carry %s", pkg)
 	}
+}
+
+// The model is a leaf, and that is what makes it worth having as a wire format:
+// a tool that only reads a graph - the godi CLI reading a file above all -
+// carries no container engine, and neither does a third-party encoder.
+func TestTheGraphModelCarriesNoEngine(t *testing.T) {
+	t.Parallel()
+
+	for _, pkg := range []string{
+		"github.com/michalkurzeja/godi/v2/graph",
+		"github.com/michalkurzeja/godi/v2/graph/dot",
+		"github.com/michalkurzeja/godi/v2/graph/text",
+		"github.com/michalkurzeja/godi/v2/graph/html",
+	} {
+		deps := depsOf(t, pkg)
+		require.NotContains(t, deps, "github.com/michalkurzeja/godi/v2/di", "%s would carry the engine", pkg)
+		require.NotContains(t, deps, "github.com/michalkurzeja/godi/v2", "%s would carry the facade", pkg)
+	}
+}
+
+func depsOf(t *testing.T, pkg string) []string {
+	t.Helper()
+
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain to ask about dependencies")
+	}
+
+	out, err := exec.Command("go", "list", "-deps", pkg).Output()
+	require.NoError(t, err)
+
+	return strings.Fields(string(out))
 }

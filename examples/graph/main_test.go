@@ -17,10 +17,9 @@ func TestOpenDrawsTheSameGraphAsStdout(t *testing.T) {
 	var opened *graph.Graph
 
 	restore := openGraph
-	openGraph = func(src graph.Source, _ graph.Encoder, opts ...graph.Option) (string, error) {
-		g, err := graph.Extract(src, opts...)
+	openGraph = func(g *graph.Graph, _ graph.Encoder) (string, error) {
 		opened = g
-		return "", err
+		return "", nil
 	}
 	t.Cleanup(func() { openGraph = restore })
 
@@ -68,7 +67,7 @@ func TestSnapshotDrawsTheWiringBeforeItIsCompiled(t *testing.T) {
 	var out bytes.Buffer
 	require(t, run("text", "", "", "", false, true, &out))
 
-	if !strings.Contains(out.String(), "snapshot: taken before the container was compiled") {
+	if !strings.Contains(out.String(), "snapshot: taken during the graph snapshot pass") {
 		t.Errorf("the snapshot does not say it is one:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "autowiring") {

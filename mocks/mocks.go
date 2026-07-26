@@ -9,7 +9,6 @@ import (
 	"reflect"
 
 	"github.com/michalkurzeja/godi/v2"
-	"github.com/michalkurzeja/godi/v2/graph"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -762,59 +761,6 @@ func (_c *Container_GetServicesIDsByType_Call) Return(vs []di.ID) *Container_Get
 }
 
 func (_c *Container_GetServicesIDsByType_Call) RunAndReturn(run func(typ reflect.Type) []di.ID) *Container_GetServicesIDsByType_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// Graph provides a mock function for the type Container
-func (_mock *Container) Graph(cfg graph.Config) *graph.Graph {
-	ret := _mock.Called(cfg)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Graph")
-	}
-
-	var r0 *graph.Graph
-	if returnFunc, ok := ret.Get(0).(func(graph.Config) *graph.Graph); ok {
-		r0 = returnFunc(cfg)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*graph.Graph)
-		}
-	}
-	return r0
-}
-
-// Container_Graph_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Graph'
-type Container_Graph_Call struct {
-	*mock.Call
-}
-
-// Graph is a helper method to define mock.On call
-//   - cfg graph.Config
-func (_e *Container_Expecter) Graph(cfg any) *Container_Graph_Call {
-	return &Container_Graph_Call{Call: _e.mock.On("Graph", cfg)}
-}
-
-func (_c *Container_Graph_Call) Run(run func(cfg graph.Config)) *Container_Graph_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 graph.Config
-		if args[0] != nil {
-			arg0 = args[0].(graph.Config)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *Container_Graph_Call) Return(graph1 *graph.Graph) *Container_Graph_Call {
-	_c.Call.Return(graph1)
-	return _c
-}
-
-func (_c *Container_Graph_Call) RunAndReturn(run func(cfg graph.Config) *graph.Graph) *Container_Graph_Call {
 	_c.Call.Return(run)
 	return _c
 }

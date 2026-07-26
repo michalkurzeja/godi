@@ -12,7 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	godi "github.com/michalkurzeja/godi/v2"
+	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/serve"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
@@ -31,7 +33,7 @@ func testGraph(t *testing.T) *graph.Graph {
 	c, err := godi.New().Services(godi.Svc(NewServer), godi.Svc(NewStore)).Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
+	g, err := extract.From(c.(*di.Container))
 	require.NoError(t, err)
 	return g
 }
@@ -43,9 +45,11 @@ type countingSource struct {
 	calls int
 }
 
-func (s *countingSource) Graph(graph.Config) *graph.Graph {
-	s.calls++
-	return s.g
+func (s *countingSource) source() graph.Source {
+	return func(graph.Config) (*graph.Graph, error) {
+		s.calls++
+		return s.g, nil
+	}
 }
 
 func get(t *testing.T, h http.Handler, path string) *http.Response {
@@ -77,7 +81,7 @@ func TestTheGraphIsExtractedOnEveryRequest(t *testing.T) {
 	t.Parallel()
 
 	src := &countingSource{g: testGraph(t)}
-	h := serve.Handler(src, serve.WithEncoder(text.New()))
+	h := serve.Handler(src.source(), serve.WithEncoder(text.New()))
 
 	for range 3 {
 		get(t, h, "/").Body.Close()
@@ -129,7 +133,7 @@ func TestASourceWithNoGraphIsAnError(t *testing.T) {
 
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	require.Contains(t, string(body), "produced no graph")
+	require.Contains(t, string(body), "no graph")
 }
 
 func TestAnythingElseIsNotFound(t *testing.T) {

@@ -20,3 +20,12 @@ exclude-subpkg-regex:
 
 packages:
   github.com/michalkurzeja/godi/v2:
+  # Arg is sealed - its methods are unexported, so nothing outside the package
+  # can implement it and a generated mock does not compile. Naming the other two
+  # is how it is left out, since `all` would take it back.
+  github.com/michalkurzeja/godi/v2/di:
+    config:
+      all: false
+    interfaces:
+      CompilerOp:
+      Definition:

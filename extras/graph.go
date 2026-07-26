@@ -5,6 +5,7 @@ import (
 
 	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 )
 
 // CaptureGraph is a compiler pass that hands the dependency graph, as it stands
@@ -32,7 +33,7 @@ func CaptureGraph(stage di.CompilerStage, capture func(*graph.Graph) error, opts
 		if capture == nil {
 			return errors.New("cannot capture the graph: no capture function")
 		}
-		g, err := graph.Extract(builder, opts...)
+		g, err := extract.FromBuilder(builder, opts...)
 		if err != nil {
 			return err
 		}

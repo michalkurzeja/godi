@@ -7,7 +7,6 @@ import (
 
 	"github.com/elliotchance/orderedmap/v2"
 
-	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/iterx"
 )
 
@@ -86,17 +85,10 @@ func (c *Container) GetBindingFor(typ reflect.Type) (Arg, bool) {
 
 // Deprecated: use the graph package with the text encoder:
 //
-//	g, err := graph.Extract(c)
+//	g, err := extract.From(c)
 //	err = g.Encode(w, text.New())
 func (c *Container) Print(w io.Writer) {
 	Print(c.root, w)
-}
-
-// Graph returns the dependency graph of the container.
-//
-// Prefer graph.Extract, which takes the options rather than a built Config.
-func (c *Container) Graph(cfg graph.Config) *graph.Graph {
-	return newExtractor(c, cfg, nil).extract()
 }
 
 // Root is the scope everything else hangs off.

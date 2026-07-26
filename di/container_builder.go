@@ -4,7 +4,6 @@ import (
 	"errors"
 	"iter"
 
-	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/iterx"
 )
@@ -61,25 +60,6 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 			}
 		}
 	}
-}
-
-// Graph returns the dependency graph of the container being built, as it stands
-// right now. Called from a compiler pass, it shows the wiring before later
-// passes - autowiring included - have had their say.
-//
-// The graph carries a graph.Snapshot saying how far compilation had got, so
-// that missing wiring reads as work still to do rather than as a broken
-// container.
-//
-// A successful Build nils out the builder's container and this then returns
-// nil. A failed one does not, which is deliberate: the graph of where the
-// compiler stopped is the one worth looking at.
-func (b *ContainerBuilder) Graph(cfg graph.Config) *graph.Graph {
-	if b.container == nil {
-		return nil
-	}
-
-	return newExtractor(b.container, cfg, b.compiler.snapshot()).extract()
 }
 
 // Container is the container being built, and nil once Build has handed it

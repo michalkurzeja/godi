@@ -2,17 +2,10 @@ package graph
 
 import "reflect"
 
-// Source is anything a dependency graph can be extracted from. It is implemented
-// by a built container and by *di.ContainerBuilder, so a compiler pass can graph
-// the container mid-compilation, before autowiring has run.
-type Source interface {
-	Graph(cfg Config) *Graph
-}
-
 // Config tells the extractor what to put in the graph. Build it with NewConfig,
 // or leave it zero for the defaults.
 //
-// It says nothing about which nodes to keep: a Source is asked for the whole
+// It says nothing about which nodes to keep: a source is asked for the whole
 // graph, and narrowing it is a separate step. See Filter and Graph.Select.
 type Config struct {
 	// LiteralValues includes the values of literal arguments, not just their

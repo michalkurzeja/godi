@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )
 
@@ -215,19 +214,6 @@ func (c *Compiler) Progress() CompilerProgress {
 		p.Stage, p.Pass = c.running.stage.String(), c.running.name
 	}
 	return p
-}
-
-// snapshot describes how far compilation has got, for a graph taken while it is
-// still going on.
-func (c *Compiler) snapshot() *graph.Snapshot {
-	p := c.Progress()
-	return &graph.Snapshot{
-		Stage:     p.Stage,
-		Pass:      p.Pass,
-		Failed:    p.Failed,
-		Done:      p.Done,
-		Autowired: p.Autowired,
-	}
 }
 
 // creditPendingWiring names whoever is responsible for the wiring changed since

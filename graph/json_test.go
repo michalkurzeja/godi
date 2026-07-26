@@ -3,13 +3,17 @@ package graph_test
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	godi "github.com/michalkurzeja/godi/v2"
+	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 )
 
 // JSON is the interchange format: the library writes it when a build fails, and
@@ -48,25 +52,36 @@ func builtGraph(t *testing.T) *graph.Graph {
 	).Build()
 	require.NoError(t, err)
 
-	g, err := graph.Extract(c)
+	g, err := extract.From(c.(*di.Container))
 	require.NoError(t, err)
 	return g
 }
 
 // failedGraph is a graph of a build that stopped, which is the case the format
-// exists for.
+// exists for. The builder keeps its container when the compiler stops, which is
+// what leaves anything to graph at all.
 func failedGraph(t *testing.T) *graph.Graph {
 	t.Helper()
 
-	b := godi.New().Services(
+	dir := t.TempDir()
+	t.Setenv("GODI_SNAPSHOT_ON_BUILD_ERR", "true")
+	t.Setenv("GODI_SNAPSHOT_PATH", dir)
+
+	_, err := godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
 		godi.Svc(NewEnGreeter),
-	)
-
-	_, err := b.Build()
+	).Build()
 	require.Error(t, err)
 
-	g, err := graph.Extract(b)
+	found, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	require.NoError(t, err)
+	require.Len(t, found, 1, "the failed build wrote its graph")
+
+	f, err := os.Open(found[0])
+	require.NoError(t, err)
+	defer f.Close()
+
+	g, _, err := graph.ReadJSON(f)
 	require.NoError(t, err)
 	return g
 }
@@ -101,9 +116,9 @@ func TestAGraphSurvivesTheRoundTrip(t *testing.T) {
 
 // A partial graph that lost its snapshot would read as a finished container with
 // dependencies missing, which is the one thing the snapshot exists to prevent.
+// Not parallel: getting a failed build's graph means asking godi to write one,
+// and that is an environment variable.
 func TestAPartialGraphKeepsItsSnapshot(t *testing.T) {
-	t.Parallel()
-
 	want := failedGraph(t)
 	require.Equal(t, "argument validation", want.Snapshot.Failed)
 

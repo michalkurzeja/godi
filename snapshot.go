@@ -7,6 +7,7 @@ import (
 
 	"github.com/michalkurzeja/godi/v2/di"
 	"github.com/michalkurzeja/godi/v2/graph"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 )
 
 // What godi reads from the environment when a build fails. Both are off, and
@@ -41,12 +42,10 @@ func (b *Builder) reportFailedBuild(container *di.Container) {
 	// A non-nil container means compilation finished and only preparing the
 	// definitions failed. The builder has handed its container over by then and
 	// has no graph left to give.
-	src := graph.Source(b)
+	g, err := extract.FromBuilder(b.cb)
 	if container != nil {
-		src = container
+		g, err = extract.From(container)
 	}
-
-	g, err := graph.Extract(src)
 	if err != nil {
 		warnNoSnapshot(err)
 		return

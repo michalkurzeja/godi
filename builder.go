@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/michalkurzeja/godi/v2/di"
-	"github.com/michalkurzeja/godi/v2/graph"
 )
 
 // New creates a new Builder.
@@ -31,10 +30,6 @@ type Builder struct {
 	prepared struct{ services, functions, bindings, passes int }
 	prepErr  error
 }
-
-// A Builder is a graph.Source too, so the wiring can be read before it is
-// compiled.
-var _ graph.Source = (*Builder)(nil)
 
 func (b *Builder) Services(services ...*ServiceDefinitionBuilder) *Builder {
 	b.services = append(b.services, services...)
@@ -65,18 +60,6 @@ func (b *Builder) Build() (Container, error) {
 		b.reportFailedBuild(container)
 	}
 	return container, err
-}
-
-// Graph returns the dependency graph of the container as it is configured so
-// far, before any of it is compiled: arguments you wrote are there, and the
-// ones godi would autowire are not yet. The graph says so - see graph.Snapshot.
-//
-// It is how you see what you have declared without building it, and the
-// counterpart to taking a graph from a compiler pass, which shows a later
-// moment. Building afterwards is unaffected.
-func (b *Builder) Graph(cfg graph.Config) *graph.Graph {
-	_ = b.prepare() // Whatever failed to build is missing from the graph, and Build reports it.
-	return b.cb.Graph(cfg)
 }
 
 // prepare hands everything registered since last time to the container builder:

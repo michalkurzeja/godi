@@ -1,4 +1,4 @@
-package di
+package extract
 
 import (
 	"testing"

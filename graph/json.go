@@ -109,23 +109,6 @@ func schemaMismatch(found string) string {
 	return fmt.Sprintf("this graph was written as %s and read as %s; some of it may be wrong", found, Schema)
 }
 
-// Static presents a graph you already have as a Source, so that anything taking
-// one - serve, Extract - works on a graph read from a file as readily as on a
-// live container.
-func Static(g *Graph) Source {
-	return staticSource{g: g}
-}
-
-type staticSource struct {
-	g *Graph
-}
-
-// Graph ignores the config. Extraction has already happened, and the config only
-// says what to extract.
-func (s staticSource) Graph(Config) *Graph {
-	return s.g
-}
-
 // JSONOption configures the JSON encoder.
 type JSONOption func(*jsonConfig)
 

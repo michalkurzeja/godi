@@ -46,6 +46,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/extras"
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/html"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 	"github.com/michalkurzeja/godi/v2/graph/view"
@@ -204,19 +205,6 @@ func main() {
 }
 
 func run(format, theme, layout, link string, show, snapshot bool, w io.Writer) error {
-	// A builder is a graph source too. Graphing one shows what you declared and
-	// nothing godi worked out for you, which is the picture to look at when the
-	// container will not build - the point at which there is no container to
-	// graph at all.
-	var src graph.Source = configure()
-	if !snapshot {
-		c, err := build()
-		if err != nil {
-			return err
-		}
-		src = c
-	}
-
 	enc, err := encoder(format, theme, layout, link)
 	if err != nil {
 		return err
@@ -230,8 +218,13 @@ func run(format, theme, layout, link string, show, snapshot bool, w io.Writer) e
 	// and not the other would quietly draw two different graphs.
 	opts := []graph.Option{graph.WithLiteralValues(28)}
 
+	g, err := extractGraph(snapshot, opts)
+	if err != nil {
+		return err
+	}
+
 	if show {
-		path, err := openGraph(src, enc, opts...)
+		path, err := openGraph(g, enc)
 		if err != nil {
 			return err
 		}
@@ -239,17 +232,38 @@ func run(format, theme, layout, link string, show, snapshot bool, w io.Writer) e
 		return nil
 	}
 
-	g, err := graph.Extract(src, opts...)
-	if err != nil {
-		return err
-	}
 	return g.Encode(w, enc)
+}
+
+// extractGraph is the finished container's graph, or - with -snapshot - the
+// wiring partway through compilation, taken by a pass of the example's own
+// before godi has worked anything out. That is the picture to look at when the
+// container will not build, the point at which there is no container to graph.
+func extractGraph(snapshot bool, opts []graph.Option) (*graph.Graph, error) {
+	if snapshot {
+		var declared *graph.Graph
+		capture := extras.CaptureGraph(dicore.PreAutomation, func(g *graph.Graph) error {
+			declared = g
+			return nil
+		}, opts...)
+
+		if _, err := configure().CompilerPasses(capture).Build(); err != nil {
+			return nil, err
+		}
+		return declared, nil
+	}
+
+	c, err := build()
+	if err != nil {
+		return nil, err
+	}
+	return extract.From(c.(*dicore.Container), opts...)
 }
 
 // openGraph is a variable so a test can watch what it is handed: -open used to
 // extract without the options the stdout path used, and quietly drew a
 // different graph.
-var openGraph = view.Open
+var openGraph = view.OpenGraph
 
 func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 	switch format {
