@@ -31,6 +31,7 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 		"github.com/michalkurzeja/godi/v2/graph/dot",
 		"github.com/michalkurzeja/godi/v2/graph/html",
 		"github.com/michalkurzeja/godi/v2/graph/serve",
+		"github.com/michalkurzeja/godi/v2/graph/text",
 		"github.com/michalkurzeja/godi/v2/graph/view",
 		"os/exec",
 		// cmd/godi is in this module, so cobra is a requirement of it. Nothing
@@ -41,7 +42,4 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 	} {
 		require.NotContains(t, deps, pkg, "every godi binary would carry %s", pkg)
 	}
-
-	require.Contains(t, deps, "github.com/michalkurzeja/godi/v2/graph/text",
-		"graph/text is expected: the deprecated Print delegates to it")
 }

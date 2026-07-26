@@ -59,7 +59,8 @@ func TestPrintShowsChildScopes(t *testing.T) {
 	out := printed(t, c)
 
 	require.Contains(t, out, "di_test.(*printConn)", "a service in a child scope is still in the container")
-	require.Contains(t, out, "children of di_test.(*printServer)", "and the scope it lives in is named")
+	require.Contains(t, out, "children of github.com/michalkurzeja/godi/v2/di_test.(*printServer)",
+		"and the scope it lives in is named after the definition that declared it")
 }
 
 // Bindings were looked up on the slot's own type. An autowired slice slot asks
