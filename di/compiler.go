@@ -14,8 +14,8 @@ type CompilerPass struct {
 	priority int
 	op       CompilerOp
 
-	ArgOrigin  ArgOrigin  // What a slot filled by this pass means.
-	BindOrigin BindOrigin // What a binding created by this pass means.
+	argOrigin  ArgOrigin  // What a slot filled by this pass means.
+	bindOrigin BindOrigin // What a binding created by this pass means.
 }
 
 func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerPass {
@@ -23,8 +23,8 @@ func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerP
 		name:       name,
 		stage:      stage,
 		op:         op,
-		ArgOrigin:  ArgOriginCompilerPass,
-		BindOrigin: BindOriginCompilerPass,
+		argOrigin:  ArgOriginCompilerPass,
+		bindOrigin: BindOriginCompilerPass,
 	}
 }
 
@@ -34,16 +34,17 @@ func (p *CompilerPass) WithPriority(priority int) *CompilerPass {
 }
 
 // withArgOrigin marks the arguments this pass fills as one of godi's own
-// behaviours rather than a third-party extension.
+// behaviours rather than a third-party extension. Unexported on purpose:
+// reading provenance is open to a pass, claiming godi's own is not.
 func (p *CompilerPass) withArgOrigin(origin ArgOrigin) *CompilerPass {
-	p.ArgOrigin = origin
+	p.argOrigin = origin
 	return p
 }
 
 // withBindOrigin marks the bindings this pass creates as one of godi's own
 // behaviours rather than a third-party extension.
 func (p *CompilerPass) withBindOrigin(origin BindOrigin) *CompilerPass {
-	p.BindOrigin = origin
+	p.bindOrigin = origin
 	return p
 }
 
@@ -179,8 +180,8 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		c.done = append(c.done, pass.name)
 		// Asked of the pass rather than of its name: what a pass fills is what
 		// it says it fills, and nothing stops a user calling theirs "autowiring".
-		c.autowired = c.autowired || pass.ArgOrigin == ArgOriginAutowiring
-		c.creditPendingWiring(builder.container, pass.ArgOrigin, pass.BindOrigin, pass.name)
+		c.autowired = c.autowired || pass.argOrigin == ArgOriginAutowiring
+		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 	}
 	return nil
 }
