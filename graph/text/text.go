@@ -179,12 +179,7 @@ func (p *printer) nodes(g *graph.Graph, heading string, nodes []*graph.Node, dep
 }
 
 func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
-	// A service is known by the type it provides; a function by its name, since
-	// a function's type is only its signature.
-	title := n.TypeShort()
-	if n.Kind == graph.NodeFunction {
-		title = n.NameShort()
-	}
+	title := n.Title()
 
 	p.linef(depth, "%s%s", title, bracketed(nodeFlags(n)))
 	if label, what := implementation(n); what != "" && what != title {
@@ -210,9 +205,9 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 // heading: the factory that builds a service, the value it was registered as,
 // or the signature of a function.
 //
-// A name the runtime made up describes nothing, so where there is one the
-// signature goes in its place - that being the only thing that says what an
-// anonymous function is.
+// Whichever of the name and the signature the heading did not take. A name the
+// runtime made up describes nothing, so where the heading is a signature it is
+// still worth printing - it is the only thing that says which literal this is.
 func implementation(n *graph.Node) (label, what string) {
 	if n.Kind == graph.NodeFunction {
 		return "signature", n.TypeShort()
@@ -222,7 +217,11 @@ func implementation(n *graph.Node) (label, what string) {
 	if n.FromValue {
 		label = "value"
 	}
-	if n.Anonymous() {
+	// Either the name is the heading, and the signature is what is left to say,
+	// or the runtime made the name up and the signature is the only thing that
+	// describes it. A value's signature is its type, so where that is already the
+	// heading the caller drops this line.
+	if n.KnownByName() || n.Anonymous() {
 		return label, render.Short(n.Signature)
 	}
 	return label, n.NameShort()
@@ -309,10 +308,7 @@ func (p *printer) name(id graph.NodeID) string {
 	if !ok {
 		return string(id)
 	}
-	if n.Kind == graph.NodeFunction {
-		return n.NameShort()
-	}
-	return n.TypeShort()
+	return n.Title()
 }
 
 func paramEdges(g *graph.Graph, param *graph.Param) []*graph.Edge {

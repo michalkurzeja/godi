@@ -210,12 +210,14 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 		marker = "▲ " // Nothing injects it: the top of a tree.
 	}
 
-	// A service is known by the type it provides; a function by its name, since
-	// its type is just a signature.
-	title, subtitle := node.TypeShort(), node.NameShort()
 	if node.Kind == graph.NodeFunction {
 		marker += "ƒ "
-		title, subtitle = node.NameShort(), node.TypeShort()
+	}
+
+	// Whichever of the two the heading did not take.
+	title, subtitle := node.Title(), node.NameShort()
+	if node.KnownByName() {
+		subtitle = node.TypeShort()
 	}
 	// A name the runtime made up describes nothing; the signature is what says
 	// what an anonymous function is.

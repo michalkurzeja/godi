@@ -329,13 +329,21 @@ func TestAValueRegisteredAsAServiceIsNamedByWhatItIs(t *testing.T) {
 		return g
 	}
 
-	require.Contains(t, encode(t, named()), "value: app.validateEmail",
+	// Its type is the function's signature, so the name is what heads it - the
+	// same way a function node is headed - and the signature is what the line
+	// under it has left to say.
+	value := encode(t, named())
+	require.Contains(t, value, "app.validateEmail  [not shared, http]",
+		"a named value is headed by its name")
+	require.Contains(t, value, "value: func(string) error",
 		"a value, not a factory: nobody wrote a factory for it")
-	require.NotContains(t, encode(t, named()), "factory: app.validateEmail")
+	require.NotContains(t, value, "factory: app.validateEmail")
+	require.Contains(t, value, "-> app.validateEmail",
+		"and a row pointing at it calls it the same thing")
 
 	anonymous := named()
 	anonymous.Nodes[2].Name = pkg + ".build.func1"
-	require.Contains(t, encode(t, anonymous), "value: func(string) error",
+	require.Contains(t, encode(t, anonymous), "func(string) error",
 		"a name the runtime made up describes nothing, so the signature stands in for it")
 	require.NotContains(t, encode(t, anonymous), "build.func1")
 

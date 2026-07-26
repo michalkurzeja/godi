@@ -171,6 +171,33 @@ func (n *Node) TypeShort() string { return render.Short(n.Type) }
 // NameShort is Name without the package path, for labels.
 func (n *Node) NameShort() string { return render.Short(n.Name) }
 
+// KnownByName reports whether a reader knows this node by its name rather than
+// by the type it provides.
+//
+// A service is known by its type, and a function by its name, since a function's
+// type is only its signature. A service registered as a function value is the
+// second sort: its type *is* that function's signature, so the type says nothing
+// the signature says already, and a wrapped two-line signature makes a poor
+// heading. The exception is a literal, whose name the runtime made up - that
+// identifies the function without describing it, so the signature is the better
+// of the two.
+//
+// Every encoder owes the reader the same answer, which is why this is here
+// rather than in each of them. The viewer keeps its own copy in JavaScript, for
+// want of a way to call this from a browser.
+func (n *Node) KnownByName() bool {
+	return n.Kind == NodeFunction || (n.FromValue && n.Name != "" && !n.Anonymous())
+}
+
+// Title is what the node is headed by: its name or its type, whichever it is
+// known by.
+func (n *Node) Title() string {
+	if n.KnownByName() {
+		return n.NameShort()
+	}
+	return n.TypeShort()
+}
+
 // Anonymous reports whether what implements this node is a function literal:
 // the function itself for a function node, and for a service either the factory
 // that builds it or the value it was registered as.

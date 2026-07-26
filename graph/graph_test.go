@@ -374,3 +374,65 @@ func TestOnlyASnapshotMakesAGraphPartial(t *testing.T) {
 	require.False(t, (&graph.Graph{}).Partial())
 	require.True(t, (&graph.Graph{Snapshot: &graph.Snapshot{}}).Partial())
 }
+
+// Three encoders ask this one question, so the answer is pinned here rather than
+// three times over in what each of them draws.
+func TestWhatANodeIsKnownBy(t *testing.T) {
+	t.Parallel()
+
+	const pkg = "github.com/acme/app"
+
+	tests := []struct {
+		name  string
+		node  graph.Node
+		want  bool
+		title string
+	}{
+		{
+			"a service, by the type it provides",
+			graph.Node{Kind: graph.NodeService, Type: pkg + ".(*Server)", Name: pkg + ".NewServer"},
+			false, "app.(*Server)",
+		},
+		{
+			"a function, by its name: its type is only a signature",
+			graph.Node{Kind: graph.NodeFunction, Type: "func() error", Name: pkg + ".migrate"},
+			true, "app.migrate",
+		},
+		{
+			// The type here is the function's signature, so it says nothing the
+			// signature under it says already.
+			"a service registered as a named function, by that name",
+			graph.Node{
+				Kind: graph.NodeService, FromValue: true,
+				Type: "func(string) error", Name: pkg + ".validateEmail",
+			},
+			true, "app.validateEmail",
+		},
+		{
+			"but a literal by its signature, the runtime having made its name up",
+			graph.Node{
+				Kind: graph.NodeService, FromValue: true,
+				Type: "func(string) error", Name: pkg + ".build.func1",
+			},
+			false, "func(string) error",
+		},
+		{
+			"and a value that is not a function at all by its type",
+			graph.Node{Kind: graph.NodeService, FromValue: true, Type: pkg + ".Config"},
+			false, "app.Config",
+		},
+		{
+			"a service built by a factory, whatever the factory is called",
+			graph.Node{Kind: graph.NodeService, Type: pkg + ".(*Repo)", Name: pkg + ".NewRepo"},
+			false, "app.(*Repo)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, test.node.KnownByName())
+			require.Equal(t, test.title, test.node.Title())
+		})
+	}
+}
