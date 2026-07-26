@@ -132,15 +132,19 @@ func BasePasses(skipCycleValidation bool) Passes {
 }
 
 func (passes Passes) sort() {
-	slices.SortFunc(passes, func(a, b *CompilerPass) int {
-		if c := cmp.Compare(a.stage, b.stage); c != 0 {
-			return c
-		}
-		if c := cmp.Compare(a.priority, b.priority); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.seq, b.seq)
-	})
+	slices.SortFunc(passes, comparePasses)
+}
+
+// comparePasses is the whole of the order: the stage, then the priority, then
+// when the pass was added.
+func comparePasses(a, b *CompilerPass) int {
+	if c := cmp.Compare(a.stage, b.stage); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.priority, b.priority); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.seq, b.seq)
 }
 
 // Compiler is responsible for configuration of the container after all user changes are done.
@@ -148,6 +152,10 @@ func (passes Passes) sort() {
 // it possible to create services dynamically and automatically.
 type Compiler struct {
 	passes Passes
+	// pending holds the passes a running pass registered. They join the queue
+	// once it returns, rather than being appended to a slice the loop has
+	// already taken the header of and would never look at again.
+	pending Passes
 	// added counts the passes registered so far, and is what each of them is
 	// stamped with.
 	added int
@@ -170,9 +178,17 @@ func NewCompiler(conf CompilerConfig) *Compiler {
 	return c
 }
 
+// AddPass registers a pass. Called from inside a pass - which is a fair thing
+// to want: discover the services, then schedule work over them - the new pass
+// joins the queue as soon as the one adding it returns.
 func (c *Compiler) AddPass(pass *CompilerPass) {
 	pass.seq = c.added
 	c.added++
+
+	if c.running != nil {
+		c.pending = append(c.pending, pass)
+		return
+	}
 	c.passes = append(c.passes, pass)
 }
 
@@ -182,7 +198,11 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	// Whatever is already wired, the user wired: the passes have not run yet.
 	c.creditPendingWiring(builder.container, ArgOriginManual, BindOriginManual, "")
 
-	for _, pass := range c.passes {
+	// By index, and re-reading the length: a pass may add a pass, and ranging
+	// would take the slice header once and never see it.
+	for i := 0; i < len(c.passes); i++ {
+		pass := c.passes[i]
+
 		c.running = pass
 		err := pass.Run(builder)
 		c.running = nil
@@ -197,7 +217,40 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		// it says it fills, and nothing stops a user calling theirs "autowiring".
 		c.autowired = c.autowired || pass.argOrigin == ArgOriginAutowiring
 		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
+
+		err = c.schedulePending(pass, i+1)
+		if err != nil {
+			c.failed = pass.name
+			return err
+		}
 	}
+	return nil
+}
+
+// schedulePending puts the passes that pass registered into the queue, keeping
+// what is left of it in order. next is where the part that has not run yet
+// begins.
+//
+// A pass whose place is behind the one that added it is refused: running it now
+// would run the stages out of order, and running it "later" would not be the
+// place it asked for. There is no honest answer to "insert me before the pass
+// that is already running".
+func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
+	if len(c.pending) == 0 {
+		return nil
+	}
+
+	added := c.pending
+	c.pending = nil
+
+	for _, p := range added {
+		if comparePasses(p, pass) < 0 {
+			return fmt.Errorf("compiler pass (%s) added pass (%s), which would have had to run before it", pass, p)
+		}
+	}
+
+	c.passes = append(c.passes, added...)
+	c.passes[next:].sort()
 	return nil
 }
 
