@@ -39,6 +39,9 @@ type FuncReference struct {
 }
 
 func (r FuncReference) FuncID() ID {
+	if r.def == nil {
+		return ""
+	}
 	return r.def.ID()
 }
 

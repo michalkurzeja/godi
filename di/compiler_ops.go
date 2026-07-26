@@ -107,13 +107,15 @@ func (p *InterfaceBindingPass) findImplementations(scope *Scope, parentID ID, if
 	return impls
 }
 
-type autowiringPass struct{}
+// AutowiringPass fills in the arguments nobody wrote, by type. It is exported
+// as an example of the shape a pass takes; what it does is godi's own.
+type AutowiringPass struct{}
 
 // NewAutowiringPass returns a compiler pass that automatically wires the arguments
 // of factories, method calls and functions based on their types.
-func NewAutowiringPass() CompilerOp { return new(autowiringPass) }
+func NewAutowiringPass() CompilerOp { return new(AutowiringPass) }
 
-func (p *autowiringPass) Run(builder *ContainerBuilder) error {
+func (p *AutowiringPass) Run(builder *ContainerBuilder) error {
 	for _, def := range builder.ServiceDefinitionsSeq() {
 		if !def.IsAutowired() {
 			continue
@@ -144,7 +146,7 @@ func (p *autowiringPass) Run(builder *ContainerBuilder) error {
 	return nil
 }
 
-func (p *autowiringPass) autowire(args *ArgList) error {
+func (p *AutowiringPass) autowire(args *ArgList) error {
 	for _, slot := range args.Slots() {
 		if slot.IsFilled() {
 			continue
@@ -166,15 +168,17 @@ func (p *autowiringPass) autowire(args *ArgList) error {
 
 // stage: Validation
 
-type argValidationPass struct{}
+// ArgValidationPass rejects an argument that names a dependency the container
+// does not have, and one nothing has filled.
+type ArgValidationPass struct{}
 
 // NewArgValidationPass returns a compiler pass that validates all arguments of factories, method calls and functions
 // that reference other services. It ensures that the referenced services exist.
 func NewArgValidationPass() CompilerOp {
-	return new(argValidationPass)
+	return new(ArgValidationPass)
 }
 
-func (p *argValidationPass) Run(builder *ContainerBuilder) error {
+func (p *ArgValidationPass) Run(builder *ContainerBuilder) error {
 	var joinedErr error
 
 	for _, def := range builder.ServiceDefinitionsSeq() {
@@ -201,7 +205,7 @@ func (p *argValidationPass) Run(builder *ContainerBuilder) error {
 	return joinedErr
 }
 
-func (p *argValidationPass) validateArgs(scope *Scope, args *ArgList) error {
+func (p *ArgValidationPass) validateArgs(scope *Scope, args *ArgList) error {
 	var joinedErr error
 	for i, slot := range args.Slots() {
 		if !slot.IsFilled() {
@@ -216,61 +220,72 @@ func (p *argValidationPass) validateArgs(scope *Scope, args *ArgList) error {
 	return joinedErr
 }
 
+// CycleValidationPass rejects a container whose services depend on each other
+// in a circle.
+type CycleValidationPass struct{}
+
 // NewCycleValidationPass returns a compiler pass that validates that there are no circular references.
-func NewCycleValidationPass() CompilerOpFunc {
-	return func(builder *ContainerBuilder) error {
-		var joinedErr error
-		g := graph.New((*ServiceDefinition).ID, graph.PreventCycles(), graph.Directed())
+func NewCycleValidationPass() CompilerOp {
+	return new(CycleValidationPass)
+}
 
-		for _, def := range builder.ServiceDefinitionsSeq() {
-			err := g.AddVertex(def)
-			if err != nil {
-				return err
-			}
+func (p *CycleValidationPass) Run(builder *ContainerBuilder) error {
+	var joinedErr error
+	g := graph.New((*ServiceDefinition).ID, graph.PreventCycles(), graph.Directed())
+
+	for _, def := range builder.ServiceDefinitionsSeq() {
+		err := g.AddVertex(def)
+		if err != nil {
+			return err
 		}
+	}
 
-		for _, def := range builder.ServiceDefinitionsSeq() {
-			for _, slot := range def.Factory().Args().Slots() {
-				for _, id := range ResolveArgIDs(def.EffectiveScope(), slot.Arg()) {
-					err := g.AddEdge(def.ID(), id)
-					if errors.Is(err, graph.ErrEdgeAlreadyExists) {
-						continue
-					}
-					if errors.Is(err, graph.ErrEdgeCreatesCycle) {
-						argDef, _ := def.EffectiveScope().GetServiceDefinitionInChain(id) // Definition must exist, it's been validated by the resolver.
-						joinedErr = errors.Join(joinedErr, fmt.Errorf("service %s has a circular dependency on %s", def, argDef))
-					}
+	for _, def := range builder.ServiceDefinitionsSeq() {
+		for _, slot := range def.Factory().Args().Slots() {
+			for _, id := range ResolveArgIDs(def.EffectiveScope(), slot.Arg()) {
+				err := g.AddEdge(def.ID(), id)
+				if errors.Is(err, graph.ErrEdgeAlreadyExists) {
+					continue
+				}
+				if errors.Is(err, graph.ErrEdgeCreatesCycle) {
+					argDef, _ := def.EffectiveScope().GetServiceDefinitionInChain(id) // Definition must exist, it's been validated by the resolver.
+					joinedErr = errors.Join(joinedErr, fmt.Errorf("service %s has a circular dependency on %s", def, argDef))
 				}
 			}
 		}
-
-		return joinedErr
 	}
+
+	return joinedErr
 }
 
 // stage: Finalization
 
+// EagerInitPass builds everything that asked not to wait.
+type EagerInitPass struct{}
+
 // NewEagerInitPass returns a compiler pass that initializes all eager services and functions.
-func NewEagerInitPass() CompilerOpFunc {
-	return func(builder *ContainerBuilder) error {
-		for scope, def := range builder.ServiceDefinitionsSeq() {
-			if def.IsLazy() {
-				continue
-			}
-			_, err := scope.GetService(def.ID())
-			if err != nil {
-				return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
-			}
+func NewEagerInitPass() CompilerOp {
+	return new(EagerInitPass)
+}
+
+func (p *EagerInitPass) Run(builder *ContainerBuilder) error {
+	for scope, def := range builder.ServiceDefinitionsSeq() {
+		if def.IsLazy() {
+			continue
 		}
-		for scope, def := range builder.FunctionDefinitionsSeq() {
-			if def.IsLazy() {
-				continue
-			}
-			_, err := scope.ExecuteFunction(def.ID())
-			if err != nil {
-				return errorsx.Wrapf(err, "failed to execute eager function %s", def)
-			}
+		_, err := scope.GetService(def.ID())
+		if err != nil {
+			return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
 		}
-		return nil
 	}
+	for scope, def := range builder.FunctionDefinitionsSeq() {
+		if def.IsLazy() {
+			continue
+		}
+		_, err := scope.ExecuteFunction(def.ID())
+		if err != nil {
+			return errorsx.Wrapf(err, "failed to execute eager function %s", def)
+		}
+	}
+	return nil
 }

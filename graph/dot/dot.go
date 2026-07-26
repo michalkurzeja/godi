@@ -435,14 +435,10 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 	return sb.String()
 }
 
-// legend draws one real edge per channel, rather than describing them: the point
-// of a key is to show the mark, which no amount of prose replaces.
-//
-// The two channels are independent. The head says how the dependency was
-// matched; the colour says who decided on it.
-// notices draws what the extractor could not make sense of. Extraction never
-// fails on odd input, it records it - and a drawing that leaves the record out
-// is the one place a reader would never think to look for it.
+// notices draws everything worth saying about the graph that is not in it:
+// what the extractor could not make sense of, and what is odd about the picture
+// itself. A drawing that leaves the record out is the one place a reader would
+// never think to look for it.
 func (p *printer) notices(g *graph.Graph) {
 	// Escaped a line at a time, then joined with a break: inside an HTML-like
 	// label a newline is just whitespace, and <BR/> is the only line ending.
@@ -474,6 +470,11 @@ func (p *printer) notices(g *graph.Graph) {
 	p.printf("\t}\n")
 }
 
+// legend draws one real edge per channel, rather than describing them: the point
+// of a key is to show the mark, which no amount of prose replaces.
+//
+// The two channels are independent. The head says how the dependency was
+// matched; the colour says who decided on it.
 func (p *printer) legend(g *graph.Graph) {
 	rows := []struct {
 		style, arrow, colour, penWidth, text string
