@@ -30,6 +30,9 @@ type Arg interface {
 	// resolveIDs lists the definitions this argument resolves to, which is
 	// empty for an argument that names no service.
 	resolveIDs(scope *Scope) []ID
+	// trace says how the argument resolved: what matched, and by which
+	// mechanism. See ArgTrace.
+	trace(scope *Scope, path tracePath) ArgTrace
 }
 
 type literalArg struct {
@@ -62,6 +65,10 @@ func (a *literalArg) resolve(_ *Scope) (any, error) {
 
 func (a *literalArg) resolveIDs(_ *Scope) []ID {
 	return nil
+}
+
+func (a *literalArg) trace(_ *Scope, path tracePath) ArgTrace {
+	return ArgTrace{Kind: ArgKindLiteral, Value: a.v, Bindings: path.hops}
 }
 
 type refArg struct {
@@ -103,6 +110,15 @@ func (a *refArg) resolve(scope *Scope) (any, error) {
 
 func (a *refArg) resolveIDs(_ *Scope) []ID {
 	return []ID{a.def.ID()}
+}
+
+func (a *refArg) trace(_ *Scope, path tracePath) ArgTrace {
+	return ArgTrace{
+		Kind:     ArgKindRef,
+		Bindings: path.hops,
+		Matches:  []ID{a.def.ID()},
+		By:       ResolutionRef,
+	}
 }
 
 type typeArg struct {
@@ -167,6 +183,14 @@ func (a *typeArg) resolveIDs(scope *Scope) []ID {
 	return scope.GetServicesIDsByTypeInChain(a.typ)
 }
 
+func (a *typeArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindType, Bindings: path.hops}
+	// a.typ is the element type when the argument collects a slice, and that is
+	// what bindings and services are looked up by either way.
+	t.matchType(scope, a.typ, path, ResolutionByType)
+	return t
+}
+
 type labelArg struct {
 	label Label
 	typ   reflect.Type
@@ -223,6 +247,20 @@ func (a *labelArg) resolve(scope *Scope) (any, error) {
 
 func (a *labelArg) resolveIDs(scope *Scope) []ID {
 	return scope.GetServicesIDsByLabelInChain(a.label)
+}
+
+func (a *labelArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{
+		Kind:     ArgKindLabel,
+		Bindings: path.hops,
+		Label:    a.label,
+		Matches:  scope.GetServicesIDsByLabelInChain(a.label),
+		By:       ResolutionByLabel,
+	}
+	if len(t.Matches) == 0 {
+		t.Fault = ArgFault{Kind: ArgFaultNoServicesWithLabel, Label: a.label}
+	}
+	return t
 }
 
 type flexibleSliceArg struct {
@@ -326,6 +364,32 @@ func (a *flexibleSliceArg) resolveIDs(scope *Scope) []ID {
 	return scope.GetServicesIDsByTypeInChain(a.elemType)
 }
 
+func (a *flexibleSliceArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindFlexibleSlice, Bindings: path.hops}
+
+	// First try to match by the slice type.
+	sliceTyp := a.Type()
+	if bindScope, binding, ok := bindingInChain(scope, sliceTyp); ok {
+		t.follow(scope, sliceTyp, bindScope, binding, path)
+		return t
+	}
+	if ids := scope.GetServicesIDsByTypeInChain(sliceTyp); len(ids) > 0 {
+		t.Matches, t.By = ids, ResolutionBySliceType
+		return t
+	}
+
+	// Now let's try to match by the element type.
+	if bindScope, binding, ok := bindingInChain(scope, a.elemType); ok {
+		t.follow(scope, a.elemType, bindScope, binding, path)
+		return t
+	}
+	t.Matches, t.By = scope.GetServicesIDsByTypeInChain(a.elemType), ResolutionByElemType
+	if len(t.Matches) == 0 && !a.allowEmpty {
+		t.Fault = ArgFault{Kind: ArgFaultNoServicesOfType, Type: sliceTyp}
+	}
+	return t
+}
+
 type compoundArg struct {
 	args []Arg
 	typ  reflect.Type
@@ -383,6 +447,14 @@ func (c *compoundArg) resolveIDs(scope *Scope) []ID {
 	return lo.FlatMap(c.args, func(arg Arg, _ int) []ID {
 		return arg.resolveIDs(scope)
 	})
+}
+
+func (c *compoundArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindCompound, Bindings: path.hops}
+	for _, arg := range c.args {
+		t.Parts = append(t.Parts, arg.trace(scope, path))
+	}
+	return t
 }
 
 func NewSlottedArg(arg Arg, slot uint) *SlottedArg {

@@ -85,6 +85,17 @@ func (s *Scope) HasService(id ID) bool {
 	return s.svcs.Contains(id)
 }
 
+// bindingInChain finds the binding covering typ, and the scope that declared it.
+// GetBoundArgInChain alone would not say which scope it came from.
+func bindingInChain(scope *Scope, typ reflect.Type) (*Scope, *InterfaceBinding, bool) {
+	for s := range scope.Chain() {
+		if binding, ok := s.GetBinding(typ); ok {
+			return s, binding, true
+		}
+	}
+	return nil, nil, false
+}
+
 // Instantiated reports whether this scope has already built the service, which
 // for a shared one means the container is holding it.
 func (s *Scope) Instantiated(id ID) bool {

@@ -425,128 +425,90 @@ func (x *extractor) param(node *graph.Node, scope *Scope, slot *Slot, kind graph
 	p.OriginPass = slot.originPass
 
 	arg := slot.Arg() // Fabricates a fresh compound for appended slots: call it once.
-	p.Arg = argKindOf(arg)
-	x.resolve(scope, arg, p, nil, nil)
+	trace := TraceArg(scope, arg)
+	p.Arg = argKindOf(trace.Kind)
+	x.walk(p, trace)
 }
 
-// resolve turns one argument into edges, mirroring the resolution the container
-// performs at runtime and recording which mechanism matched.
+// walk turns one argument's trace into edges. The resolution itself belongs to
+// the argument - this only says what each part of it looks like in a graph.
+func (x *extractor) walk(p *graph.Param, t ArgTrace) {
+	switch t.Kind {
+	case ArgKindLiteral:
+		x.literal(p, t.Value)
+	case ArgKindLabel:
+		p.Label = string(t.Label)
+	case ArgKindRef, ArgKindType, ArgKindFlexibleSlice, ArgKindCompound:
+	}
+
+	hops := x.hops(t.Bindings)
+	for _, id := range t.Matches {
+		x.edge(p, x.byUUID[id], resolutionOf(t.By), hops)
+	}
+
+	x.fault(p, t.Fault)
+
+	for _, part := range t.Parts {
+		x.walk(p, part)
+	}
+}
+
+// fault reports what an argument failed to find, in the words the reader needs.
 //
-// seen guards against binding cycles; it is a slice because chains are short and
-// it must not leak between sibling sub-arguments of a compound.
-func (x *extractor) resolve(scope *Scope, arg Arg, p *graph.Param, hops []graph.BindingHop, seen []reflect.Type) {
-	switch a := arg.(type) {
-	case *literalArg:
-		x.literal(p, a)
-
-	case *refArg:
-		x.edge(p, x.byUUID[a.def.ID()], graph.ResolutionRef, hops)
-
-	case *typeArg:
-		// typeArg.typ is the element type when the arg collects a slice, and
-		// that is what the resolver looks bindings and services up by.
-		x.byType(scope, a.typ, p, hops, seen, graph.ResolutionByType)
-
-	case *labelArg:
-		p.Label = string(a.label)
-		for _, id := range scope.GetServicesIDsByLabelInChain(a.label) {
-			x.edge(p, x.byUUID[id], graph.ResolutionByLabel, hops)
-		}
+// An argument matching nothing by label is only a fault when the whole argument
+// matched nothing: a label that adds nothing to a compound that resolved is
+// worth no complaint.
+func (x *extractor) fault(p *graph.Param, f ArgFault) {
+	switch f.Kind {
+	case ArgFaultNone:
+	case ArgFaultNoServicesOfType:
+		x.unresolved(p, fmt.Sprintf("no services of type %s", util.Signature(f.Type)))
+	case ArgFaultNoServicesWithLabel:
 		if p.EdgeCount == 0 {
-			x.unresolved(p, fmt.Sprintf("no services labelled %q", a.label))
+			x.unresolved(p, fmt.Sprintf("no services labelled %q", f.Label))
 		}
+	case ArgFaultCircularBinding:
+		x.unresolved(p, fmt.Sprintf("interface binding for %s is circular", util.Signature(f.Type)))
+	}
+}
 
-	case *flexibleSliceArg:
-		x.flexibleSlice(scope, a, p, hops, seen)
-
-	case *compoundArg:
-		for _, sub := range a.args {
-			x.resolve(scope, sub, p, hops, seen)
+// hops is the bindings an argument resolved through, as the model records them.
+// Nil for an argument that went through none, so that a graph of a container
+// without bindings carries no empty lists.
+func (x *extractor) hops(hops []BindingHop) []graph.BindingHop {
+	if len(hops) == 0 {
+		return nil
+	}
+	out := make([]graph.BindingHop, len(hops))
+	for i, hop := range hops {
+		out[i] = graph.BindingHop{
+			Interface:  util.Signature(hop.Interface),
+			Scope:      x.scopeIDs[hop.Scope],
+			Origin:     bindOriginOf(hop.Origin),
+			OriginPass: hop.OriginPass,
 		}
-
-	default:
-		x.unresolved(p, fmt.Sprintf("unsupported argument type %T", arg))
 	}
+	return out
 }
 
-// byType resolves a type match, following an interface binding if one covers it.
-func (x *extractor) byType(scope *Scope, typ reflect.Type, p *graph.Param, hops []graph.BindingHop, seen []reflect.Type, res graph.Resolution) {
-	if bindScope, binding, ok := bindingInChain(scope, typ); ok {
-		x.throughBinding(scope, typ, bindScope, binding, p, hops, seen)
-		return
-	}
-
-	ids := scope.GetServicesIDsByTypeInChain(typ)
-	for _, id := range ids {
-		x.edge(p, x.byUUID[id], res, hops)
-	}
-	if len(ids) == 0 {
-		x.unresolved(p, fmt.Sprintf("no services of type %s", util.Signature(typ)))
-	}
-}
-
-// flexibleSlice mirrors flexibleSliceArg's own resolution: the slice type wins over the
-// element type, and each is checked against the bindings first.
-func (x *extractor) flexibleSlice(scope *Scope, a *flexibleSliceArg, p *graph.Param, hops []graph.BindingHop, seen []reflect.Type) {
-	sliceTyp := a.Type()
-	if bindScope, binding, ok := bindingInChain(scope, sliceTyp); ok {
-		x.throughBinding(scope, sliceTyp, bindScope, binding, p, hops, seen)
-		return
-	}
-	if ids := scope.GetServicesIDsByTypeInChain(sliceTyp); len(ids) > 0 {
-		for _, id := range ids {
-			x.edge(p, x.byUUID[id], graph.ResolutionBySliceType, hops)
-		}
-		return
-	}
-
-	elemTyp := a.elemType
-	if bindScope, binding, ok := bindingInChain(scope, elemTyp); ok {
-		x.throughBinding(scope, elemTyp, bindScope, binding, p, hops, seen)
-		return
-	}
-	ids := scope.GetServicesIDsByTypeInChain(elemTyp)
-	for _, id := range ids {
-		x.edge(p, x.byUUID[id], graph.ResolutionByElemType, hops)
-	}
-	if len(ids) == 0 && !a.allowEmpty {
-		x.unresolved(p, fmt.Sprintf("no services of type %s", util.Signature(sliceTyp)))
-	}
-}
-
-func (x *extractor) throughBinding(scope *Scope, typ reflect.Type, bindScope *Scope, binding *InterfaceBinding, p *graph.Param, hops []graph.BindingHop, seen []reflect.Type) {
-	if slices.Contains(seen, typ) {
-		x.unresolved(p, fmt.Sprintf("interface binding for %s is circular", util.Signature(typ)))
-		return
-	}
-
-	hop := graph.BindingHop{
-		Interface:  util.Signature(binding.Interface()),
-		Scope:      x.scopeIDs[bindScope],
-		Origin:     bindOriginOf(binding.origin),
-		OriginPass: binding.originPass,
-	}
-	x.resolve(scope, binding.BoundTo(), p, append(hops[:len(hops):len(hops)], hop), append(seen, typ))
-}
-
-func (x *extractor) literal(p *graph.Param, a *literalArg) {
+func (x *extractor) literal(p *graph.Param, v any) {
 	if x.cfg.NoLiterals {
 		return
 	}
 
-	typ := reflect.TypeOf(a.v)
+	typ := reflect.TypeOf(v)
 	lit := graph.Literal{Type: util.Signature(typ)}
 
 	if x.cfg.LiteralValues {
 		if x.cfg.Redactor != nil {
-			if replacement, redact := x.cfg.Redactor(typ, a.v); redact {
+			if replacement, redact := x.cfg.Redactor(typ, v); redact {
 				lit.Value, lit.Redacted = replacement, true
 				p.Literals = append(p.Literals, lit)
 				return
 			}
 		}
 		if hasReadableValue(typ) {
-			lit.Value, lit.Truncated = render(a.v, x.cfg.LiteralMax)
+			lit.Value, lit.Truncated = render(v, x.cfg.LiteralMax)
 		}
 	}
 
@@ -780,17 +742,6 @@ func (x *extractor) sortAll() {
 	})
 }
 
-// bindingInChain finds the binding covering typ, and the scope that declared it.
-// GetBoundArgInChain alone would not say which scope it came from.
-func bindingInChain(scope *Scope, typ reflect.Type) (*Scope, *InterfaceBinding, bool) {
-	for s := range scope.Chain() {
-		if binding, ok := s.GetBinding(typ); ok {
-			return s, binding, true
-		}
-	}
-	return nil, nil, false
-}
-
 func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {
 	switch kind {
 	case graph.InjectFunctionArg:
@@ -829,22 +780,38 @@ func bindOriginOf(origin BindOrigin) graph.BindOrigin {
 	return graph.BindOriginManual
 }
 
-func argKindOf(arg Arg) graph.ArgKind {
-	switch arg.(type) {
-	case *literalArg:
+func argKindOf(kind ArgKind) graph.ArgKind {
+	switch kind {
+	case ArgKindLiteral:
 		return graph.ArgKindLiteral
-	case *refArg:
+	case ArgKindRef:
 		return graph.ArgKindRef
-	case *typeArg:
+	case ArgKindType:
 		return graph.ArgKindType
-	case *labelArg:
+	case ArgKindLabel:
 		return graph.ArgKindLabel
-	case *flexibleSliceArg:
+	case ArgKindFlexibleSlice:
 		return graph.ArgKindFlexibleSlice
-	case *compoundArg:
+	case ArgKindCompound:
 		return graph.ArgKindCompound
 	}
 	return graph.ArgKindUnknown
+}
+
+func resolutionOf(res Resolution) graph.Resolution {
+	switch res {
+	case ResolutionRef:
+		return graph.ResolutionRef
+	case ResolutionByType:
+		return graph.ResolutionByType
+	case ResolutionBySliceType:
+		return graph.ResolutionBySliceType
+	case ResolutionByElemType:
+		return graph.ResolutionByElemType
+	case ResolutionByLabel:
+		return graph.ResolutionByLabel
+	}
+	return graph.ResolutionByType
 }
 
 func labelStrings(labels []Label) []string {
