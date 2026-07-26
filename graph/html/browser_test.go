@@ -43,6 +43,13 @@ func TestViewerRegressions(t *testing.T) {
 	require.NoError(t, snapshotModel().Encode(&snapBuf, html.New(html.Title("snapshot"))))
 	require.NoError(t, os.WriteFile(snapshot, snapBuf.Bytes(), 0o600))
 
+	// A third, because the fixture above has one scope, and what a filtered
+	// graph does to the scopes holding what it hid needs several.
+	scopes := filepath.Join(dir, "scopes.html")
+	var scopeBuf bytes.Buffer
+	require.NoError(t, nestedScopesModel().Encode(&scopeBuf, html.New(html.Title("scopes"))))
+	require.NoError(t, os.WriteFile(scopes, scopeBuf.Bytes(), 0o600))
+
 	script := filepath.Join("testdata", "viewer_test.mjs")
 
 	// Not under t.TempDir: Chrome goes on writing to its profile for a moment
@@ -54,7 +61,7 @@ func TestViewerRegressions(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(profile) })
 
 	//nolint:gosec // G204: the binaries are resolved above and the arguments are ours.
-	cmd := exec.Command(node, script, page, chrome, profile, snapshot)
+	cmd := exec.Command(node, script, page, chrome, profile, snapshot, scopes)
 	cmd.Env = append(os.Environ(), "NODE_OPTIONS=--no-warnings")
 
 	out, err := runWithTimeout(t, cmd, 3*time.Minute)
@@ -305,6 +312,90 @@ func snapshotModel() *graph.Graph {
 			Message: "argument is not wired",
 		},
 		{Severity: "warning", Scope: "root/jobs", Message: `scope "root/jobs" belongs to no definition`},
+	}
+
+	return g
+}
+
+// nestedScopesModel is a container whose services sit in scopes inside scopes.
+//
+// What it is for: isolating the selection below leaves whole scopes with nothing
+// on show. Cytoscape stops drawing such a scope, so it looks gone, but it goes
+// on counting towards the box of the scope holding it - from wherever the layout
+// of the whole container left it. On a real graph that stretched the root box
+// down over a screenful of empty space.
+//
+// Selecting app.(*Worker) reaches app.(*Queue) and nothing else, so both child
+// scopes empty out and the root box has to close up around the two survivors.
+func nestedScopesModel() *graph.Graph {
+	const pkg = "github.com/acme/app"
+
+	const (
+		outer = "root/svc:app.(*Server)"
+		inner = "root/svc:app.(*Server)/svc:app.(*Router)"
+	)
+
+	svc := func(id, name, scope string, params ...*graph.Param) *graph.Node {
+		return &graph.Node{
+			ID: graph.NodeID(id), Kind: graph.NodeService, Scope: graph.ScopeID(scope),
+			Type: pkg + "." + name, Name: pkg + ".New" + strings.Trim(name, "(*)"),
+			Shared: true, Lazy: true, Autowired: true, Params: params,
+		}
+	}
+
+	arg := func(node, id, typ string) *graph.Param {
+		return &graph.Param{
+			ID: graph.ParamID(node + "#" + id), Node: graph.NodeID(node),
+			Kind: graph.InjectFactoryArg, Type: typ, Origin: graph.ArgOriginAutowiring,
+			Arg: graph.ArgKindType,
+		}
+	}
+
+	workerQueue := arg("root/svc:app.(*Worker)", "f:0", pkg+".(*Queue)")
+	serverRouter := arg(outer, "f:0", pkg+".(*Router)")
+	handlerStore := arg(inner+"/svc:app.(*Handler)", "f:0", pkg+".(*Store)")
+
+	edge := func(p *graph.Param, to string) *graph.Edge {
+		p.EdgeCount++
+		return &graph.Edge{
+			ID: graph.NewEdgeID(p.ID, 0), From: p.Node, To: graph.NodeID(to), Param: p.ID,
+			Kind: p.Kind, Origin: p.Origin, Resolution: graph.ResolutionByType, ParamType: p.Type,
+		}
+	}
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{
+			{ID: "root", Name: "root"},
+			{ID: outer, Parent: "root", Depth: 1, Name: "outer",
+				Owner: outer, OwnerName: pkg + ".(*Server)"},
+			{ID: inner, Parent: outer, Depth: 2, Name: "inner",
+				Owner: graph.NodeID(outer + "/svc:app.(*Router)"), OwnerName: pkg + ".(*Router)"},
+		},
+		Nodes: []*graph.Node{
+			// The pair the selection keeps, both in the root scope.
+			svc("root/svc:app.(*Worker)", "(*Worker)", "root", workerQueue),
+			svc("root/svc:app.(*Queue)", "(*Queue)", "root"),
+			// Everything below is in a nested scope and drops out of an isolated
+			// selection, emptying both of them.
+			svc(outer, "(*Server)", "root", serverRouter),
+			svc(outer+"/svc:app.(*Router)", "(*Router)", outer),
+			svc(inner+"/svc:app.(*Handler)", "(*Handler)", inner, handlerStore),
+			svc(inner+"/svc:app.(*Store)", "(*Store)", inner),
+		},
+	}
+	g.Edges = []*graph.Edge{
+		edge(workerQueue, "root/svc:app.(*Queue)"),
+		edge(serverRouter, outer+"/svc:app.(*Router)"),
+		edge(handlerStore, inner+"/svc:app.(*Store)"),
+	}
+
+	injected := make(map[graph.NodeID]bool, len(g.Edges))
+	for _, e := range g.Edges {
+		injected[e.To] = true
+	}
+	for _, node := range g.Nodes {
+		node.Root = !injected[node.ID]
 	}
 
 	return g

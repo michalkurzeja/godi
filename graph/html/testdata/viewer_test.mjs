@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const [, , pagePath, chromePath, profileDir, snapshotPath] = process.argv;
+const [, , pagePath, chromePath, profileDir, snapshotPath, scopesPath] = process.argv;
 const PAGE = 'file://' + pagePath;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1962,6 +1962,62 @@ await test('an argument nothing has wired yet says so, rather than saying none',
 	if (!text.includes('Not wired')) return text;
 	if (!text.includes('Incomplete')) return 'the panel does not say the service is incomplete';
 	return !/\bnone\b/i.test(text) || 'the panel called an unwired argument "none"';
+});
+
+// ------------------------------------------------------------------ scopes ---
+
+// Reported twice: isolating a selection on a container with scopes inside
+// scopes left the root box stretched down over a screenful of nothing. The
+// scopes that had been emptied were the cause - Cytoscape stops drawing one
+// whose children are all hidden, so it looks gone, but it goes on counting
+// towards the box of the scope holding it, from wherever the last layout left
+// it. On the reporter's graph that was 1640px of empty space.
+
+await ev(`location.href = ${JSON.stringify('file://' + scopesPath)}`);
+await sleep(500);
+await settle();
+
+const WORKER = 'root/svc:app.(*Worker)';
+
+await test('the scopes fixture loaded', async () =>
+	eq(await ev(`godi.cy.nodes(':parent').length`), 3, 'scopes on the page'));
+
+await test('isolating a selection empties the scopes it left behind', async () => {
+	await tapNode(WORKER);
+	await settle();
+	await toggle('isolate', true);
+
+	return eq(await ev(`godi.cy.nodes(':childless:visible').map(n => n.id()).sort()`),
+		['root/svc:app.(*Queue)', 'root/svc:app.(*Worker)'], 'what survives isolating the worker');
+});
+
+await test('and an emptied scope is taken off the canvas, not just left undrawn', async () =>
+	eq(await ev(`(() => {
+		const empty = godi.cy.nodes(':parent').filter(s =>
+			s.descendants(':childless').every(n => n.hidden()));
+		return { n: empty.length, allGone: empty.every(s => s.style('display') === 'none') };
+	})()`), { n: 2, allGone: true }, 'the emptied scopes'));
+
+await test('so the root box closes up around what is left', async () => {
+	const fit = await ev(`(() => {
+		const root = godi.cy.getElementById('scope:root');
+		const shown = godi.cy.nodes(':childless:visible');
+		const rb = root.boundingBox({ includeLabels: false });
+		const sb = shown.boundingBox({ includeLabels: false });
+		return { slackW: Math.round(rb.w - sb.w), slackH: Math.round(rb.h - sb.h) };
+	})()`);
+
+	// Padding and a border, and nothing else: the emptied scopes used to add
+	// hundreds of pixels of nothing here.
+	return (fit.slackW <= 60 && fit.slackH <= 60)
+		|| `the root box stands off its contents by ${fit.slackW}x${fit.slackH}`;
+});
+
+await test('and the emptied scopes come back with the rest of the container', async () => {
+	await toggle('isolate', false);
+	await settle();
+	return eq(await ev(`godi.cy.nodes(':parent').filter(s => s.style('display') === 'none').length`),
+		0, 'scopes still off the canvas after isolate was turned off');
 });
 
 // --------------------------------------------------------------------- done ---

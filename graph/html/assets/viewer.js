@@ -454,7 +454,7 @@ function stylesheet() {
 		// the selection is context, not clutter, and a reader who can see what
 		// else is in the container can pick their next node out of it. Isolate
 		// selection is the switch for wanting them gone.
-		{ selector: 'node.dim', style: { opacity: 0.42 } },
+		{ selector: 'node.dim', style: { opacity: 0.3 } },
 		// Edges are the part that reads as noise when it is not about the
 		// selection, so they fade much further, and their labels go entirely.
 		{ selector: 'edge.dim', style: { opacity: 0.13, 'text-opacity': 0 } },
@@ -553,10 +553,19 @@ function layoutDot(shown) {
 	const inScope = new Map();
 	shown.forEach((node) => push(inScope, node.parent().id(), node));
 
+	const children = (scope) => data.scopes.filter((s) => s.parent === scope.id);
+
+	// A scope with nothing on show is left out rather than emitted empty:
+	// Graphviz reserves room for an empty cluster, and the room it reserved was
+	// a hole in the middle of a filtered graph.
+	const occupied = (scope) =>
+		(inScope.get('scope:' + scope.id) || []).length > 0 || children(scope).some(occupied);
+
 	const emitScope = (scope) => {
+		if (!occupied(scope)) return;
 		lines.push('\tsubgraph ' + q('cluster_' + scope.id) + ' {');
 		for (const node of inScope.get('scope:' + scope.id) || []) emitNode(node);
-		for (const child of data.scopes.filter((s) => s.parent === scope.id)) emitScope(child);
+		for (const child of children(scope)) emitScope(child);
 		lines.push('\t}');
 	};
 
@@ -665,11 +674,23 @@ function apply() {
 	const near = nodes.has(state.focus) ? neighbourhood(state.focus, live) : null;
 	const outside = (id) => near !== null && !near.has(id);
 
+	// Which scopes still hold something, counted here rather than asked of the
+	// canvas: a node inside a scope that is off the canvas reads as hidden
+	// whatever its own state, so a scope taken away on one pass could never come
+	// back on the next.
+	const populated = new Set();
+	const populate = (id) => {
+		for (let s = scopes.get(id); s && !populated.has(s.id); s = s.parent ? scopes.get(s.parent) : null) {
+			populated.add(s.id);
+		}
+	};
+
 	let changed = false;
 	cy.batch(() => {
 		for (const n of data.nodes) {
 			const el = cy.getElementById(n.id);
 			const gone = dropped(n.id) || (state.isolate && outside(n.id));
+			if (!gone) populate(n.scope);
 			if (el.visible() === gone) changed = true;
 			gone ? el.hide() : el.show();
 			el.toggleClass('dim', !gone && (outside(n.id) || (hits !== null && !hits.has(n.id))));
@@ -683,6 +704,16 @@ function apply() {
 			if (el.visible() === gone) changed = true;
 			gone ? el.hide() : el.show();
 			el.toggleClass('dim', !gone && !spans);
+		}
+
+		// A scope left with nothing on show has to be taken off the canvas by
+		// name. Cytoscape stops drawing it once its children are hidden, so it
+		// looks gone - but it still counts towards the box of the scope holding
+		// it, from wherever the last layout left it. That is what stretched an
+		// isolated selection's root box down over empty space.
+		for (const scope of data.scopes) {
+			const el = cy.getElementById('scope:' + scope.id);
+			if (el.nonempty()) populated.has(scope.id) ? el.show() : el.hide();
 		}
 	});
 
