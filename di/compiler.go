@@ -3,6 +3,7 @@ package di
 import (
 	"cmp"
 	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
@@ -52,6 +53,24 @@ func (p *CompilerPass) withArgOrigin(origin ArgOrigin) *CompilerPass {
 func (p *CompilerPass) withBindOrigin(origin BindOrigin) *CompilerPass {
 	p.bindOrigin = origin
 	return p
+}
+
+// Name is what the pass is called. It is not unique and not stable: two passes
+// may share a name, so it is worth reading and worth printing, and never worth
+// identifying a pass by.
+func (p *CompilerPass) Name() string {
+	return p.name
+}
+
+// Stage is when the pass runs.
+func (p *CompilerPass) Stage() CompilerStage {
+	return p.stage
+}
+
+// Priority orders the pass within its stage: the lower the number, the earlier
+// it runs.
+func (p *CompilerPass) Priority() int {
+	return p.priority
 }
 
 func (p *CompilerPass) Run(builder *ContainerBuilder) error {
@@ -190,6 +209,29 @@ func (c *Compiler) AddPass(pass *CompilerPass) {
 		return
 	}
 	c.passes = append(c.passes, pass)
+}
+
+// Passes yields the passes registered so far, in the order they were added.
+// Sorting into running order happens when the compiler runs, so a pass reading
+// this mid-run sees the queue as it stands, including itself.
+//
+// It is there to be read. What the built-in passes do is godi's own, and
+// turning behaviour off is expressed where it belongs - per definition, with
+// NotAutowired and Lazy, and per container with SkipCycleValidation - rather
+// than by dismantling the pipeline.
+func (c *Compiler) Passes() iter.Seq[*CompilerPass] {
+	return func(yield func(*CompilerPass) bool) {
+		for _, pass := range c.passes {
+			if !yield(pass) {
+				return
+			}
+		}
+		for _, pass := range c.pending {
+			if !yield(pass) {
+				return
+			}
+		}
+	}
 }
 
 func (c *Compiler) Run(builder *ContainerBuilder) error {
