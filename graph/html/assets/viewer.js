@@ -1778,7 +1778,9 @@ function rebuildLabels() {
 
 // A handle on the graph, for anyone who wants to poke at their own wiring from
 // the console: godi.cy is the Cytoscape instance, godi.data the model.
-window.godi = { cy, data, state, apply, relayout };
+// godi.mod is which modifier this platform pans with, so that a driver of the
+// page does not have to work the rule out a second time and get it wrong.
+window.godi = { cy, data, state, apply, relayout, mod: MOD };
 
 showSnapshot();
 showDiagnostics();

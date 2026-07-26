@@ -44,7 +44,14 @@ func TestViewerRegressions(t *testing.T) {
 	require.NoError(t, os.WriteFile(snapshot, snapBuf.Bytes(), 0o600))
 
 	script := filepath.Join("testdata", "viewer_test.mjs")
-	profile := filepath.Join(dir, "profile")
+
+	// Not under t.TempDir: Chrome goes on writing to its profile for a moment
+	// after it is killed, and t.TempDir fails the test when what it removes is
+	// not empty - so a suite that passed reported a red build. Cleaning it up is
+	// ours to do, and best effort, because a stray profile is not worth that.
+	profile, err := os.MkdirTemp("", "godi-viewer-profile-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(profile) })
 
 	//nolint:gosec // G204: the binaries are resolved above and the arguments are ours.
 	cmd := exec.Command(node, script, page, chrome, profile, snapshot)

@@ -782,7 +782,16 @@ await selectNode(SERVER);
 
 // --- navigation: panning, zooming, and who is holding the wheel -------------
 
-const MOD_BIT = 4; // Meta, in the protocol's modifier mask. Macs only here.
+// Command on a Mac, Control everywhere else. The page decides, so the suite asks
+// it rather than working the rule out a second time: hard-coding Command left
+// these checks passing on the machine they were written on and failing on CI.
+const MOD = await ev(`godi.mod`);
+const COMMAND = MOD === 'metaKey';
+const MOD_BIT = COMMAND ? 4 : 2; // The protocol's modifier mask.
+const MOD_KEY = COMMAND
+	? { key: 'Meta', code: 'MetaLeft', windowsVirtualKeyCode: 91 }
+	: { key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17 };
+
 // cy.pan() returns a live object rather than a snapshot, so it has to be
 // copied before anything is compared against it.
 const view = () => ev(`({ pan: {...godi.cy.pan()}, zoom: godi.cy.zoom() })`);
@@ -821,9 +830,9 @@ await test('the modifier turns a drag on a node into a pan', async () => {
 	const pan = (await view()).pan;
 
 	// The mode is armed by the key, so the key has to be down first.
-	await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: MOD_BIT, key: 'Meta', code: 'MetaLeft', windowsVirtualKeyCode: 91 });
+	await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: MOD_BIT, ...MOD_KEY });
 	await dragFrom(at, { modifiers: MOD_BIT });
-	await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 0, key: 'Meta', code: 'MetaLeft', windowsVirtualKeyCode: 91 });
+	await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 0, ...MOD_KEY });
 
 	const after = await ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).position()`);
 	const panAfter = (await view()).pan;
@@ -835,7 +844,8 @@ await test('and releasing it hands the node back', async () =>
 	eq(await ev(`godi.cy.autoungrabify()`), false, 'grabbing after the modifier is released'));
 
 await test('losing the window releases it too', async () => {
-	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Meta', metaKey: true})); return true; })()`);
+	const down = JSON.stringify({ key: MOD_KEY.key, [MOD]: true });
+	await ev(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', ${down})); return true; })()`);
 	const armed = await ev(`godi.cy.autoungrabify()`);
 	await ev(`(() => { window.dispatchEvent(new Event('blur')); return true; })()`);
 	return (armed === true && await ev(`godi.cy.autoungrabify()`) === false)
@@ -962,9 +972,8 @@ await test('it leaves out what needs no telling', async () => {
 
 await test('the modifier is spelled for this platform', async () => {
 	const text = await ev(`document.getElementById('panel').textContent`);
-	const mac = await ev(`/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)`);
-	return text.includes(mac ? '⌘ + drag' : 'Ctrl + drag')
-		|| `no modifier row for ${mac ? 'macOS' : 'this platform'}`;
+	return text.includes(COMMAND ? '⌘ + drag' : 'Ctrl + drag')
+		|| `no modifier row for ${COMMAND ? 'macOS' : 'this platform'}`;
 });
 
 await test('the search box has a clear button, once there is something to clear', async () => {
