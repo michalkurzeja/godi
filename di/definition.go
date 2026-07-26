@@ -1,7 +1,9 @@
 package di
 
 import (
+	"cmp"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -86,9 +88,11 @@ func (d *ServiceDefinition) SetFactory(factory *Factory) *ServiceDefinition {
 }
 
 func (d *ServiceDefinition) MethodCalls() []*Method {
-	return util.SortedAsc(lo.Values(d.methodCalls), func(m *Method) string {
-		return m.Name()
+	calls := lo.Values(d.methodCalls)
+	slices.SortFunc(calls, func(a, b *Method) int {
+		return cmp.Compare(a.Name(), b.Name())
 	})
+	return calls
 }
 
 func (d *ServiceDefinition) SetMethodCalls(methodCalls ...*Method) *ServiceDefinition {

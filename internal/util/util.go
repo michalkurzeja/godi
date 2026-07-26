@@ -1,11 +1,9 @@
 package util
 
 import (
-	"cmp"
 	"fmt"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 )
 
@@ -15,10 +13,6 @@ func Signature(typ reflect.Type) string {
 	if typ == nil {
 		return "<nil>"
 	}
-	//if typ.Kind() == reflect.Func {
-	//	return funcSignature(typ)
-	//}
-
 	named := typ
 	var isPtr bool
 	if typ.Kind() == reflect.Pointer {
@@ -93,12 +87,4 @@ func Truncate(s string, maxRunes int) (string, bool) {
 func Zero[T any]() T {
 	var v T
 	return v
-}
-
-// SortedAsc returns the given slice, sorted by the given property in ascending order.
-func SortedAsc[T any, O cmp.Ordered](s []T, by func(v T) O) []T {
-	sort.Slice(s, func(i, j int) bool {
-		return by(s[i]) < by(s[j])
-	})
-	return s
 }

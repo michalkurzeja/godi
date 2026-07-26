@@ -38,11 +38,3 @@ func First[V any](seq iter.Seq[V]) (V, bool) {
 	var zero V
 	return zero, false
 }
-
-func Collect[V any](seq iter.Seq[V]) []V {
-	var result []V
-	for v := range seq {
-		result = append(result, v)
-	}
-	return result
-}

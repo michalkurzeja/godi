@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"strings"
@@ -218,7 +219,7 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 		OriginPass: p.OriginPass,
 		Resolution: res,
 		Bindings:   hops,
-		ParamType:  cmpOr(p.ElemType, p.Type),
+		ParamType:  cmp.Or(p.ElemType, p.Type),
 		Ordinal:    p.EdgeCount,
 	})
 	p.EdgeCount++
@@ -321,11 +322,4 @@ func render(v any, maxRunes int) (s string, truncated bool) {
 	}()
 
 	return util.Truncate(fmt.Sprintf("%v", v), maxRunes)
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

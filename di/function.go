@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/samber/lo"
-
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
@@ -189,8 +187,10 @@ func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 		resolvedArgs[i] = reflect.ValueOf(val)
 	}
 
-	call := lo.Ternary(f.args.IsVariadic(), f.fn.CallSlice, f.fn.Call)
-	return call(resolvedArgs), nil
+	if f.args.IsVariadic() {
+		return f.fn.CallSlice(resolvedArgs), nil
+	}
+	return f.fn.Call(resolvedArgs), nil
 }
 
 func (f *Func) Args() *ArgList {

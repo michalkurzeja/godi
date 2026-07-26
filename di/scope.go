@@ -400,11 +400,11 @@ func (s *Scope) ServiceDefinitionsInChainSeq() iter.Seq[*ServiceDefinition] {
 }
 
 func (s *Scope) GetServiceDefinitions() []*ServiceDefinition {
-	return iterx.Collect(s.ServiceDefinitionsSeq())
+	return slices.Collect(s.ServiceDefinitionsSeq())
 }
 
 func (s *Scope) GetServiceDefinitionsInChain() []*ServiceDefinition {
-	return iterx.Collect(s.ServiceDefinitionsInChainSeq())
+	return slices.Collect(s.ServiceDefinitionsInChainSeq())
 }
 
 func (s *Scope) GetServiceDefinitionsByType(typ reflect.Type) []*ServiceDefinition {
@@ -476,11 +476,11 @@ func (s *Scope) FunctionDefinitionsInChainSeq() iter.Seq[*FunctionDefinition] {
 }
 
 func (s *Scope) GetFunctionDefinitions() []*FunctionDefinition {
-	return iterx.Collect(s.FunctionDefinitionsSeq())
+	return slices.Collect(s.FunctionDefinitionsSeq())
 }
 
 func (s *Scope) GetFunctionDefinitionsInChain() []*FunctionDefinition {
-	return iterx.Collect(s.FunctionDefinitionsInChainSeq())
+	return slices.Collect(s.FunctionDefinitionsInChainSeq())
 }
 
 func (s *Scope) GetFunctionDefinitionsByType(typ reflect.Type) []*FunctionDefinition {
@@ -549,7 +549,7 @@ func (s *Scope) BindingsInChainSeq() iter.Seq[*InterfaceBinding] {
 }
 
 func (s *Scope) GetBindings() []*InterfaceBinding {
-	return iterx.Collect(s.BindingsSeq())
+	return slices.Collect(s.BindingsSeq())
 }
 
 func (s *Scope) GetBinding(typ reflect.Type) (*InterfaceBinding, bool) {
@@ -673,7 +673,7 @@ func (r *DefinitionRegistry[Def]) Seq() iter.Seq[Def] {
 }
 
 func (r *DefinitionRegistry[Def]) GetAll() []Def {
-	return iterx.Collect(r.Seq())
+	return slices.Collect(r.Seq())
 }
 
 func (r *DefinitionRegistry[Def]) Len() int {
