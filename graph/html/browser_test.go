@@ -298,9 +298,12 @@ func regressionModel() *graph.Graph {
 // one argument nobody has wired yet, and a graph that says why.
 func snapshotModel() *graph.Graph {
 	g := regressionModel()
+	// Taken while validation runs: autowiring is done, so an argument nothing
+	// filled is a fault rather than work outstanding.
 	g.Snapshot = &graph.Snapshot{
-		Stage: "automation", Pass: "autowiring",
-		Done: []string{"interface binding"},
+		Stage: "validation", Pass: "argument validation",
+		Done:      []string{"interface binding", "autowiring"},
+		Autowired: true,
 	}
 
 	metrics, ok := g.Node("root/svc:app.(*Metrics)")
@@ -315,20 +318,19 @@ func snapshotModel() *graph.Graph {
 		// What an unfilled slot looks like: nothing has decided anything yet.
 		Origin: graph.ArgOriginNone,
 		Arg:    graph.ArgKindNone,
+		Note:   "argument is not wired",
 	}}
-	// Set by the extractor from the argument above; written down here because
-	// this fixture is built by hand.
+	// Both set by the extractor from the argument above; written down here
+	// because this fixture is built by hand. The notice the page lists for it is
+	// not: the graph reads that off the parameter, which is what keeps the count
+	// and the red borders from disagreeing.
 	metrics.Incomplete = true
 
-	// The same two, and the pair is the point: one is about a node and can be
-	// followed to it, the other is about the container itself and has no node to
-	// be marked on. Only the page's own list carries the second kind.
-	g.Diagnostics = []*graph.Diagnostic{
-		{
-			Severity: "warning", Node: metrics.ID, Param: metrics.Params[0].ID,
-			Message: "argument is not wired",
-		},
-		{Severity: "warning", Scope: "root/jobs", Message: `scope "root/jobs" belongs to no definition`},
+	// About the graph rather than the container, with no node to be marked on -
+	// and not a fault, since a compiler pass is entitled to make a scope. Only
+	// the page's own list carries this kind.
+	g.GraphDiagnostics = []*graph.Diagnostic{
+		{Severity: graph.SeverityInfo, Scope: "root/jobs", Message: `scope "root/jobs" belongs to no definition`},
 	}
 
 	return g

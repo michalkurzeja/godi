@@ -444,10 +444,10 @@ func (g *Graph) Select(filters ...Filter) *Graph {
 
 func (g *Graph) rebuild(sel *selection) *Graph {
 	out := &Graph{
-		Schema:      g.Schema,
-		SourceRoot:  g.SourceRoot,
-		Diagnostics: g.Diagnostics,
-		Snapshot:    g.Snapshot,
+		Schema:           g.Schema,
+		SourceRoot:       g.SourceRoot,
+		GraphDiagnostics: g.GraphDiagnostics,
+		Snapshot:         g.Snapshot,
 	}
 
 	kept := make(map[NodeID]*Node, len(sel.nodes))

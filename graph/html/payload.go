@@ -43,11 +43,11 @@ type viewSnapshot struct {
 }
 
 type viewDiagnostic struct {
-	Severity string        `json:"severity"`
-	Message  string        `json:"message"`
-	Node     graph.NodeID  `json:"node,omitzero"`
-	Param    graph.ParamID `json:"param,omitzero"`
-	Scope    graph.ScopeID `json:"scope,omitzero"`
+	Severity graph.Severity `json:"severity"`
+	Message  string         `json:"message"`
+	Node     graph.NodeID   `json:"node,omitzero"`
+	Param    graph.ParamID  `json:"param,omitzero"`
+	Scope    graph.ScopeID  `json:"scope,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -191,7 +191,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 	if g.Partial() {
 		p.Snapshot = &viewSnapshot{Label: g.Snapshot.Label(), Done: g.Snapshot.Done}
 	}
-	for _, d := range g.Diagnostics {
+	for _, d := range g.AllDiagnostics() {
 		p.Diagnostics = append(p.Diagnostics, viewDiagnostic{
 			Severity: d.Severity,
 			Message:  d.Message,

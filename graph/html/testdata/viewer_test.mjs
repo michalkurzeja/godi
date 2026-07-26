@@ -1943,7 +1943,7 @@ await test('a graph taken mid-build says so across the top', async () => {
 	})()`);
 
 	if (strip.hidden) return 'the strip stayed hidden on a snapshot';
-	return strip.text.includes('taken during the autowiring pass') || strip.text;
+	return strip.text.includes('taken during the argument validation pass') || strip.text;
 });
 
 // Two facts, either of which can be true on its own, so they are two strips and
@@ -1959,7 +1959,9 @@ await test('a graph that is both unfinished and faulty says both, one under the 
 		return 'the strips are in the order ' + strips.map((s) => s.id).join(', ');
 	}
 	if (strips.some((s) => s.hidden)) return 'one of the two strips stayed hidden';
-	return strips[1].text.includes('2 warnings') || strips[1].text;
+	// A fault in the wiring and a note about the graph are not the same thing,
+	// and the strip says which is which: one of each, not "2 warnings".
+	return strips[1].text.includes('1 warning · 1 info') || strips[1].text;
 });
 
 // A notice about a scope has no node to be marked on, so the page is the only

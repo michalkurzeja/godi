@@ -778,9 +778,12 @@ func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
 	g := graphOfFailedBuild(t, b)
 
 	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete)
-	require.Len(t, g.Diagnostics, 1, "one thing is wrong, so one thing is reported")
-	require.Equal(t, "argument 2 is not set", g.Diagnostics[0].Message)
-	require.Equal(t, nodeOf(t, g, "v2_test.(*Server)").ID, g.Diagnostics[0].Node)
+
+	faults := g.WiringDiagnostics()
+	require.Len(t, faults, 1, "one thing is wrong, so one thing is reported")
+	require.Equal(t, "argument 2 is not set", faults[0].Message)
+	require.Equal(t, nodeOf(t, g, "v2_test.(*Server)").ID, faults[0].Node)
+	require.Empty(t, g.GraphDiagnostics, "nothing is odd about the graph itself")
 }
 
 // Before autowiring runs every argument is unwired, so marking each of them

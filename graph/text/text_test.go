@@ -277,7 +277,9 @@ func TestNoticesAreReported(t *testing.T) {
 	t.Parallel()
 
 	g := model()
-	g.Diagnostics = []*graph.Diagnostic{{Severity: "warning", Message: "scope \"orphan\" belongs to no definition"}}
+	g.GraphDiagnostics = []*graph.Diagnostic{
+		{Severity: graph.SeverityWarning, Message: "scope \"orphan\" belongs to no definition"},
+	}
 
 	out := encode(t, g)
 

@@ -206,7 +206,7 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 	}
 
 	if len(b.children) > 0 {
-		childScope := scope.NewChild(b.def.ID().String())
+		childScope := b.def.NewChildScope(scope)
 
 		for _, child := range b.children {
 			err := child.Build(childScope)
@@ -214,7 +214,6 @@ func (b *ServiceDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 			}
 		}
-		b.def.SetChildScope(childScope)
 	}
 
 	if joinedErrs != nil {
@@ -304,7 +303,7 @@ func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 			}
 		}
 
-		childScope := scope.NewChild(b.def.ID().String())
+		childScope := b.def.NewChildScope(scope)
 
 		for _, child := range b.children {
 			err := child.Build(childScope)
@@ -312,8 +311,6 @@ func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {
 				joinedErrs = errors.Join(joinedErrs, errorsx.Wrap(err, "invalid child"))
 			}
 		}
-
-		b.def.SetChildScope(childScope)
 	}
 
 	if joinedErrs != nil {

@@ -766,11 +766,11 @@ function showSnapshot() {
 
 // ------------------------------------------------------------- diagnostics ---
 
-// Most of what the extractor could not make sense of is marked on the node it is
-// about. Not all of it: a scope belonging to no definition, or a file written
-// against a schema this build does not know, is about the graph itself and has
-// nowhere else to go. So the strip says there are some, and the panel - which
-// otherwise sits there asking to be given a node - lists them.
+// Every fault in the wiring is marked on the node it is about. Not every notice
+// is a fault: a scope belonging to no definition, or a file written against a
+// schema this build does not know, is about the graph itself and has nowhere
+// else to go. So the strip says how many there are of each, and the panel -
+// which otherwise sits there asking to be given a node - lists them.
 function showDiagnostics() {
 	const diagnostics = data.diagnostics || [];
 	if (!diagnostics.length) return;
@@ -784,9 +784,10 @@ function showDiagnostics() {
 	});
 }
 
-// Counted by severity rather than totalled, because the severity is the model's
-// own free-form string: today everything is a warning, and a strip that says
-// "3 notices" where it could say "3 warnings" is the vaguer of the two.
+// Counted by severity rather than totalled, because the two kinds of notice are
+// not the same news: a fault in the wiring is something to fix, and a note about
+// the graph - a scope a compiler pass made, a schema this build does not know -
+// is not. A strip saying "3 notices" would put them under one number.
 function severityTally(diagnostics) {
 	const counts = new Map();
 	for (const d of diagnostics) counts.set(d.severity, (counts.get(d.severity) || 0) + 1);

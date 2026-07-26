@@ -224,15 +224,19 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 	p.EdgeCount++
 }
 
+// unresolved records what an argument failed to find. The note is the whole
+// record: what is wrong with the wiring is read back off the parameters, so
+// writing it down twice would be two accounts that can disagree.
 func (x *extractor) unresolved(p *graph.Param, msg string) {
 	p.Unresolved = true
 	p.Note = msg
-	x.diag("warning", graph.Diagnostic{Node: p.Node, Param: p.ID, Message: msg})
 }
 
-func (x *extractor) diag(severity string, d graph.Diagnostic) {
+// note is something about this graph rather than about the container it
+// describes: nothing is wrong with the wiring, so nothing is marked.
+func (x *extractor) note(severity graph.Severity, d graph.Diagnostic) {
 	d.Severity = severity
-	x.out.Diagnostics = append(x.out.Diagnostics, &d)
+	x.out.GraphDiagnostics = append(x.out.GraphDiagnostics, &d)
 }
 
 func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {

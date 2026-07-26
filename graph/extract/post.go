@@ -94,18 +94,19 @@ func (x *extractor) markIncomplete() {
 
 	for _, node := range x.out.Nodes {
 		for _, p := range node.Params {
-			// An argument naming something that is not there was reported where
-			// it failed to resolve. One nothing filled fails no lookup, so it is
-			// reported here - and reported, rather than only marked, so that a
-			// reader counting what is wrong is not told a number short of one.
-			if wired && p.Origin == graph.ArgOriginNone {
-				x.diag("warning", graph.Diagnostic{
-					Node: node.ID, Param: p.ID, Message: notSet(p),
-				})
+			if !wired || p.Origin != graph.ArgOriginNone {
+				if p.Unresolved {
+					node.Incomplete = true
+				}
+				continue
 			}
-			if p.Unresolved || (wired && p.Origin == graph.ArgOriginNone) {
-				node.Incomplete = true
-			}
+
+			// An argument naming something that is not there said so where it
+			// failed to resolve. One nothing filled fails no lookup, so this is
+			// where it gets its words - and it needs them, because the note is
+			// what a reader counting faults is counting.
+			p.Note = notSet(p)
+			node.Incomplete = true
 		}
 	}
 }
@@ -159,17 +160,8 @@ func (x *extractor) sortAll() {
 		}
 		return strings.Compare(a.Interface, b.Interface)
 	})
-	// By what they are about, so that everything wrong with one node is read
-	// together, whatever order the two passes that found it ran in.
-	slices.SortFunc(x.out.Diagnostics, func(a, b *graph.Diagnostic) int {
-		if c := strings.Compare(string(a.Node), string(b.Node)); c != 0 {
-			return c
-		}
-		if c := strings.Compare(string(a.Param), string(b.Param)); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Message, b.Message)
-	})
+	// The wiring diagnostics need no sorting: they are read off the nodes, which
+	// are sorted here.
 }
 
 // trimSourceRoot takes the directory every path shares out of the paths and

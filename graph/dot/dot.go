@@ -466,7 +466,8 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 func (p *printer) notices(g *graph.Graph) {
 	// Escaped a line at a time, then joined with a break: inside an HTML-like
 	// label a newline is just whitespace, and <BR/> is the only line ending.
-	lines := make([]string, 0, len(g.Diagnostics)+3)
+	notices := g.AllDiagnostics()
+	lines := make([]string, 0, len(notices)+3)
 
 	// A half-wired picture looks exactly like a finished one with dependencies
 	// missing, so the drawing has to say which it is.
@@ -477,8 +478,8 @@ func (p *printer) notices(g *graph.Graph) {
 		}
 	}
 
-	for _, d := range g.Diagnostics {
-		lines = append(lines, esc(d.Severity+": "+d.Message))
+	for _, d := range notices {
+		lines = append(lines, esc(string(d.Severity)+": "+d.Message))
 	}
 
 	if len(lines) == 0 {

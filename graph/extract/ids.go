@@ -35,7 +35,10 @@ func (x *extractor) assignIDs() {
 			}
 		}
 		x.assignScope(scope, parent+graph.ScopeID("/scope:"+scope.Name()), parent, depth, owners)
-		x.diag("warning", graph.Diagnostic{
+		// Worth saying, because such a scope is drawn without an owner and
+		// there is nothing in the container to explain it. Not a fault: a
+		// compiler pass is entitled to make one.
+		x.note(graph.SeverityInfo, graph.Diagnostic{
 			Scope:   x.scopeIDs[scope],
 			Message: fmt.Sprintf("scope %q belongs to no definition", scope.Name()),
 		})

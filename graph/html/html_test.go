@@ -487,15 +487,13 @@ func TestElisionReachesThePayload(t *testing.T) {
 // belonging to no definition has no node to be marked on.
 func TestDiagnosticsReachThePayload(t *testing.T) {
 	g := model()
-	g.Diagnostics = []*graph.Diagnostic{
-		{
-			Severity: "warning",
-			Node:     g.Nodes[0].ID,
-			Param:    g.Nodes[0].Params[0].ID,
-			Message:  "dependency is not registered in this container",
-		},
-		{Severity: "warning", Scope: "root/child", Message: `scope "root/child" belongs to no definition`},
-		{Severity: "warning", Message: "written by godi v2.1, read by v2.0"},
+	// A fault in the wiring is not written down twice: the parameter carries it,
+	// and the graph works the notice out from there.
+	g.Nodes[0].Params[0].Unresolved = true
+	g.Nodes[0].Params[0].Note = "dependency is not registered in this container"
+	g.GraphDiagnostics = []*graph.Diagnostic{
+		{Severity: graph.SeverityInfo, Scope: "root/child", Message: `scope "root/child" belongs to no definition`},
+		{Severity: graph.SeverityWarning, Message: "written by godi v2.1, read by v2.0"},
 	}
 
 	var data struct {
@@ -516,6 +514,7 @@ func TestDiagnosticsReachThePayload(t *testing.T) {
 	require.Equal(t, string(g.Nodes[0].ID), data.Diagnostics[0].Node)
 	require.Equal(t, string(g.Nodes[0].Params[0].ID), data.Diagnostics[0].Param)
 
+	require.Equal(t, "info", data.Diagnostics[1].Severity, "a pass making a scope is not a fault")
 	require.Equal(t, "root/child", data.Diagnostics[1].Scope)
 	require.Empty(t, data.Diagnostics[1].Node)
 

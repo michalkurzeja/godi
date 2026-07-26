@@ -376,13 +376,14 @@ func bracketed(parts []string) string {
 }
 
 func (p *printer) diagnostics(g *graph.Graph) {
-	if len(g.Diagnostics) == 0 {
+	notices := g.AllDiagnostics()
+	if len(notices) == 0 {
 		return
 	}
 
 	p.printf("\n")
 	p.linef(0, "notices:")
-	for _, d := range g.Diagnostics {
+	for _, d := range notices {
 		p.linef(1, "%s: %s", d.Severity, d.Message)
 	}
 }

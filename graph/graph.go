@@ -40,12 +40,17 @@ type Graph struct {
 	// Schema is not written here. Serialising a graph wraps it in an envelope
 	// whose metadata carries the schema, so the file says it once - see
 	// WriteJSON.
-	Schema      string        `json:"-"`
-	Scopes      []*Scope      `json:"scopes"`   // Depth first from the root.
-	Nodes       []*Node       `json:"nodes"`    // Sorted by ID.
-	Edges       []*Edge       `json:"edges"`    // Sorted by (From, Param, Ordinal).
-	Bindings    []*Binding    `json:"bindings"` // Sorted by (Scope, Interface).
-	Diagnostics []*Diagnostic `json:"diagnostics,omitempty"`
+	Schema   string     `json:"-"`
+	Scopes   []*Scope   `json:"scopes"`   // Depth first from the root.
+	Nodes    []*Node    `json:"nodes"`    // Sorted by ID.
+	Edges    []*Edge    `json:"edges"`    // Sorted by (From, Param, Ordinal).
+	Bindings []*Binding `json:"bindings"` // Sorted by (Scope, Interface).
+
+	// GraphDiagnostics are about this graph, or the file it was read from,
+	// rather than about the container: a scope no definition owns, a schema
+	// this build does not know. Nothing is wrong with the wiring, so nothing is
+	// marked - see WiringDiagnostics for the other half.
+	GraphDiagnostics []*Diagnostic `json:"graphDiagnostics,omitzero"`
 
 	// Snapshot is set when the graph was taken from a container that was not
 	// finished being built. It is nil for a built container, which is the only
@@ -64,6 +69,8 @@ type Graph struct {
 	scopes map[ScopeID]*Scope
 	out    map[NodeID][]*Edge
 	in     map[NodeID][]*Edge
+	wiring []*Diagnostic
+	wired  bool
 }
 
 // Scope is a group of definitions. Child scopes hold services private to the
@@ -543,14 +550,75 @@ func (s *Snapshot) Label() string {
 // built, and so describes wiring that is not finished.
 func (g *Graph) Partial() bool { return g != nil && g.Snapshot != nil }
 
-// Diagnostic reports something the extractor could not make sense of. Extraction
-// never fails on odd input; it records it here instead.
+// Severity says how much a Diagnostic matters.
+type Severity string
+
+const (
+	SeverityInfo    Severity = "info"    // Worth knowing; nothing is wrong.
+	SeverityWarning Severity = "warning" // Something will not work as read.
+	SeverityError   Severity = "error"   // Something is broken.
+)
+
+// Diagnostic reports something worth saying about a graph: an argument that
+// resolves to nothing, a scope no definition owns, a file written by a version
+// that knew a different schema. Extraction never fails on odd input; it records
+// it here instead.
 type Diagnostic struct {
-	Severity string  `json:"severity"`
-	Scope    ScopeID `json:"scope,omitzero"`
-	Node     NodeID  `json:"node,omitzero"`
-	Param    ParamID `json:"param,omitzero"`
-	Message  string  `json:"message"`
+	Severity Severity `json:"severity"`
+	Scope    ScopeID  `json:"scope,omitzero"`
+	Node     NodeID   `json:"node,omitzero"`
+	Param    ParamID  `json:"param,omitzero"`
+	Message  string   `json:"message"`
+}
+
+// WiringDiagnostics are the faults in the container itself: an argument naming
+// a dependency that is not there, and one nothing wired once nothing is going
+// to. Both can only occur in a graph of a build that failed or has not
+// finished, since the argument validation pass rejects either.
+//
+// Derived from the parameters rather than stored beside them, so that the count
+// a reader is shown and the nodes drawn as faulty cannot drift apart: they are
+// the same fact, read twice.
+func (g *Graph) WiringDiagnostics() []*Diagnostic {
+	if g.wired {
+		return g.wiring
+	}
+	g.wired = true
+
+	// Before autowiring runs every argument is unwired, so an unfilled one is
+	// work outstanding rather than a fault. Whether it has run is the snapshot's
+	// to say, and a finished container has no snapshot.
+	autowired := g.Snapshot == nil || g.Snapshot.Autowired
+
+	for _, node := range g.Nodes {
+		for _, p := range node.Params {
+			unfilled := autowired && p.Origin == ArgOriginNone
+			if !p.Unresolved && !unfilled {
+				continue
+			}
+			g.wiring = append(g.wiring, &Diagnostic{
+				Severity: SeverityWarning,
+				Node:     p.Node,
+				Param:    p.ID,
+				Message:  p.Note,
+			})
+		}
+	}
+	return g.wiring
+}
+
+// AllDiagnostics is everything worth reporting about a graph, wiring first:
+// what is wrong with the container matters more than what is odd about the
+// picture of it.
+func (g *Graph) AllDiagnostics() []*Diagnostic {
+	wiring := g.WiringDiagnostics()
+	if len(g.GraphDiagnostics) == 0 {
+		return wiring
+	}
+
+	out := make([]*Diagnostic, 0, len(wiring)+len(g.GraphDiagnostics))
+	out = append(out, wiring...)
+	return append(out, g.GraphDiagnostics...)
 }
 
 // Node returns the node with the given ID.

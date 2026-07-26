@@ -93,8 +93,8 @@ func ReadJSON(r io.Reader) (*Graph, Metadata, error) {
 	g.Schema = env.Metadata.Schema // The file's own account of itself, not ours.
 
 	if g.Schema != Schema {
-		g.Diagnostics = append(g.Diagnostics, &Diagnostic{
-			Severity: "warning",
+		g.GraphDiagnostics = append(g.GraphDiagnostics, &Diagnostic{
+			Severity: SeverityWarning,
 			Message:  schemaMismatch(g.Schema),
 		})
 	}

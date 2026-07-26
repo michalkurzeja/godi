@@ -537,9 +537,9 @@ func TestGraphvizAcceptsTheOutput(t *testing.T) {
 	// Everything the encoder can emit, so Graphviz vets all of it: a filtered
 	// node's extra row and the notices cluster included.
 	g.Nodes[0].Elided = 4
-	g.Diagnostics = []*graph.Diagnostic{
-		{Severity: "warning", Message: `scope "orphan" belongs to no definition`},
-		{Severity: "warning", Message: "chan<- int could not be resolved"},
+	g.GraphDiagnostics = []*graph.Diagnostic{
+		{Severity: graph.SeverityInfo, Message: `scope "orphan" belongs to no definition`},
+		{Severity: graph.SeverityWarning, Message: "chan<- int could not be resolved"},
 	}
 	g.Snapshot = &graph.Snapshot{Stage: "automation", Pass: "autowiring", Done: []string{"interface binding"}}
 
@@ -630,9 +630,9 @@ func TestNoticesAreDrawn(t *testing.T) {
 	t.Parallel()
 
 	g := modelWith(nil, param(graph.ArgOriginManual, ""))
-	g.Diagnostics = []*graph.Diagnostic{
-		{Severity: "warning", Message: `scope "orphan" belongs to no definition`},
-		{Severity: "warning", Message: "chan<- int could not be resolved"},
+	g.GraphDiagnostics = []*graph.Diagnostic{
+		{Severity: graph.SeverityInfo, Message: `scope "orphan" belongs to no definition`},
+		{Severity: graph.SeverityWarning, Message: "chan<- int could not be resolved"},
 	}
 
 	out := encode(t, g)
