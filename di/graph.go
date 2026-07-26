@@ -485,7 +485,7 @@ func (x *extractor) byType(scope *Scope, typ reflect.Type, p *graph.Param, hops 
 	}
 }
 
-// flexibleSlice mirrors flexibleSliceArgResolver: the slice type wins over the
+// flexibleSlice mirrors flexibleSliceArg's own resolution: the slice type wins over the
 // element type, and each is checked against the bindings first.
 func (x *extractor) flexibleSlice(scope *Scope, a *flexibleSliceArg, p *graph.Param, hops []graph.BindingHop, seen []reflect.Type) {
 	sliceTyp := a.Type()

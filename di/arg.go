@@ -1,18 +1,35 @@
 package di
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/samber/lo"
 
+	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
+// Arg is one argument of a factory, a method call or a function: what to pass,
+// and how to find it. Every kind of argument answers for itself - validating,
+// resolving and listing what it resolves to - so that nothing outside has to
+// know the kinds apart.
+//
+// It is sealed. An argument the compiler passes and the graph would not
+// understand is worse than no argument at all, so the kinds are godi's.
 type Arg interface {
 	fmt.Stringer
 	Type() reflect.Type
+
+	// validate reports whether this argument can be resolved in the scope.
+	validate(scope *Scope) error
+	// resolve produces the value to pass.
+	resolve(scope *Scope) (any, error)
+	// resolveIDs lists the definitions this argument resolves to, which is
+	// empty for an argument that names no service.
+	resolveIDs(scope *Scope) []ID
 }
 
 type literalArg struct {
@@ -35,6 +52,18 @@ func (a *literalArg) Type() reflect.Type {
 	return reflect.TypeOf(a.v)
 }
 
+func (a *literalArg) validate(_ *Scope) error {
+	return nil
+}
+
+func (a *literalArg) resolve(_ *Scope) (any, error) {
+	return a.v, nil
+}
+
+func (a *literalArg) resolveIDs(_ *Scope) []ID {
+	return nil
+}
+
 type refArg struct {
 	def *ServiceDefinition
 }
@@ -52,6 +81,28 @@ func (a *refArg) String() string {
 
 func (a *refArg) Type() reflect.Type {
 	return a.def.Type()
+}
+
+func (a *refArg) validate(scope *Scope) error {
+	if !scope.HasServiceInChain(a.def.ID()) {
+		return fmt.Errorf("service %s not found", a.def.ID())
+	}
+	return nil
+}
+
+func (a *refArg) resolve(scope *Scope) (any, error) {
+	v, err := scope.GetServiceInChain(a.def.ID())
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve ID arg")
+	}
+	if v == nil {
+		return nil, fmt.Errorf("service %s not found", a.def.ID())
+	}
+	return v, nil
+}
+
+func (a *refArg) resolveIDs(_ *Scope) []ID {
+	return []ID{a.def.ID()}
 }
 
 type typeArg struct {
@@ -72,6 +123,48 @@ func (a *typeArg) Type() reflect.Type {
 		return reflect.SliceOf(a.typ)
 	}
 	return a.typ
+}
+
+func (a *typeArg) validate(scope *Scope) error {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return boundTo.validate(scope)
+	}
+	ids := scope.GetServicesIDsByTypeInChain(a.typ)
+	if len(ids) == 0 {
+		return fmt.Errorf("no services found for type %s", util.Signature(a.typ))
+	}
+	if !a.slice && len(ids) > 1 {
+		return fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
+	}
+	return nil
+}
+
+func (a *typeArg) resolve(scope *Scope) (any, error) {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return boundTo.resolve(scope)
+	}
+	vals, err := scope.GetServicesByTypeInChain(a.typ)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve type arg")
+	}
+	if len(vals) == 0 {
+		return nil, fmt.Errorf("no services found for type %s", util.Signature(a.typ))
+	}
+	if a.slice {
+		return convertSlice(vals, a.typ)
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
+	}
+	return vals[0], nil
+}
+
+func (a *typeArg) resolveIDs(scope *Scope) []ID {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return boundTo.resolveIDs(scope)
+	}
+	return scope.GetServicesIDsByTypeInChain(a.typ)
 }
 
 type labelArg struct {
@@ -95,6 +188,43 @@ func (a *labelArg) Type() reflect.Type {
 	return a.typ
 }
 
+func (a *labelArg) validate(scope *Scope) error {
+	ids := scope.GetServicesIDsByLabelInChain(a.label)
+	if len(ids) == 0 {
+		return fmt.Errorf("no services found with label %s", a.label)
+	}
+	if !a.slice && len(ids) > 1 {
+		return fmt.Errorf("multiple services found with label %s", a.label)
+	}
+	return nil
+}
+
+func (a *labelArg) resolve(scope *Scope) (any, error) {
+	vals, err := scope.GetServicesByLabelInChain(a.label)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve type arg")
+	}
+	if len(vals) == 0 {
+		return nil, fmt.Errorf("no services found with label %s", a.label)
+	}
+	if a.slice {
+		return convertSlice(vals, a.typ)
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for label %s", a.label)
+	}
+	argType := reflect.TypeOf(vals[0])
+	if argType != a.Type() {
+		return nil, fmt.Errorf("service labeled as %s should be of type %s, got %s", a.label, util.Signature(a.Type()), util.Signature(argType))
+	}
+	return vals[0], nil
+}
+
+func (a *labelArg) resolveIDs(scope *Scope) []ID {
+	return scope.GetServicesIDsByLabelInChain(a.label)
+}
+
 type flexibleSliceArg struct {
 	elemType   reflect.Type
 	allowEmpty bool
@@ -110,6 +240,90 @@ func (a *flexibleSliceArg) String() string {
 
 func (a *flexibleSliceArg) Type() reflect.Type {
 	return reflect.SliceOf(a.elemType)
+}
+
+// The slice type wins over the element type, and each is checked against the
+// bindings first. The three methods below try them in that same order, and the
+// graph reads the order off them rather than repeating it.
+
+func (a *flexibleSliceArg) validate(scope *Scope) error {
+	// First try to match by the slice type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.Type()); ok {
+		return boundTo.validate(scope)
+	}
+	ids := scope.GetServicesIDsByTypeInChain(a.Type())
+	if len(ids) > 1 {
+		return fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
+	}
+	if len(ids) == 1 {
+		return nil // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return boundTo.validate(scope)
+	}
+	ids = scope.GetServicesIDsByTypeInChain(a.elemType)
+	if len(ids) > 0 {
+		return nil // Slice element type matched!
+	}
+	if a.allowEmpty {
+		return nil
+	}
+
+	return fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
+}
+
+func (a *flexibleSliceArg) resolve(scope *Scope) (any, error) {
+	// First try to match by the slice type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.Type()); ok {
+		return boundTo.resolve(scope)
+	}
+	vals, err := scope.GetServicesByTypeInChain(a.Type())
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg")
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
+	}
+	if len(vals) == 1 {
+		return vals[0], nil // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return boundTo.resolve(scope)
+	}
+	vals, err = scope.GetServicesByTypeInChain(a.elemType)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg element")
+	}
+	if len(vals) > 0 {
+		return convertSlice(vals, a.elemType) // Slice element type matched!
+	}
+	if a.allowEmpty {
+		return convertSlice(nil, a.elemType)
+	}
+
+	return nil, fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
+}
+
+func (a *flexibleSliceArg) resolveIDs(scope *Scope) []ID {
+	// First try to match by the slice type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.Type()); ok {
+		return boundTo.resolveIDs(scope)
+	}
+	ids := scope.GetServicesIDsByTypeInChain(a.Type())
+	if len(ids) > 0 {
+		return ids // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return boundTo.resolveIDs(scope)
+	}
+	return scope.GetServicesIDsByTypeInChain(a.elemType)
 }
 
 type compoundArg struct {
@@ -140,6 +354,35 @@ func (c *compoundArg) String() string {
 
 func (c *compoundArg) Type() reflect.Type {
 	return c.typ
+}
+
+func (c *compoundArg) validate(scope *Scope) error {
+	var joinedErr error
+	for i, arg := range c.args {
+		err := arg.validate(scope)
+		if err != nil {
+			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i))
+		}
+	}
+	return joinedErr
+}
+
+func (c *compoundArg) resolve(scope *Scope) (any, error) {
+	vals := make([]any, len(c.args))
+	for i, arg := range c.args {
+		v, err := arg.resolve(scope)
+		if err != nil {
+			return nil, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i)
+		}
+		vals[i] = v
+	}
+	return convertSlice(vals, c.typ)
+}
+
+func (c *compoundArg) resolveIDs(scope *Scope) []ID {
+	return lo.FlatMap(c.args, func(arg Arg, _ int) []ID {
+		return arg.resolveIDs(scope)
+	})
 }
 
 func NewSlottedArg(arg Arg, slot uint) *SlottedArg {
