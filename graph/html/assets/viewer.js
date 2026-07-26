@@ -450,7 +450,14 @@ function stylesheet() {
 		// Cytoscape marks a held background with a grey disc under the pointer,
 		// which reads as something having gone wrong.
 		{ selector: 'core', style: { 'active-bg-opacity': 0, 'active-bg-size': 0 } },
-		{ selector: '.dim', style: { opacity: 0.12, 'text-opacity': 0 } },
+		// Dimmed is still readable, and still there to be clicked: what is not in
+		// the selection is context, not clutter, and a reader who can see what
+		// else is in the container can pick their next node out of it. Isolate
+		// selection is the switch for wanting them gone.
+		{ selector: 'node.dim', style: { opacity: 0.42 } },
+		// Edges are the part that reads as noise when it is not about the
+		// selection, so they fade much further, and their labels go entirely.
+		{ selector: 'edge.dim', style: { opacity: 0.13, 'text-opacity': 0 } },
 		{ selector: 'node.match', style: { 'border-color': p.accent, 'border-width': 2.4 } },
 		{ selector: 'node.sel', style: { 'border-color': p.accent, 'border-width': 3.4 } },
 	];
@@ -1534,23 +1541,38 @@ function tidyID(text) {
 
 // ----------------------------------------------------------------- actions ---
 
-function select(id, centre) {
+// Selecting only ever dims, except while the selection is isolated: there it
+// changes which nodes exist on the canvas, and the ones that just appeared are
+// still where the last layout put them - scattered across a picture of the whole
+// container, with their scope box stretched over the gap to reach them. So the
+// same rule the filters use applies here: the shape changed, lay it out again.
+async function select(id, centre) {
 	state.focus = id;
 	showPanel(id);
-	apply();
+	// Laying out again frames what is left, so there is nothing to centre on
+	// afterwards - and two animations arguing over the viewport reads as a jump.
+	if (apply()) {
+		await relayout();
+		return;
+	}
 	if (id && centre) {
 		const el = cy.getElementById(id);
 		if (el.nonempty() && el.visible()) cy.animate({ center: { eles: el }, duration: 200 });
 	}
 }
 
-function reset() {
+async function reset() {
 	state.focus = null;
 	state.query = '';
 	$('search').value = '';
 	$('search-clear').hidden = true;
 	showPanel(null);
-	apply();
+	// Dropping an isolated selection brings the rest of the container back, and
+	// it comes back to wherever the layout of the isolated few left it.
+	if (apply()) {
+		await relayout();
+		return;
+	}
 	cy.animate({ fit: { eles: cy.elements(':visible'), padding: 30 }, duration: 200 });
 }
 

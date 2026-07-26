@@ -1764,6 +1764,91 @@ await test('the controls are read at load rather than assumed', async () => {
 
 await ev(`(() => { localStorage.clear(); return true; })()`);
 
+// --- isolate: what is left is laid out for what is left ---------------------
+
+// How far the visible nodes sprawl. A picture laid out for three nodes is small;
+// three nodes left where a picture of the whole container put them are not.
+const spread = () => ev(`(() => {
+	const bb = godi.cy.nodes(':childless:visible').boundingBox({ includeLabels: false });
+	return [Math.round(bb.w), Math.round(bb.h)];
+})()`);
+
+const clickRelayout = async () => {
+	await ev(`(() => { document.getElementById('relayout').click(); return true; })()`);
+	await sleep(400);
+	await settle();
+};
+
+// Reported: isolating a selection and then picking another service left the
+// survivors scattered across the layout of the whole container, with their scope
+// box stretched over the gaps to reach them - and pressing re-layout was the
+// only way to get a picture back.
+//
+// Asserted against re-layout rather than against a number: whatever the right
+// arrangement is, selecting must already have produced it, so the button has
+// nothing left to do.
+await test('switching selection while isolated leaves re-layout nothing to fix', async () => {
+	await selectNode(SERVER);
+	await toggle('isolate', true);
+
+	// A service in none of the first one's wiring, so the set on show changes.
+	await tapNode('root/svc:app.(*Auditor)');
+	await settle();
+	const onSelect = await spread();
+
+	await clickRelayout();
+	const onRelayout = await spread();
+
+	await toggle('isolate', false);
+
+	const off = (a, b) => Math.abs(a - b) > Math.max(24, b * 0.15);
+	return (!off(onSelect[0], onRelayout[0]) && !off(onSelect[1], onRelayout[1]))
+		|| `selecting left the nodes spread ${JSON.stringify(onSelect)}, re-layout made it ${JSON.stringify(onRelayout)}`;
+});
+
+// The other half of the same report: a scope has to hold what is on show, and
+// only what is on show.
+await test('a scope box hugs the nodes left in it', async () => {
+	await selectNode(SERVER);
+	await toggle('isolate', true);
+	await tapNode('root/svc:app.(*Auditor)');
+	await settle();
+
+	const fit = await ev(`(() => {
+		const scope = godi.cy.getElementById('scope:root');
+		const kids = scope.children().filter(c => c.visible());
+		const kb = kids.boundingBox({ includeLabels: false });
+		return {
+			nVisible: kids.length,
+			slackW: Math.round(scope.width() - kb.w),
+			slackH: Math.round(scope.height() - kb.h),
+		};
+	})()`);
+
+	await toggle('isolate', false);
+
+	if (fit.nVisible === 0) return 'the scope was left with nothing visible in it';
+	return (Math.abs(fit.slackW) <= 4 && Math.abs(fit.slackH) <= 4)
+		|| `the box stands off its contents by ${fit.slackW}x${fit.slackH}`;
+});
+
+// Dimming is not hiding: a reader has to be able to read what else is in the
+// container, and click it. Isolate selection is the switch for wanting it gone.
+await test('what is not in the selection stays legible', async () => {
+	await selectNode(SERVER);
+
+	const outside = await ev(`(() => {
+		const el = godi.cy.getElementById('root/svc:app.(*Auditor)');
+		return { dim: el.hasClass('dim'), visible: el.visible(), opacity: el.style('opacity'), text: el.style('text-opacity') };
+	})()`);
+
+	if (!outside.dim) return 'the fixture no longer dims that node, so this proves nothing';
+	if (!outside.visible) return 'a node outside the selection was hidden outright';
+	const opacity = parseFloat(outside.opacity);
+	return (opacity >= 0.3 && parseFloat(outside.text) > 0)
+		|| `a dimmed node is drawn at opacity ${outside.opacity}, label ${outside.text}`;
+});
+
 // ---------------------------------------------------------------- snapshot ---
 
 // A graph taken while the container was still being built is missing whatever
