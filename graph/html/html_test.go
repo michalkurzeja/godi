@@ -480,3 +480,49 @@ func TestElisionReachesThePayload(t *testing.T) {
 	require.Equal(t, 4, byID[string(g.Nodes[0].ID)])
 	require.Equal(t, 0, byID[string(g.Nodes[1].ID)], "a node nothing was cut from says nothing")
 }
+
+// Text and DOT print a notice and nothing else about it. The page links to what
+// it is about, so the ids have to travel with the message - and the notices that
+// name nothing at all are the whole reason the page carries them: a scope
+// belonging to no definition has no node to be marked on.
+func TestDiagnosticsReachThePayload(t *testing.T) {
+	g := model()
+	g.Diagnostics = []*graph.Diagnostic{
+		{
+			Severity: "warning",
+			Node:     g.Nodes[0].ID,
+			Param:    g.Nodes[0].Params[0].ID,
+			Message:  "dependency is not registered in this container",
+		},
+		{Severity: "warning", Scope: "root/child", Message: `scope "root/child" belongs to no definition`},
+		{Severity: "warning", Message: "written by godi v2.1, read by v2.0"},
+	}
+
+	var data struct {
+		Diagnostics []struct {
+			Severity string `json:"severity"`
+			Message  string `json:"message"`
+			Node     string `json:"node"`
+			Param    string `json:"param"`
+			Scope    string `json:"scope"`
+		} `json:"diagnostics"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(capture(t, dataRe, encode(t, g))), &data))
+
+	require.Len(t, data.Diagnostics, 3)
+
+	require.Equal(t, "warning", data.Diagnostics[0].Severity)
+	require.Equal(t, "dependency is not registered in this container", data.Diagnostics[0].Message)
+	require.Equal(t, string(g.Nodes[0].ID), data.Diagnostics[0].Node)
+	require.Equal(t, string(g.Nodes[0].Params[0].ID), data.Diagnostics[0].Param)
+
+	require.Equal(t, "root/child", data.Diagnostics[1].Scope)
+	require.Empty(t, data.Diagnostics[1].Node)
+
+	require.Empty(t, data.Diagnostics[2].Node, "a notice about the file names nothing in the graph")
+	require.Empty(t, data.Diagnostics[2].Scope)
+}
+
+func TestAGraphWithNothingWrongCarriesNoDiagnostics(t *testing.T) {
+	require.NotContains(t, capture(t, dataRe, encode(t, model())), `"diagnostics"`)
+}

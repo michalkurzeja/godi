@@ -719,6 +719,38 @@ function showSnapshot() {
 	});
 }
 
+// ------------------------------------------------------------- diagnostics ---
+
+// Most of what the extractor could not make sense of is marked on the node it is
+// about. Not all of it: a scope belonging to no definition, or a file written
+// against a schema this build does not know, is about the graph itself and has
+// nowhere else to go. So the strip says there are some, and the panel - which
+// otherwise sits there asking to be given a node - lists them.
+function showDiagnostics() {
+	const diagnostics = data.diagnostics || [];
+	if (!diagnostics.length) return;
+
+	const strip = $('diagnostics');
+	$('diagnostics-label').textContent = severityTally(diagnostics) + ' — listed in the details panel.';
+	strip.hidden = false;
+	$('diagnostics-close').addEventListener('click', () => {
+		strip.hidden = true;
+		cy.resize();
+	});
+}
+
+// Counted by severity rather than totalled, because the severity is the model's
+// own free-form string: today everything is a warning, and a strip that says
+// "3 notices" where it could say "3 warnings" is the vaguer of the two.
+function severityTally(diagnostics) {
+	const counts = new Map();
+	for (const d of diagnostics) counts.set(d.severity, (counts.get(d.severity) || 0) + 1);
+
+	return [...counts]
+		.map(([severity, n]) => n + ' ' + severity + (n === 1 ? '' : 's'))
+		.join(' · ');
+}
+
 // ------------------------------------------------------------------ legend ---
 
 // Every way an edge can be drawn, in the three channels it is drawn with. The
@@ -1008,13 +1040,60 @@ function flashTab() {
 	tab.classList.add('flash');
 }
 
+// With nothing picked the panel has only ever had one thing to say, and it was
+// an instruction. Anything the extractor could not make sense of goes here
+// instead: the reader is looking at it already, and the strip above sent them.
+function showNotices(panel) {
+	const diagnostics = data.diagnostics || [];
+	const hint = make('p', 'empty', 'Pick a node to see how it is wired.');
+	if (!diagnostics.length) {
+		panel.replaceChildren(hint);
+		panel.dataset.view = 'empty';
+		return;
+	}
+
+	// The same word text and DOT print them under, so a reader moving between
+	// the formats is not made to learn a third name for one thing.
+	const parts = [make('h2', null, 'Notices')];
+	for (const d of diagnostics) {
+		const notice = make('div', 'notice');
+		const head = make('div', 'phead');
+		head.append(badge(d.severity, 'severity'), make('span', null, d.message));
+		notice.append(head);
+
+		const where = noticeWhere(d);
+		if (where) notice.append(where);
+		parts.push(notice);
+	}
+	parts.push(hint);
+
+	panel.replaceChildren(...parts);
+	panel.dataset.view = 'notices';
+	panel.scrollTop = 0;
+}
+
+// Where the notice is about, for the ones that are about anywhere: a schema the
+// reader cannot make sense of is about the file, and names nothing. A filtered
+// graph keeps the notices of the nodes it dropped, so the id is only made a
+// link when there is still something to select.
+function noticeWhere(d) {
+	const where = make('div', 'where');
+
+	if (d.node) where.append(nodes.has(d.node) ? nodeLink(d.node) : make('span', 'via mono', d.node));
+	else if (d.scope) where.append(make('span', 'via', scopePath(d.scope)));
+
+	const p = params.get(d.param);
+	if (p) where.append(make('span', 'via', paramLabel(p)));
+
+	return where.children.length ? where : null;
+}
+
 function showPanel(id) {
 	const panel = $('panel');
 	const n = nodes.get(id);
 	if (n && !panelOpen()) flashTab();
 	if (!n) {
-		panel.replaceChildren(make('p', 'empty', 'Pick a node to see how it is wired.'));
-		panel.dataset.view = 'empty';
+		showNotices(panel);
 		return;
 	}
 
@@ -1702,6 +1781,8 @@ function rebuildLabels() {
 window.godi = { cy, data, state, apply, relayout };
 
 showSnapshot();
+showDiagnostics();
+showPanel(null);
 setPanel(recall('godi.panel') !== 'hidden');
 rebuildHaystacks();
 paintRules();

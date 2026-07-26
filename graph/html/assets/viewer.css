@@ -13,6 +13,7 @@ svg[hidden] { display: none; }
 	--muted: #57606a;
 	--accent: #0969da;
 	--warn: #cf222e;
+	--notice: #9a6700;
 	--manual: #1f2328;
 	--auto: #0f766e;
 	--pass: #8250df;
@@ -36,6 +37,7 @@ html.theme-dark {
 	--muted: #9198a1;
 	--accent: #6cb6ff;
 	--warn: #ff7b72;
+	--notice: #d29922;
 	--manual: #e6edf3;
 	--auto: #2dd4bf;
 	--pass: #c297ff;
@@ -60,6 +62,7 @@ html.theme-auto { color-scheme: light dark; }
 		--muted: #9198a1;
 		--accent: #6cb6ff;
 		--warn: #ff7b72;
+		--notice: #d29922;
 		--manual: #e6edf3;
 		--auto: #2dd4bf;
 		--pass: #c297ff;
@@ -102,8 +105,11 @@ body {
 #filters { padding-top: .3rem; padding-bottom: .3rem; font-size: 12px; }
 
 /* A strip rather than a badge: what it says applies to everything below it,
-   and a graph that stops short without saying so reads as the whole story. */
-#snapshot {
+   and a graph that stops short without saying so reads as the whole story.
+   Two of them, because a half-wired graph and a graph with faults in it are
+   different facts and either can be true on its own. They stack in that order:
+   what the graph is, then what is wrong with it. */
+.strip {
 	display: flex;
 	align-items: center;
 	gap: .5rem;
@@ -114,10 +120,17 @@ body {
 	background: color-mix(in srgb, var(--warn) 8%, var(--chrome));
 	border-bottom: 1px solid var(--border);
 }
-#snapshot[hidden] { display: none; }
-#snapshot .i { flex: none; }
-#snapshot-close { padding: .1rem; border: 0; background: none; color: inherit; line-height: 0; }
-#snapshot-close:hover { color: var(--text); }
+.strip[hidden] { display: none; }
+.strip .i { flex: none; }
+.strip-close { padding: .1rem; border: 0; background: none; color: inherit; line-height: 0; }
+.strip-close:hover { color: var(--text); }
+
+/* Amber rather than red: a notice is something to read, not the reason the
+   picture below it is incomplete. */
+#diagnostics {
+	color: var(--notice);
+	background: color-mix(in srgb, var(--notice) 10%, var(--chrome));
+}
 
 #brand { font-weight: 600; white-space: nowrap; }
 
@@ -587,6 +600,13 @@ kbd {
 
 .rel { display: flex; align-items: baseline; gap: .35rem; padding: .12rem 0; flex-wrap: wrap; }
 .rel .via { color: var(--muted); font-size: 11px; }
+
+/* The message leads and the node it is about follows, because the reader is
+   here to find out what is wrong before finding out where. */
+.notice { padding: .35rem 0; border-bottom: 1px dotted var(--border); }
+.notice:last-of-type { border-bottom: 0; }
+.notice .where { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
+.badge.severity { color: var(--notice); border-color: var(--notice); }
 
 /* ------------------------------------------------------------ status --- */
 

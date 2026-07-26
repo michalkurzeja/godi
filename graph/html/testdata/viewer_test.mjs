@@ -1765,6 +1765,10 @@ await test('a finished graph says nothing about snapshots', async () =>
 	await ev(`document.getElementById('snapshot').hidden`) === true ||
 		'the strip showed on a graph that is not a snapshot');
 
+await test('nor about notices, when there is nothing wrong with it', async () =>
+	await ev(`document.getElementById('diagnostics').hidden`) === true ||
+		'the notices strip showed on a graph that has none');
+
 await ev(`location.href = ${JSON.stringify('file://' + snapshotPath)}`);
 await sleep(500);
 await settle();
@@ -1779,11 +1783,57 @@ await test('a graph taken mid-build says so across the top', async () => {
 	return strip.text.includes('taken during the autowiring pass') || strip.text;
 });
 
-await test('and the strip can be dismissed, because it takes room', async () =>
+// Two facts, either of which can be true on its own, so they are two strips and
+// both are up at once - stacked in the order the reader needs them: what the
+// graph is, then what is wrong with it.
+await test('a graph that is both unfinished and faulty says both, one under the other', async () => {
+	const strips = await ev(`[...document.querySelectorAll('.strip')].map((el) => ({
+		id: el.id, hidden: el.hidden, text: el.textContent.replace(/\\s+/g, ' ').trim(),
+	}))`);
+
+	if (strips.length !== 2) return `${strips.length} strips, want the snapshot and the notices`;
+	if (strips[0].id !== 'snapshot' || strips[1].id !== 'diagnostics') {
+		return 'the strips are in the order ' + strips.map((s) => s.id).join(', ');
+	}
+	if (strips.some((s) => s.hidden)) return 'one of the two strips stayed hidden';
+	return strips[1].text.includes('2 warnings') || strips[1].text;
+});
+
+// A notice about a scope has no node to be marked on, so the page is the only
+// place it can be read at all.
+await test('the notices are listed where a reader with nothing picked is already looking', async () => {
+	const text = await panelText();
+
+	if (!text.includes('Notices')) return text;
+	if (!text.includes('argument is not wired')) return 'the notice about a node is missing';
+	return text.includes('belongs to no definition') || 'the notice about a scope is missing';
+});
+
+await test('and a notice about a node is a way to it', async () => {
+	await ev(`(() => {
+		[...document.querySelectorAll('#panel .notice .link')][0].click();
+		return true;
+	})()`);
+	await settle();
+
+	const landed = await ev(`godi.state.focus`) === 'root/svc:app.(*Metrics)' ||
+		'clicking the node a notice names did not select it';
+
+	// Put the selection back, so what follows starts where it did before.
+	await ev(`(() => { document.getElementById('clear').click(); return true; })()`);
+	await settle();
+	return landed;
+});
+
+await test('and either strip can be dismissed, because they take room', async () =>
 	await ev(`(() => {
 		document.getElementById('snapshot-close').click();
-		return document.getElementById('snapshot').hidden;
-	})()`) === true || 'the strip stayed after its close button was clicked');
+		document.getElementById('diagnostics-close').click();
+		return [
+			document.getElementById('snapshot').hidden,
+			document.getElementById('diagnostics').hidden,
+		].every(Boolean);
+	})()`) === true || 'a strip stayed after its close button was clicked');
 
 // The whole point of the mark: find the service that stopped the build without
 // reading every argument of every service.

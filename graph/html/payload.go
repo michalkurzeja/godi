@@ -21,6 +21,12 @@ type payload struct {
 	// being built. Nothing else on the page would give that away.
 	Snapshot *viewSnapshot `json:"snapshot,omitzero"`
 
+	// Diagnostics carry the ids they are about, not just their text: the panel
+	// links to the node, which is the half the text and DOT notices leave out.
+	// Some name nothing at all - a scope belonging to no definition, a schema
+	// this build does not know - and those have nowhere else on the page to go.
+	Diagnostics []viewDiagnostic `json:"diagnostics,omitzero"`
+
 	// SourceRoot is the directory the file paths hang off, and SourceLink the
 	// template that turns one into something clickable. Empty means the page
 	// shows locations as plain text.
@@ -34,6 +40,14 @@ type payload struct {
 type viewSnapshot struct {
 	Label string   `json:"label"`
 	Done  []string `json:"done,omitzero"`
+}
+
+type viewDiagnostic struct {
+	Severity string        `json:"severity"`
+	Message  string        `json:"message"`
+	Node     graph.NodeID  `json:"node,omitzero"`
+	Param    graph.ParamID `json:"param,omitzero"`
+	Scope    graph.ScopeID `json:"scope,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -169,6 +183,15 @@ func newPayload(g *graph.Graph, cfg config) payload {
 	}
 	if g.Partial() {
 		p.Snapshot = &viewSnapshot{Label: g.Snapshot.Label(), Done: g.Snapshot.Done}
+	}
+	for _, d := range g.Diagnostics {
+		p.Diagnostics = append(p.Diagnostics, viewDiagnostic{
+			Severity: d.Severity,
+			Message:  d.Message,
+			Node:     d.Node,
+			Param:    d.Param,
+			Scope:    d.Scope,
+		})
 	}
 
 	return p

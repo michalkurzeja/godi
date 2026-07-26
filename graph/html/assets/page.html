@@ -30,6 +30,7 @@
 	<symbol id="i-input" viewBox="0 0 16 16"><rect x="4.5" y="1.5" width="7" height="13" rx="3.5"/><path d="M8 4.3v2.6"/></symbol>
 	<symbol id="i-dark" viewBox="0 0 16 16"><path d="M13.2 9.7A5.6 5.6 0 0 1 6.3 2.8a5.6 5.6 0 1 0 6.9 6.9z"/></symbol>
 	<symbol id="i-snapshot" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.6V8l2.4 1.6"/></symbol>
+	<symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 1.8 1.3 13.6h13.4z"/><path d="M8 6v3.4M8 11.5v.1"/></symbol>
 </svg>
 
 <div id="app">
@@ -108,11 +109,23 @@
 
 	<!-- A graph taken while the container was still being built looks exactly
 	     like a finished one with dependencies missing. Only this says which. -->
-	<div id="snapshot" role="status" hidden>
+	<div id="snapshot" class="strip" role="status" hidden>
 		<svg class="i"><use href="#i-snapshot"/></svg>
 		<span id="snapshot-label"></span>
 		<span class="grow"></span>
-		<button id="snapshot-close" type="button" title="Hide this">
+		<button id="snapshot-close" class="strip-close" type="button" title="Hide this">
+			<svg class="i"><use href="#i-clear"/></svg>
+		</button>
+	</div>
+
+	<!-- What the extractor could not make sense of. Most of it is marked on the
+	     node it is about, but not all - a scope belonging to no definition, or a
+	     file written against another schema, is about the graph itself. -->
+	<div id="diagnostics" class="strip" role="status" hidden>
+		<svg class="i"><use href="#i-warn"/></svg>
+		<span id="diagnostics-label"></span>
+		<span class="grow"></span>
+		<button id="diagnostics-close" class="strip-close" type="button" title="Hide this">
 			<svg class="i"><use href="#i-clear"/></svg>
 		</button>
 	</div>

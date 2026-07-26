@@ -289,5 +289,16 @@ func snapshotModel() *graph.Graph {
 	// this fixture is built by hand.
 	metrics.Incomplete = true
 
+	// The same two, and the pair is the point: one is about a node and can be
+	// followed to it, the other is about the container itself and has no node to
+	// be marked on. Only the page's own list carries the second kind.
+	g.Diagnostics = []*graph.Diagnostic{
+		{
+			Severity: "warning", Node: metrics.ID, Param: metrics.Params[0].ID,
+			Message: "argument is not wired",
+		},
+		{Severity: "warning", Scope: "root/jobs", Message: `scope "root/jobs" belongs to no definition`},
+	}
+
 	return g
 }

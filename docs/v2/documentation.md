@@ -1351,7 +1351,7 @@ func (g *Graph) Select(filters ...Filter) *Graph
 
 #### Unfinished wiring
 
-A graph from anything other than a built container carries a `*Snapshot`: the stage and pass in progress, and the names of the passes that had finished. `Graph.Partial()` is the test; `Snapshot.Label()` and `Snapshot.Caveat()` are the wording, written once so all three encoders say the same thing. Text prints it under the counts, DOT puts it in the notices cluster, and the viewer shows a strip across the top and badges an unwired argument "not wired" rather than "none".
+A graph from anything other than a built container carries a `*Snapshot`: the stage and pass in progress, and the names of the passes that had finished. `Graph.Partial()` is the test; `Snapshot.Label()` and `Snapshot.Caveat()` are the wording, written once so all three encoders say the same thing. Text prints it under the counts, DOT puts it in the notices cluster, and the viewer shows a strip across the top and badges an unwired argument "not wired" rather than "none". A graph that is unfinished *and* has notices shows two strips, stacked: what the graph is, then what is wrong with it. Either can be dismissed on its own.
 
 Two mechanisms feed it. `Compiler.Run` records the pass it is running and the ones it has finished, so `ContainerBuilder.Graph` can stamp the graph. And the fluent `Builder` materialises its definition builders in `prepare()`, memoised, so `Graph` can be called before `Build` without filling the same argument lists twice — the definitions the graph is read from are the ones `Build` compiles.
 
@@ -1426,7 +1426,7 @@ Filtering copies: nodes and params are cloned because their counts change, edges
 
 `Graph.Schema` is tagged `json:"-"`: the Go field stays, because `Select` carries it and the viewer payload reads it, but the file says the schema once, in the metadata. `WriteJSON` lifts it up, `ReadJSON` copies it back, so a decoded graph is indistinguishable from an extracted one.
 
-`ReadJSON` returns `(*Graph, Metadata, error)`. A schema it does not recognise is compared by exact string equality and reported as a warning `Diagnostic`, not an error — the model grows by adding fields, so a reader of one version usually still makes sense of a file from another, and a build that already failed is a bad moment to refuse. `text` and `dot` surface diagnostics as notices; **`graph/html` does not render diagnostics at all**, so `godi view` will not show the warning. That is a known gap, not an oversight.
+`ReadJSON` returns `(*Graph, Metadata, error)`. A schema it does not recognise is compared by exact string equality and reported as a warning `Diagnostic`, not an error — the model grows by adding fields, so a reader of one version usually still makes sense of a file from another, and a build that already failed is a bad moment to refuse. All three encoders surface diagnostics as notices: `text` prints them under `notices:`, `dot` draws a notices cluster, and the viewer puts an amber strip across the top and lists them in the detail panel whenever no node is picked. That last part is why the page carries the ids a diagnostic names rather than only its message — a notice about a node links to it, and the ones that name nothing, like this one, have nowhere else on the page to go.
 
 `graph.Static(g)` presents a graph as a `Source`. Without it, `graph.Source` is public API that only godi's own types can satisfy, which leaves anyone holding a graph read from a file unable to use what takes one.
 
