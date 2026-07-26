@@ -85,7 +85,7 @@ func (i *TestIfaceImpl) TestIfaceMethod() {
 	i.MethodCalled = true
 }
 
-func TestGodi(t *testing.T) {
+func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 	tests := []struct {
 		name           string
 		builderOpts    []di.BuilderOption
@@ -1230,7 +1230,7 @@ func TestGodi(t *testing.T) {
 	}
 }
 
-func TestDI_Eager(t *testing.T) {
+func TestAnEagerServiceIsBuiltWithTheContainer(t *testing.T) {
 	var (
 		eagerCounter int
 		lazyCounter  int
@@ -1269,7 +1269,7 @@ func (r RefsMap[R]) Get(t *testing.T, k string) R {
 	return *ref
 }
 
-func TestGodi_Old(t *testing.T) {
+func TestTheContainerServesFunctionsAndValuesToo(t *testing.T) {
 	t.Run("can register and call a function by ref", func(t *testing.T) {
 		t.Parallel()
 

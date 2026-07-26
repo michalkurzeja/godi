@@ -319,18 +319,23 @@ There's an important rule that those functions follow:
 ### Container behaviour
 
 You can configure some aspects of how the container treats services and functions.
-There are 3 settings that can be configured globally, or per-service/function.
+There are 3 settings, and each can be set per container or per service/function:
 
-> ⚠️ Take care to change the defaults **before** you define any services/functions,
-> as the defaults are applied at an instant when the definition is created
-> (when `di.Svc`/`di.Func` is called).
->
-> Changing the defaults will not affect the already-existing definitions!
+```go
+c, err := di.New(di.DefaultEager()).
+	Services(
+		di.Svc(NewServer),          // eager, as the container says
+		di.Svc(NewCache).Lazy(),    // unless it asks for something else
+	).
+	Build()
+```
 
-> ⚠️ The global defaults are **not safe for concurrent use**.
-> They are package-level variables with no synchronization.
-> Only change them once at program startup (e.g. in `init()` or at the top of `main`),
-> before any `di.Svc`/`di.Func` calls and before spawning goroutines that use the package.
+The defaults belong to the container they are given to, so two containers in one process can disagree and a
+library cannot change its host's.
+
+> ⚠️ The `di.SetDefault*` functions set the same three for every container in the process.
+> They still work and are deprecated: a package-level default means a test that flips one leaks into the next,
+> and they are not safe for concurrent use.
 
 #### Lazy/Eager
 
@@ -339,7 +344,7 @@ If changed to eager, the services will be instantiated and functions executed as
 
 > ⚠️ You cannot access the return values of an eagerly-executed function.
 
-To change globally, call `di.SetDefaultLazy()` or `di.SetDefaultEager()`.
+Per container: `di.New(di.DefaultLazy())` or `di.New(di.DefaultEager())`.
 
 #### Shared/Not shared (services only)
 
@@ -347,14 +352,14 @@ By default, services are shared - once instantiated, they are cached and reused.
 This applies both to retrieving services from the container, or using them as dependencies.
 If changed to not shared, the container will create a new instance every time a service is injected or retrieved.
 
-To change globally, call `di.SetDefaultShared()` or `di.SetDefaultNotShared()`.
+Per container: `di.New(di.DefaultShared())` or `di.New(di.DefaultNotShared())`.
 
 #### Autowired/Not autowired
 
 By default, godi will attempt automatically resolve dependencies for you.
 If changed to not autowired, all dependencies will have to be resolved manually by you.
 
-To change globally, call `di.SetDefaultAutowired()` or `di.SetDefaultNotAutowired()`.
+Per container: `di.New(di.DefaultAutowired())` or `di.New(di.DefaultNotAutowired())`.
 
 ### Services
 
@@ -890,31 +895,26 @@ one substituted by a compiler pass all look identical at runtime. The graph tell
 
 ```go
 import (
-	"github.com/michalkurzeja/godi/v2/graph"
+	engine "github.com/michalkurzeja/godi/v2/di"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
 
-g, err := graph.Extract(c)
+g, err := extract.From(c.(*engine.Container))
 err = g.Encode(os.Stdout, text.New())
 ```
 
-`graph` itself is only the model — plain data, no dependency on the container. Each format lives in its own
-package, so a binary compiles the ones it asks for and nothing else:
+Reading a container is `graph/extract`'s job. `graph` itself is only the model — plain data, with no
+dependency on the container — so a program that reads a graph, the CLI above all, carries none of the
+container engine. Each format lives in its own package too, so a binary compiles the ones it asks for and
+nothing else:
 
 | Package | Output |
 |---|---|
 | `graph/text` | An indented outline. Needs nothing installed, so it is what you reach for in a terminal or a test failure. |
 | `graph/dot` | Graphviz DOT. Scopes become nested clusters and every edge lands on the argument row it feeds. |
 | `graph/html` | One self-contained page you can search, filter and drag about. No CDN, no server, no network. |
-| `graph` | JSON, via `graph.JSON()` or `g.WriteJSON(w)`. The interchange format — read it back with `graph.ReadJSON`. |
-
-`graph/view` opens the result in whatever your system uses for the format — a browser tab for the viewer —
-via a temporary file:
-
-```go
-path, err := view.Open(c, html.New())      // extracts, writes, opens
-path, err := view.OpenGraph(g, html.New()) // a graph you already have
-```
+| `graph/json` | The interchange format. `g.WriteJSON(w)` writes it without an encoder, and `graph.ReadJSON` reads it back. |
 
 #### Reading a real container
 
@@ -922,7 +922,7 @@ Past a hundred or so services no layout engine produces a picture worth looking 
 instead. Filters work on the model, which means every format gets them:
 
 ```go
-g, err := graph.Extract(c)
+g, err := extract.From(c.(*engine.Container))
 
 g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
@@ -971,15 +971,9 @@ any wiring nothing uses, and `godi` does not try to tell the two apart — a ser
 
 #### Before it is built
 
-A container you cannot build is exactly the one you want to look at, so the builder is a graph source too:
-
-```go
-b := di.New().Services(...)
-
-g, err := graph.Extract(b)  // what you declared, before godi works anything out
-```
-
-To see a moment partway through compilation — after autowiring, before validation — capture it from a pass:
+A container you cannot build is exactly the one you want to look at, so a graph can be taken partway through
+compilation — before godi has worked anything out, or after autowiring and before validation. Capture it from
+a pass:
 
 ```go
 var midway *graph.Graph
@@ -1021,15 +1015,8 @@ for a debugging aid it will almost never use. [The CLI](#the-godi-cli) turns the
 at. Whatever happens, the error `Build` returns is untouched: a snapshot that cannot be written says so on
 stderr and is otherwise forgotten.
 
-In code, a failed `Build` leaves the builder standing, so the graph of exactly where the compiler stopped is
-one call away:
-
-```go
-c, err := di.New().Services(...).Build()
-if err != nil {
-	path, _ := view.Open(b, html.New())  // b is the builder
-}
-```
+A failed `Build` leaves the builder standing, which is what the snapshot is written from — and what a compiler
+pass driving `di.NewContainerBuilder` itself can read with `extract.FromBuilder`.
 
 The snapshot names the pass that failed, and every service missing something it needs is drawn with a red
 border and a warning mark — so the one that stopped the build is the one you see first.

@@ -264,20 +264,23 @@ concrete service implements (e.g. `di.SvcByRef[fmt.Stringer](c, ref)`).
 
 ## Behaviour flags
 
-Three settings, configurable per definition or globally:
+Three settings, configurable per definition or per container:
 
 - **Lazy / Eager** — lazy (default) builds on first request; eager builds all at end of
-  `Build()`. `Lazy()`/`Eager()` per definition; `di.SetDefaultLazy()`/`di.SetDefaultEager()`.
+  `Build()`. `Lazy()`/`Eager()` per definition; `di.New(di.DefaultLazy())`/`di.New(di.DefaultEager())`
+  per container.
 - **Shared / NotShared** (services only) — shared (default) caches and reuses one instance;
   not-shared builds a fresh instance every injection/retrieval. `Shared()`/`NotShared()`;
-  `di.SetDefaultShared()`/`di.SetDefaultNotShared()`.
+  `di.DefaultShared()`/`di.DefaultNotShared()`.
 - **Autowired / NotAutowired** — autowired (default) resolves omitted args by type;
   not-autowired means *you* must supply every arg. `Autowired()`/`NotAutowired()`;
-  `di.SetDefaultAutowired()`/`di.SetDefaultNotAutowired()`.
+  `di.DefaultAutowired()`/`di.DefaultNotAutowired()`.
 
-⚠️ **Global defaults are applied when `di.Svc`/`di.Func` is called**, not at build time.
-Change them once at startup *before* defining anything; changing them later won't affect
-already-created definitions. They're plain package globals — **not concurrency-safe**.
+What a definition asks for wins; the container's default fills in the rest.
+
+⚠️ The `di.SetDefault*` functions set the same three for **every container in the process**.
+They still work and are deprecated — a test that flips one leaks into the next, and they are
+not concurrency-safe.
 
 ## Compiler passes and the extras package
 
@@ -327,40 +330,40 @@ indistinguishable.
 
 ```go
 import (
-	"github.com/michalkurzeja/godi/v2/graph"
+	engine "github.com/michalkurzeja/godi/v2/di"
+	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
 
-g, err := graph.Extract(c)
+g, err := extract.From(c.(*engine.Container))   // Build returns the interface; extraction reads the container
 err = g.Encode(os.Stdout, text.New())
 ```
 
-`graph` is the model only. Encoders live in their own packages, so a binary compiles the
-formats it asks for: `graph/text` (an indented outline, nothing to install), `graph/dot`
-(Graphviz, one port per argument row), `graph/html` (a self-contained interactive page —
-no CDN, no server). `graph/view` opens the result via a temporary file:
+Reading a container is `graph/extract`'s job; `graph` is the model only, and links none of the
+container engine. Encoders live in their own packages, so a binary compiles the formats it asks
+for: `graph/text` (an indented outline, nothing to install), `graph/dot` (Graphviz, one port per
+argument row), `graph/html` (a self-contained interactive page — no CDN, no server), `graph/json`
+(the interchange format).
+
+Writing JSON is also on the model itself, because it is what the library writes when it cannot
+afford to depend on an encoder:
 
 ```go
-path, err := view.Open(c, html.New())
-```
-
-JSON is the exception: it lives in `graph` itself, because it is the interchange format the
-library writes when it cannot afford to depend on a renderer.
-
-```go
-err = g.WriteJSON(w)                      // or g.Encode(w, graph.JSON(graph.Indent("  ")))
+err = g.WriteJSON(w)                      // or g.Encode(w, json.New(json.Indent("  ")))
 g, md, err := graph.ReadJSON(r)           // md.Schema, md.WrittenAt, md.GodiVersion
 src := graph.Static(g)                    // a graph read from a file, as a graph.Source
 ```
 
-A schema `ReadJSON` does not recognise is a warning `Diagnostic`, not an error — the graph
-is decoded anyway.
+A schema `ReadJSON` does not recognise is a warning in `GraphDiagnostics`, not an error — the
+graph is decoded anyway. `Graph.WiringDiagnostics()` is the other half, derived from the
+arguments: what is wrong with the container rather than with the picture of it.
+`AllDiagnostics()` is what the encoders print.
 
 Filters work on the model, so every format gets them. Reach for them on any real container:
 past a hundred nodes a whole-graph picture is unreadable.
 
 ```go
-g, err := graph.Extract(c)
+g, err := extract.From(c.(*engine.Container))
 
 g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
@@ -369,29 +372,27 @@ g = g.Select(
 )
 ```
 
-`Extract` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`);
+`From` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`);
 `Select` takes `Filter`s. They are different types on purpose - neither compiles in the
 other's place. `Focus` limits its reach with `Dependencies(n)` and `Consumers(n)`.
-`view.OpenGraph(g, enc)` opens a graph already narrowed; `view.Open(c, enc)` extracts first.
 
 Matchers are `ByType`, `ByName`, `ByLabel`, `ByID`, `ByFile`, plus `All`, `Any` and `Not`.
 Patterns are globs (`*` = any run of characters), matched against the qualified name and
 the short form alike, so `ByType("app.(*Server)")` and `ByType("github.com/acme/*")` both
 work.
 
-The builder is a graph source too, so wiring can be read before - or partway through - the
-build. Both carry a `graph.Snapshot` saying when the graph was taken and which passes had
-run; every format prints it, because a half-wired graph otherwise reads as a finished one
-with dependencies missing.
+Wiring can be read partway through the build, from a compiler pass. Such a graph carries a
+`graph.Snapshot` saying when it was taken and which passes had run; every format prints it,
+because a half-wired graph otherwise reads as a finished one with dependencies missing.
 
 ```go
-g, err := graph.Extract(di.New().Services(...))          // as declared, before Build
-
-extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error { ... })  // mid-compilation
+extras.CaptureGraph(engine.PreAutomation, func(g *graph.Graph) error { ... })  // as declared
+extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error { ... })  // after autowiring
 ```
 
-A failed `Build` leaves the builder standing, so `graph.Extract(builder)` afterwards shows
-where the compiler stopped. `Snapshot.Failed` names the pass that failed, and every node
+A failed `Build` leaves the builder standing, which is what the failure snapshot is written
+from - and what `extract.FromBuilder(b)` reads inside a pass or after a failure.
+`Snapshot.Failed` names the pass that failed, and every node
 with `Incomplete` set — an argument naming a service that is not registered, or one nothing
 will wire — is drawn with a red border in the viewer.
 
@@ -417,8 +418,9 @@ live container as readily as a file: `serve.Listen("127.0.0.1:0", container)`.
 A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
 guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
 
-`Container.Print(w)` and `di.Print(scope, w)` still work but are deprecated; they now render
-through `graph/text`. Prefer `graph.Extract` in new code.
+`Container.Print(w)` and `di.Print(scope, w)` still work but are deprecated: they write a plain
+outline of their own, so that no godi binary links an encoder for them. Prefer `extract.From`
+with `graph/text` in new code.
 
 ## Common pitfalls
 
