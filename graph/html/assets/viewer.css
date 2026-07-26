@@ -552,6 +552,9 @@ kbd {
 #panel dd { margin: 0; word-break: break-word; }
 
 #panel .sig { line-height: 1.5; word-break: normal; overflow-wrap: anywhere; }
+/* A literal's made-up name sits above its signature, and the two ran together
+   into one block of monospace with no telling where the name ended. */
+#panel .sig-name { margin-bottom: .45rem; }
 
 .badges { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
 .badge {
@@ -560,7 +563,13 @@ kbd {
 	border: 1px solid var(--border);
 	border-radius: 999px;
 	color: var(--muted);
-	white-space: nowrap;
+	/* Never wider than the panel: a label is the reader's own word for a service
+	   and can be as long as they like. flex: none keeps the short ones whole -
+	   they move to the next line rather than wrapping "Not shared" in half - and
+	   leaves breaking to the one that would not fit on a line of its own. */
+	flex: none;
+	max-width: 100%;
+	overflow-wrap: anywhere;
 }
 .badge.warn { color: var(--warn); border-color: var(--warn); }
 .badge.root { color: var(--accent); border-color: var(--accent); }
@@ -569,6 +578,10 @@ kbd {
 .badge.origin-compiler-pass { color: var(--pass); border-color: var(--pass); }
 .badge.origin-none { color: var(--warn); border-color: var(--warn); }
 .badge.incomplete { color: var(--warn); border-color: var(--warn); }
+
+/* Everything in the panel is a name of some kind, and a name is one unbroken
+   word: the panel wraps rather than scrolling sideways for any of them. */
+.method, .pidx, .pnote, .plit, .rel .via, .notice { overflow-wrap: anywhere; }
 
 .method {
 	font-family: var(--mono);
@@ -595,6 +608,11 @@ kbd {
 	cursor: pointer;
 	text-decoration: underline;
 	text-underline-offset: 2px;
+	/* A type name is one long word with nowhere to break, and a generic naming
+	   its type arguments is a much longer one. Without this the panel grew a
+	   horizontal scrollbar instead of wrapping. */
+	max-width: 100%;
+	overflow-wrap: anywhere;
 }
 .link:hover { color: var(--text); }
 

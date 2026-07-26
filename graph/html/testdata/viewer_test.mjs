@@ -1237,19 +1237,72 @@ await test('it cannot be dragged away entirely', async () => {
 		|| `it clamped to ${narrow} and ${wide} in a window of ${room}`;
 });
 
-await test('double-clicking the grip puts the default back', async () => {
+// Double-clicking the grip is how the page itself puts the width back, so it is
+// also how a test that moved the panel leaves it as it found it.
+const restorePanelWidth = async () => {
 	const at = await gripAt();
 	for (let i = 1; i <= 2; i++) {
 		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: i });
 		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: i });
 	}
 	await sleep(120);
+};
+
+await test('double-clicking the grip puts the default back', async () => {
+	await restorePanelWidth();
 
 	const [width, rem] = await ev(`[
 		document.getElementById('panel').getBoundingClientRect().width,
 		parseFloat(getComputedStyle(document.documentElement).fontSize) * 23,
 	]`);
 	return Math.abs(width - rem) < 1 || `the panel came back at ${width}, not the ${rem} the stylesheet declares`;
+});
+
+// Reported: a long type in "Used by" ran off the side and the panel grew a
+// horizontal scrollbar. Everything in there is a name of some kind and names are
+// unbroken words, so the check is over the whole panel and every view of it
+// rather than the one row that was reported - and at the narrowest the panel
+// goes, since a reader who wants more room can drag it wider.
+await test('nothing in the panel scrolls it sideways', async () => {
+	await dragGrip(2000); // As narrow as the grip allows.
+
+	// The fixture's own names all fit, so the case that was reported has to be
+	// put back: a generic naming its type arguments, which is one unbroken word
+	// far wider than the panel, on a node other nodes link to.
+	const LONG = 'sqslambda.PayloadBatchHandlerFunc[message.Message[events.SQSEvent,events.SQSEventResponse]]';
+	const setShort = (value) => ev(`(() => {
+		godi.data.nodes.find(n => n.id === 'root/svc:app.(*Router)').short = ${JSON.stringify(value)};
+		return true;
+	})()`);
+	await setShort(LONG);
+
+	const overflowing = [];
+	const check = async (what) => {
+		const over = await ev(`(() => {
+			const p = document.getElementById('panel');
+			const wide = [...p.querySelectorAll('*')]
+				.filter(el => el.getBoundingClientRect().right > p.getBoundingClientRect().right + 1)
+				.map(el => el.className + ':' + el.textContent.trim().slice(0, 40));
+			return { scroll: p.scrollWidth - p.clientWidth, wide: wide.slice(0, 4) };
+		})()`);
+		if (over.scroll > 1 || over.wide.length) overflowing.push({ what, ...over });
+	};
+
+	for (const id of await ev(`godi.data.nodes.map(n => n.id)`)) {
+		await tapNode(id);
+		await check(id);
+	}
+
+	await ev(`(() => { document.getElementById('help').click(); return true; })()`);
+	await check('help');
+	await ev(`(() => { document.getElementById('about').click(); return true; })()`);
+	await check('about');
+
+	await setShort('app.(*Router)');
+	await restorePanelWidth();
+	await selectNode(SERVER);
+
+	return overflowing.length === 0 || JSON.stringify(overflowing.slice(0, 3));
 });
 
 // Reachable without a pointer at all.
@@ -1290,27 +1343,43 @@ const sigLines = async () => {
 	return ev(`[...document.querySelectorAll('#panel .sig div')].map(d => d.textContent)`);
 };
 
-await test('a named value is its name and its signature, under a heading of its own', async () => {
+// A named value is known by its name, exactly as a function node is: its type is
+// that function's signature, so the type says nothing the signature does not.
+await test('a named value is headed by its name, and says its signature once', async () => {
 	await asValue({ fromValue: true, anonymous: false, name: 'github.com/acme/app.validateEmail' });
 	const lines = await sigLines();
-	const heading = await ev(`[...document.querySelectorAll('#panel h3')].map(h => h.textContent)[0]`);
+	const [h2, h3] = await ev(`[
+		document.querySelector('#panel h2').textContent,
+		document.querySelector('#panel h3').textContent,
+	]`);
 
 	await asValue({ fromValue: false, anonymous: false, name: 'github.com/acme/app.NewServer' });
 	await selectNode(SERVER);
 
-	return (heading === 'Value' && eq(lines, ['app.validateEmail', 'func(app.Handler[app.Request], app.Logger) app.(*Server)'], 'x') === true)
-		|| `heading ${JSON.stringify(heading)}, lines ${JSON.stringify(lines)}`;
+	if (h2 !== 'app.validateEmail') return `the panel is headed ${JSON.stringify(h2)}`;
+	if (h3 !== 'Value') return `the section is headed ${JSON.stringify(h3)}`;
+	return eq(lines, ['func(app.Handler[app.Request], app.Logger) app.(*Server)'],
+		'the value block, which must not repeat the heading');
 });
 
-await test('and an anonymous one is the signature alone', async () => {
+// A literal has no name of its own - the runtime's is the enclosing function and
+// a counter - so its signature heads it and the made-up name is what the block
+// adds. The two used to run together into one paragraph of monospace.
+await test('and an anonymous one is headed by its signature, naming the literal below', async () => {
 	await asValue({ fromValue: true, anonymous: true, name: 'github.com/acme/app.build.func1' });
 	const lines = await sigLines();
+	const gap = await ev(`(() => {
+		const el = document.querySelector('#panel .sig-name');
+		return el ? parseFloat(getComputedStyle(el).marginBottom) : -1;
+	})()`);
 
 	await asValue({ fromValue: false, anonymous: false, name: 'github.com/acme/app.NewServer' });
 	await selectNode(SERVER);
 
-	return (lines.length === 1 && !lines[0].includes('func1'))
-		|| `the block reads ${JSON.stringify(lines)}`;
+	const both = eq(lines,
+		['app.build.func1', 'func(app.Handler[app.Request], app.Logger) app.(*Server)'], 'the value block');
+	if (both !== true) return both;
+	return gap > 2 || `the name sits ${gap}px off the signature under it`;
 });
 
 await test('a factory-built service keeps its own heading and no name', async () => {

@@ -65,7 +65,14 @@ const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 // A service is known by the type it provides; a function by its name, since a
 // function's type is just its signature - and a wrapped two-line signature makes
 // a poor heading. This is the same swap graph/dot makes in its node labels.
-const displayName = (n) => n.kind === 'function' ? short(n.name) : n.short;
+//
+// A service registered from a function value is known the same way: its type is
+// that function's signature, so the type says no more than the signature does.
+// Only when the runtime made the name up - a function literal - is the signature
+// the better of the two, and then displaySub puts it underneath anyway.
+const hasOwnName = (n) => n.kind === 'function' || (n.fromValue && !n.anonymous && !!n.name);
+
+const displayName = (n) => hasOwnName(n) ? short(n.name) : n.short;
 
 // The line under the heading, which only a function literal has. A name is
 // enough for everything else: a service is named by the type it provides and a
@@ -1175,14 +1182,14 @@ function showPanel(id) {
 	// so it goes above them. For a service it belongs to the factory rather than
 	// to the service itself, and the headings say so.
 	// What implements the service, which for one registered as a value is the
-	// function itself. Its name is the one thing the type above does not say, so
-	// it goes here beside the signature - unless the runtime made the name up,
-	// and then the signature is all there is to say.
+	// function itself. A named one is already the heading, the same way a
+	// function node is headed by its name, so only a literal - whose name the
+	// runtime made up - has anything to add here.
 	if (n.signature) {
 		parts.push(make('h3', null, n.fromValue ? 'Value' : (service ? 'Factory signature' : 'Signature')));
 
 		const sig = make('div', 'mono sig');
-		if (n.fromValue && !n.anonymous && n.name) sig.append(make('div', null, short(n.name)));
+		if (n.fromValue && n.anonymous && n.name) sig.append(make('div', 'sig-name', short(n.name)));
 		// Shortened for the same reason the qualified rows above it went: a
 		// generic names its type arguments in full, and a signature carrying
 		// several of those is unreadable. The whole thing is a hover away.
