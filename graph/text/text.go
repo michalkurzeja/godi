@@ -205,26 +205,19 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 // heading: the factory that builds a service, the value it was registered as,
 // or the signature of a function.
 //
-// Whichever of the name and the signature the heading did not take. A name the
-// runtime made up describes nothing, so where the heading is a signature it is
-// still worth printing - it is the only thing that says which literal this is.
+// What to say is the model's answer, the same one the picture puts under a node
+// box. What to call it is this format's own: a line of text has room to say
+// which of the three it is, and a box does not.
 func implementation(n *graph.Node) (label, what string) {
-	if n.Kind == graph.NodeFunction {
-		return "signature", n.TypeShort()
-	}
-
-	label = "factory"
-	if n.FromValue {
+	switch {
+	case n.Kind == graph.NodeFunction:
+		label = "signature"
+	case n.FromValue:
 		label = "value"
+	default:
+		label = "factory"
 	}
-	// Either the name is the heading, and the signature is what is left to say,
-	// or the runtime made the name up and the signature is the only thing that
-	// describes it. A value's signature is its type, so where that is already the
-	// heading the caller drops this line.
-	if n.KnownByName() || n.Anonymous() {
-		return label, render.Short(n.Signature)
-	}
-	return label, n.NameShort()
+	return label, n.Subtitle()
 }
 
 // nodeFlags are the properties worth naming. Only the surprising half of each

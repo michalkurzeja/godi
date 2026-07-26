@@ -62,24 +62,16 @@ const named = (origin, pass) => {
 };
 const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 
-// A service is known by the type it provides; a function by its name, since a
-// function's type is just its signature - and a wrapped two-line signature makes
-// a poor heading. This is the same swap graph/dot makes in its node labels.
+// What a node is headed by, and what a box has room to put under it. Both are
+// worked out in the model and arrive ready to print: what to call a node is the
+// same question in every format, and the page used to answer it a second time
+// in here.
 //
-// A service registered from a function value is known the same way: its type is
-// that function's signature, so the type says no more than the signature does.
-// Only when the runtime made the name up - a function literal - is the signature
-// the better of the two, and then displaySub puts it underneath anyway.
-const hasOwnName = (n) => n.kind === 'function' || (n.fromValue && !n.anonymous && !!n.name);
-
-const displayName = (n) => hasOwnName(n) ? short(n.name) : n.short;
-
-// The line under the heading, which only a function literal has. A name is
-// enough for everything else: a service is named by the type it provides and a
-// function by what it is called, and both are on the line above. But the
-// runtime's name for a literal - the enclosing function and a counter - only
-// identifies it, so its signature is the one thing that says what it is.
-const displaySub = (n) => n.anonymous ? n.short : '';
+// Which nodes get the second line is this page's own business, though. A box is
+// smaller than a drawing, so only a function literal earns one: everything else
+// is named by the line above, and a factory the reader did not ask about is
+// worth less than the room it takes.
+const displaySub = (n) => n.anonymous ? n.subtitle : '';
 
 // short drops the package path from every qualified name in a signature,
 // keeping the last segment of each. The same rule graph/internal/render applies
@@ -200,7 +192,7 @@ function rows(n) {
 	// function wears both. A node missing something it needs wears nothing: the
 	// red border says it, and a second mark in the title only crowds it.
 	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
-	const heading = displayName(n);
+	const heading = n.title;
 	const sub = displaySub(n);
 	lines.push(clip(head + heading));
 	if (sub && sub !== heading) lines.push(clip(sub));
@@ -905,7 +897,7 @@ const make = (tag, cls, text) => {
 
 function nodeLink(id) {
 	const n = nodes.get(id);
-	const btn = make('button', 'link', n ? displayName(n) : id);
+	const btn = make('button', 'link', n ? n.title : id);
 	btn.type = 'button';
 	btn.addEventListener('click', () => select(id, true));
 	return btn;
@@ -1144,7 +1136,7 @@ function showPanel(id) {
 	}
 
 	const service = n.kind === 'service';
-	const heading = displayName(n);
+	const heading = n.title;
 	const parts = [make('h2', null, heading)];
 
 	const badges = make('div', 'badges');
@@ -1268,7 +1260,7 @@ function paramBlock(p, outgoing) {
 
 function resolutionText(e) {
 	const bits = [e.resolution];
-	if (e.bindInterface) bits.push('binding on ' + short(e.bindInterface) + ' (' + boundBy(e) + ')');
+	if (e.bindInterface) bits.push('binding on ' + e.bindInterface + ' (' + boundBy(e) + ')');
 	if (e.cycle) bits.push('cycle');
 	return bits.join(' · ');
 }

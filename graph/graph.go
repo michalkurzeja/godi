@@ -205,6 +205,26 @@ func (n *Node) Title() string {
 	return n.TypeShort()
 }
 
+// Subtitle is the line under the heading: whichever of the name and the
+// signature the title did not take.
+//
+// Where the name is the heading - a function, or a service registered as a
+// named function value - what is left to say is what it takes and returns. So
+// it is for a function literal, whose name the runtime made up: that identifies
+// it without describing it, and the signature is the only thing that does.
+//
+// Empty when there is nothing to add, and the caller drops the line when it
+// repeats the title.
+func (n *Node) Subtitle() string {
+	if !n.KnownByName() && !n.Anonymous() {
+		return n.NameShort()
+	}
+	if n.Signature == "" {
+		return n.TypeShort()
+	}
+	return render.Short(n.Signature)
+}
+
 // Anonymous reports whether what implements this node is a function literal:
 // the function itself for a function node, and for a service either the factory
 // that builds it or the value it was registered as.
@@ -448,6 +468,29 @@ type Edge struct {
 // different passes each had a hand in the same edge does it say which did what.
 //
 // It lives on the model because every encoder owes the reader the same answer.
+// DecidedBy is who chose this particular dependency: whoever created the
+// binding it resolved through, and otherwise whoever wired the argument.
+//
+// godi creating a binding for you and godi autowiring an argument are the same
+// answer to "who decided": godi did. Every format asks the same question - the
+// colour of an edge, the filters in the viewer - so it is answered here.
+func (e *Edge) DecidedBy() ArgOrigin {
+	hop, ok := e.Binding()
+	if !ok {
+		return e.Origin
+	}
+
+	switch hop.Origin {
+	case BindOriginManual:
+		return ArgOriginManual
+	case BindOriginAutobinding:
+		return ArgOriginAutowiring
+	case BindOriginCompilerPass:
+		return ArgOriginCompilerPass
+	}
+	return ArgOriginNone
+}
+
 func (e *Edge) PassCredit() string {
 	var wiredBy, boundBy string
 	if e.Origin == ArgOriginCompilerPass {

@@ -214,16 +214,7 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 		marker += "ƒ "
 	}
 
-	// Whichever of the two the heading did not take.
-	title, subtitle := node.Title(), node.NameShort()
-	if node.KnownByName() {
-		subtitle = node.TypeShort()
-	}
-	// A name the runtime made up describes nothing; the signature is what says
-	// what an anonymous function is.
-	if node.Anonymous() && node.Kind == graph.NodeService {
-		subtitle = render.Short(node.Signature)
-	}
+	title, subtitle := node.Title(), node.Subtitle()
 
 	p.labelRow(&sb, "", fmt.Sprintf("<B>%s</B>", esc(marker+title)))
 	if subtitle != "" && subtitle != title {
@@ -387,18 +378,7 @@ func (p *printer) edgeColour(edge *graph.Edge) string {
 		return p.palette.warn
 	}
 
-	if hop, ok := edge.Binding(); ok {
-		switch hop.Origin {
-		case graph.BindOriginManual:
-			return p.palette.manual
-		case graph.BindOriginAutobinding:
-			return p.palette.autowired
-		case graph.BindOriginCompilerPass:
-			return p.palette.pass
-		}
-	}
-
-	switch edge.Origin {
+	switch edge.DecidedBy() {
 	case graph.ArgOriginManual:
 		return p.palette.manual
 	case graph.ArgOriginAutowiring:

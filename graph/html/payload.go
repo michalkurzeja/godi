@@ -80,7 +80,12 @@ type viewNode struct {
 	Kind  graph.NodeKind `json:"kind"`
 	Scope graph.ScopeID  `json:"scope"`
 
-	Type      string `json:"type"`
+	Type string `json:"type"`
+	// Title and Subtitle are what the node is headed by and what goes under it.
+	// Worked out here rather than in the page: every format owes the reader the
+	// same answer, and the page had a second copy of the rule in JavaScript.
+	Title     string `json:"title"`
+	Subtitle  string `json:"subtitle,omitzero"`
 	Short     string `json:"short"`
 	Name      string `json:"name"`
 	Package   string `json:"package,omitzero"`
@@ -210,6 +215,8 @@ func newViewNode(node *graph.Node) viewNode {
 		Kind:         node.Kind,
 		Scope:        node.Scope,
 		Type:         node.Type,
+		Title:        node.Title(),
+		Subtitle:     node.Subtitle(),
 		Short:        node.TypeShort(),
 		Name:         node.Name,
 		Package:      node.Package(),
@@ -271,27 +278,11 @@ func newViewEdge(edge *graph.Edge) viewEdge {
 		Cycle:      edge.Cycle,
 		Pass:       edge.PassCredit(),
 	}
-	out.DecidedBy = edge.Origin
+	out.DecidedBy = edge.DecidedBy()
 	if hop, ok := edge.Binding(); ok {
-		out.BindInterface = hop.Interface
+		out.BindInterface = render.Short(hop.Interface)
 		out.BindOrigin = hop.Origin
 		out.BindPass = hop.OriginPass
-		out.DecidedBy = decidedBy(hop.Origin)
 	}
 	return out
-}
-
-// decidedBy translates a binding's origin into the argument vocabulary the page
-// filters by. godi creating a binding for you and godi autowiring an argument
-// are the same answer to "who decided": godi did.
-func decidedBy(origin graph.BindOrigin) graph.ArgOrigin {
-	switch origin {
-	case graph.BindOriginManual:
-		return graph.ArgOriginManual
-	case graph.BindOriginAutobinding:
-		return graph.ArgOriginAutowiring
-	case graph.BindOriginCompilerPass:
-		return graph.ArgOriginCompilerPass
-	}
-	return graph.ArgOriginNone
 }

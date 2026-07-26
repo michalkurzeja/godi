@@ -218,11 +218,11 @@ const borrowAsFunction = (props) => ev(`(() => {
 const rebuildBoxes = async () => { await toggle('args', false); await toggle('args', true); };
 
 await test('a function box is its name and nothing else', async () => {
-	await borrowAsFunction({ kind: 'function' });
+	await borrowAsFunction({ kind: 'function', title: 'app.NewServer' });
 	await rebuildBoxes();
 	const lines = await rows(SERVER);
 
-	await borrowAsFunction({ kind: 'service' });
+	await borrowAsFunction({ kind: 'service', title: 'app.(*Server)' });
 	await rebuildBoxes();
 
 	return (lines[0] === '▲ ƒ app.NewServer' && lines[1].trim() === '')
@@ -233,11 +233,13 @@ await test('a function box is its name and nothing else', async () => {
 // identifies it without describing it, so the signature is the one thing that
 // says what it is.
 await test('unless it is a literal, which has only a signature to go on', async () => {
-	await borrowAsFunction({ kind: 'function', anonymous: true });
+	await borrowAsFunction({
+		kind: 'function', anonymous: true, title: 'app.NewServer', subtitle: 'app.(*Server)',
+	});
 	await rebuildBoxes();
 	const lines = await rows(SERVER);
 
-	await borrowAsFunction({ kind: 'service', anonymous: false });
+	await borrowAsFunction({ kind: 'service', anonymous: false, title: 'app.(*Server)' });
 	await rebuildBoxes();
 
 	return eq(lines.slice(0, 2), ['▲ ƒ app.NewServer', 'app.(*Server)'], 'the first two rows');
@@ -1343,17 +1345,25 @@ const sigLines = async () => {
 	return ev(`[...document.querySelectorAll('#panel .sig div')].map(d => d.textContent)`);
 };
 
-// A named value is known by its name, exactly as a function node is: its type is
-// that function's signature, so the type says nothing the signature does not.
+// What a node is called is settled in the model and arrives with it, so these
+// drive the title the page is given rather than the properties it used to work
+// one out from. What is still the page's own is what it does with it: heading
+// the panel, and the value block below not repeating it.
 await test('a named value is headed by its name, and says its signature once', async () => {
-	await asValue({ fromValue: true, anonymous: false, name: 'github.com/acme/app.validateEmail' });
+	await asValue({
+		fromValue: true, anonymous: false,
+		name: 'github.com/acme/app.validateEmail', title: 'app.validateEmail',
+	});
 	const lines = await sigLines();
 	const [h2, h3] = await ev(`[
 		document.querySelector('#panel h2').textContent,
 		document.querySelector('#panel h3').textContent,
 	]`);
 
-	await asValue({ fromValue: false, anonymous: false, name: 'github.com/acme/app.NewServer' });
+	await asValue({
+		fromValue: false, anonymous: false,
+		name: 'github.com/acme/app.NewServer', title: 'app.(*Server)',
+	});
 	await selectNode(SERVER);
 
 	if (h2 !== 'app.validateEmail') return `the panel is headed ${JSON.stringify(h2)}`;
