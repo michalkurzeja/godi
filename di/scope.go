@@ -166,11 +166,17 @@ func (s *Scope) GetServicesIDsByType(typ reflect.Type) []ID {
 	return s.svcs.GetIDsByType(typ)
 }
 
-func (s *Scope) GetServicesIDsByTypeInChain(typ reflect.Type) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetServicesIDsByType(typ)...)
-	}
-	return ids
+// ServicesIDsByTypeInChainSeq yields the services of the type visible from this
+// scope, nearest scope first. It is what GetServicesIDsByTypeInChain is made
+// of, and the one to reach for when the first match is all that is wanted.
+func (s *Scope) ServicesIDsByTypeInChainSeq(typ reflect.Type) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetServicesIDsByType(typ))
+	})
+}
+
+func (s *Scope) GetServicesIDsByTypeInChain(typ reflect.Type) []ID {
+	return slices.Collect(s.ServicesIDsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetServicesByType(typ reflect.Type) ([]any, error) {
@@ -185,11 +191,16 @@ func (s *Scope) GetServicesIDsByLabel(label Label) []ID {
 	return s.svcs.GetIDsByLabel(label)
 }
 
-func (s *Scope) GetServicesIDsByLabelInChain(label Label) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetServicesIDsByLabel(label)...)
-	}
-	return ids
+// ServicesIDsByLabelInChainSeq yields the services carrying the label that are
+// visible from this scope, nearest scope first.
+func (s *Scope) ServicesIDsByLabelInChainSeq(label Label) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetServicesIDsByLabel(label))
+	})
+}
+
+func (s *Scope) GetServicesIDsByLabelInChain(label Label) []ID {
+	return slices.Collect(s.ServicesIDsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetServicesByLabel(label Label) ([]any, error) {
@@ -254,11 +265,16 @@ func (s *Scope) GetFunctionsIDsByType(typ reflect.Type) []ID {
 	return s.funs.GetIDsByType(typ)
 }
 
-func (s *Scope) GetFunctionsIDsByTypeInChain(typ reflect.Type) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetFunctionsIDsByType(typ)...)
-	}
-	return ids
+// FunctionsIDsByTypeInChainSeq yields the functions of the type visible from
+// this scope, nearest scope first.
+func (s *Scope) FunctionsIDsByTypeInChainSeq(typ reflect.Type) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetFunctionsIDsByType(typ))
+	})
+}
+
+func (s *Scope) GetFunctionsIDsByTypeInChain(typ reflect.Type) []ID {
+	return slices.Collect(s.FunctionsIDsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) ExecuteFunctionsByType(typ reflect.Type) ([][]any, error) {
@@ -273,11 +289,16 @@ func (s *Scope) GetFunctionsIDsByLabel(label Label) []ID {
 	return s.funs.GetIDsByLabel(label)
 }
 
-func (s *Scope) GetFunctionsIDsByLabelInChain(label Label) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetFunctionsIDsByLabel(label)...)
-	}
-	return ids
+// FunctionsIDsByLabelInChainSeq yields the functions carrying the label that
+// are visible from this scope, nearest scope first.
+func (s *Scope) FunctionsIDsByLabelInChainSeq(label Label) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetFunctionsIDsByLabel(label))
+	})
+}
+
+func (s *Scope) GetFunctionsIDsByLabelInChain(label Label) []ID {
+	return slices.Collect(s.FunctionsIDsByLabelInChainSeq(label))
 }
 
 func (s *Scope) ExecuteFunctionsByLabel(label Label) ([][]any, error) {
@@ -296,14 +317,16 @@ func (s *Scope) GetBoundArg(typ reflect.Type) (Arg, bool) {
 	return binding.boundTo, true
 }
 
+// GetBoundArgInChain is the argument bound to the type in the nearest scope
+// that binds it, which is the one that takes effect.
 func (s *Scope) GetBoundArgInChain(typ reflect.Type) (Arg, bool) {
-	for scope := range s.Chain() {
-		boundTo, ok := scope.GetBoundArg(typ)
-		if ok {
-			return boundTo, true
+	return iterx.First(iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[Arg] {
+		return func(yield func(Arg) bool) {
+			if boundTo, ok := scope.GetBoundArg(typ); ok {
+				yield(boundTo)
+			}
 		}
-	}
-	return nil, false
+	}))
 }
 
 func (s *Scope) getServiceInstance(def *ServiceDefinition) (any, error) {
@@ -373,15 +396,7 @@ func (s *Scope) ServiceDefinitionsSeq() iter.Seq[*ServiceDefinition] {
 }
 
 func (s *Scope) ServiceDefinitionsInChainSeq() iter.Seq[*ServiceDefinition] {
-	return func(yield func(*ServiceDefinition) bool) {
-		for scope := range s.Chain() {
-			for def := range scope.ServiceDefinitionsSeq() {
-				if !yield(def) {
-					return
-				}
-			}
-		}
-	}
+	return iterx.Flatten(s.Chain(), (*Scope).ServiceDefinitionsSeq)
 }
 
 func (s *Scope) GetServiceDefinitions() []*ServiceDefinition {
@@ -396,22 +411,32 @@ func (s *Scope) GetServiceDefinitionsByType(typ reflect.Type) []*ServiceDefiniti
 	return s.svcs.GetByType(typ)
 }
 
-func (s *Scope) GetServiceDefinitionsByTypeInChain(typ reflect.Type) (defs []*ServiceDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetServiceDefinitionsByType(typ)...)
-	}
-	return defs
+// ServiceDefinitionsByTypeInChainSeq yields the definitions of the type visible
+// from this scope, nearest scope first.
+func (s *Scope) ServiceDefinitionsByTypeInChainSeq(typ reflect.Type) iter.Seq[*ServiceDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*ServiceDefinition] {
+		return slices.Values(scope.GetServiceDefinitionsByType(typ))
+	})
+}
+
+func (s *Scope) GetServiceDefinitionsByTypeInChain(typ reflect.Type) []*ServiceDefinition {
+	return slices.Collect(s.ServiceDefinitionsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetServiceDefinitionsByLabel(label Label) []*ServiceDefinition {
 	return s.svcs.GetByLabel(label)
 }
 
-func (s *Scope) GetServiceDefinitionsByLabelInChain(label Label) (defs []*ServiceDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetServiceDefinitionsByLabel(label)...)
-	}
-	return defs
+// ServiceDefinitionsByLabelInChainSeq yields the definitions carrying the label
+// that are visible from this scope, nearest scope first.
+func (s *Scope) ServiceDefinitionsByLabelInChainSeq(label Label) iter.Seq[*ServiceDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*ServiceDefinition] {
+		return slices.Values(scope.GetServiceDefinitionsByLabel(label))
+	})
+}
+
+func (s *Scope) GetServiceDefinitionsByLabelInChain(label Label) []*ServiceDefinition {
+	return slices.Collect(s.ServiceDefinitionsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetServiceDefinition(id ID) (*ServiceDefinition, bool) {
@@ -447,15 +472,7 @@ func (s *Scope) FunctionDefinitionsSeq() iter.Seq[*FunctionDefinition] {
 }
 
 func (s *Scope) FunctionDefinitionsInChainSeq() iter.Seq[*FunctionDefinition] {
-	return func(yield func(*FunctionDefinition) bool) {
-		for scope := range s.Chain() {
-			for def := range scope.FunctionDefinitionsSeq() {
-				if !yield(def) {
-					return
-				}
-			}
-		}
-	}
+	return iterx.Flatten(s.Chain(), (*Scope).FunctionDefinitionsSeq)
 }
 
 func (s *Scope) GetFunctionDefinitions() []*FunctionDefinition {
@@ -470,22 +487,32 @@ func (s *Scope) GetFunctionDefinitionsByType(typ reflect.Type) []*FunctionDefini
 	return s.funs.GetByType(typ)
 }
 
-func (s *Scope) GetFunctionDefinitionsByTypeInChain(typ reflect.Type) (defs []*FunctionDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetFunctionDefinitionsByType(typ)...)
-	}
-	return defs
+// FunctionDefinitionsByTypeInChainSeq yields the definitions of the type
+// visible from this scope, nearest scope first.
+func (s *Scope) FunctionDefinitionsByTypeInChainSeq(typ reflect.Type) iter.Seq[*FunctionDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*FunctionDefinition] {
+		return slices.Values(scope.GetFunctionDefinitionsByType(typ))
+	})
+}
+
+func (s *Scope) GetFunctionDefinitionsByTypeInChain(typ reflect.Type) []*FunctionDefinition {
+	return slices.Collect(s.FunctionDefinitionsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetFunctionDefinitionsByLabel(label Label) []*FunctionDefinition {
 	return s.funs.GetByLabel(label)
 }
 
-func (s *Scope) GetFunctionDefinitionsByLabelInChain(label Label) (defs []*FunctionDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetFunctionDefinitionsByLabel(label)...)
-	}
-	return defs
+// FunctionDefinitionsByLabelInChainSeq yields the definitions carrying the
+// label that are visible from this scope, nearest scope first.
+func (s *Scope) FunctionDefinitionsByLabelInChainSeq(label Label) iter.Seq[*FunctionDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*FunctionDefinition] {
+		return slices.Values(scope.GetFunctionDefinitionsByLabel(label))
+	})
+}
+
+func (s *Scope) GetFunctionDefinitionsByLabelInChain(label Label) []*FunctionDefinition {
+	return slices.Collect(s.FunctionDefinitionsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetFunctionDefinition(id ID) (*FunctionDefinition, bool) {
@@ -513,6 +540,12 @@ func (s *Scope) RemoveFunctionDefinitions(ids ...ID) *Scope {
 
 func (s *Scope) BindingsSeq() iter.Seq[*InterfaceBinding] {
 	return iterx.Values(s.bindings.Iterator())
+}
+
+// BindingsInChainSeq yields every binding visible from this scope, nearest
+// scope first - which is also the order they take effect in.
+func (s *Scope) BindingsInChainSeq() iter.Seq[*InterfaceBinding] {
+	return iterx.Flatten(s.Chain(), (*Scope).BindingsSeq)
 }
 
 func (s *Scope) GetBindings() []*InterfaceBinding {
