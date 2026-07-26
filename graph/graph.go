@@ -37,7 +37,10 @@ func NewEdgeID(param ParamID, ordinal int) EdgeID {
 // It is plain data. Nothing here refers to the container it came from, which is
 // what lets encoders live outside godi entirely.
 type Graph struct {
-	Schema      string        `json:"schema"`
+	// Schema is not written here. Serialising a graph wraps it in an envelope
+	// whose metadata carries the schema, so the file says it once - see
+	// WriteJSON.
+	Schema      string        `json:"-"`
 	Scopes      []*Scope      `json:"scopes"`   // Depth first from the root.
 	Nodes       []*Node       `json:"nodes"`    // Sorted by ID.
 	Edges       []*Edge       `json:"edges"`    // Sorted by (From, Param, Ordinal).

@@ -64,7 +64,11 @@ func (b *Builder) Build() (Container, error) {
 	}
 
 	container, err := b.cb.Build()
-	return container, errors.Join(prepErr, err)
+	err = errors.Join(prepErr, err)
+	if err != nil {
+		b.reportFailedBuild(container)
+	}
+	return container, err
 }
 
 // Graph returns the dependency graph of the container as it is configured so

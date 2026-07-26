@@ -1315,23 +1315,29 @@ The graph it produces carries a `graph.Snapshot`; see below.
 
 ### graph/ — the dependency graph
 
-**Packages:** `graph`, `graph/dot`, `graph/text`, `graph/html`, `graph/view`, `graph/internal/render`
+**Packages:** `graph`, `graph/dot`, `graph/text`, `graph/html`, `graph/serve`, `graph/view`, `graph/internal/render`
 
 **Purpose:** Turn a built container into an inspectable model, and encode it.
 
 The layering is forced by one constraint: the model package must not import `di`, because the root `Container` interface names `graph.Config` in its `Graph` method, and `di` → `graph` → `di` would be an import cycle.
 
 ```
-graph/                   model, Config, Source, Encoder, filters. Leaf — stdlib only.
+graph/                   model, Config, Source, Encoder, filters, JSON. Leaf — stdlib only.
 graph/dot/               DOT encoder                      -> graph
 graph/text/              text encoder                     -> graph
 graph/html/              interactive viewer, go:embed     -> graph
+graph/serve/             HTTP handler over a Source       -> graph, graph/html
 graph/view/              opens a graph, os/exec           -> graph
 graph/internal/render/   short names, wrapping, ellipsis  -> reachable only from graph/...
 di/graph.go              extraction: (*Container).Graph(cfg) *graph.Graph
+cmd/godi/                the CLI                          -> graph, all encoders, serve, view
 ```
 
 One package per format, following `image`/`image/png`, so nothing is compiled into a binary that does not ask for it. The root package pulls in only the model: no Graphviz plumbing, no embedded viewer assets, no `os/exec`. `graph/text` is the exception — `Print` delegates to it, and `Print` is on the public `Container` interface, so it is reachable in every binary until that deprecation is seen through.
+
+`deps_test.go` in the root package asserts this by running `go list -deps` and requiring that none of `graph/dot`, `graph/html`, `graph/serve`, `graph/view` or `os/exec` appear. It was a comment in `CLAUDE.md` until the failure snapshot came to rest on it.
+
+JSON is the exception to one-package-per-format, and deliberately: it lives in `graph` itself, next to the `Schema` constant. That is what lets the root package write a failed build's graph without importing a renderer — the whole design of the snapshot depends on the codec being reachable from the leaf.
 
 #### Entry point
 
@@ -1354,6 +1360,12 @@ Two mechanisms feed it. `Compiler.Run` records the pass it is running and the on
 `Node.Incomplete` marks a node something it needs is missing from: an argument naming a dependency the container does not have (`Param.Unresolved`), or one nothing has wired once nothing is going to. The second is gated on `Snapshot.Autowired`, because before autowiring every argument is unwired and marking every node would say nothing. The viewer draws those in the warning colour with a `⚠` on the box and counts them in the footer; a built container has none, since validation would have rejected it.
 
 A failed `Build` leaves the builder's container standing, so `graph.Extract(builder)` afterwards is the picture of where the compiler stopped, with `Snapshot.Failed` naming the pass that stopped it. That is the intended way to find what broke a build.
+
+`snapshot.go` in the root package does exactly that, without being asked in code. When `GODI_SNAPSHOT_ON_BUILD_ERR` is true, `Builder.Build` writes the graph as JSON — to `GODI_SNAPSHOT_PATH`, a directory or a file, defaulting to `os.TempDir()` — and prints the path and the `godi view` command to stderr. Three things it has to get right:
+
+- **Which source.** `ContainerBuilder.Build` nils its container on success and leaves it standing on failure. So when compilation succeeded and only `prepare()` failed, the builder has no graph left to give and the graph must come from the container instead. The nil check is on the concrete `*di.Container`, before it is widened to the `Container` interface, where a nil pointer sits inside a non-nil interface.
+- **Never mask the build error.** Anything that goes wrong while snapshotting is a line on stderr and nothing more. The error `Build` returns is byte-identical either way, which `TestTheBuildErrorIsUntouched` pins by building the same container twice.
+- **Mode 0600**, for the same reason `graph/view` uses it: a graph asked for literal values carries whatever those are, and a temporary directory is not private.
 
 `Option` and `Filter` are separate types because they answer separate questions: an `Option` tells the `Source` what to build (and cannot be revisited afterwards), a `Filter` narrows the result. Neither compiles in the other's place, so nothing is silently ignored. `Filter` is a struct with unexported fields, so this package's functions are the only way to make one; the zero value is skipped rather than dereferenced. `Config` therefore carries extraction settings only.
 
@@ -1404,6 +1416,46 @@ Filtering copies: nodes and params are cloned because their counts change, edges
 `graph/text` is an indented outline, and the format `Print` now delegates to.
 
 `graph/view` writes to a temporary file created private to the user (a graph asked for literal values carries whatever those are) and hands it to `open`/`xdg-open`/`start`. It is a separate package so that nothing on the root package's import path can run another program. `Open` extracts and opens; `OpenGraph` opens a graph already in hand, which is what narrowing with `Select` leaves you holding.
+
+`graph.JSON()` is the interchange format, and the only encoder living in the model package. The file is an envelope:
+
+```json
+{"metadata": {"schema": "godi.graph/v1", "writtenAt": "...", "godiVersion": "..."},
+ "graph":    {"scopes": [], "nodes": [], "edges": [], "bindings": []}}
+```
+
+`Graph.Schema` is tagged `json:"-"`: the Go field stays, because `Select` carries it and the viewer payload reads it, but the file says the schema once, in the metadata. `WriteJSON` lifts it up, `ReadJSON` copies it back, so a decoded graph is indistinguishable from an extracted one.
+
+`ReadJSON` returns `(*Graph, Metadata, error)`. A schema it does not recognise is compared by exact string equality and reported as a warning `Diagnostic`, not an error — the model grows by adding fields, so a reader of one version usually still makes sense of a file from another, and a build that already failed is a bad moment to refuse. `text` and `dot` surface diagnostics as notices; **`graph/html` does not render diagnostics at all**, so `godi view` will not show the warning. That is a known gap, not an oversight.
+
+`graph.Static(g)` presents a graph as a `Source`. Without it, `graph.Source` is public API that only godi's own types can satisfy, which leaves anyone holding a graph read from a file unable to use what takes one.
+
+#### graph/serve
+
+`Handler(src graph.Source, opts ...Option) http.Handler` serves the page at `/` and the model at `/graph.json`, extracting **per request**. That is why it takes a `Source` rather than a `*Graph`: a running container already is one, so live preview needs no API change here — only a page that asks again, over a `GET /events` this package leaves room for.
+
+`Listen` binds before returning, because a caller given an ephemeral port needs to know it before anything is served — it is what gets printed and what the browser is pointed at. `Server.URL()` reports an unspecified bind address as loopback, since that is the one a browser on this machine wants.
+
+Encoding goes through a buffer first: a page cut off halfway still arrives under a 200, which tells the reader nothing is wrong when something is.
+
+---
+
+### cmd/godi — the CLI
+
+**Package:** `github.com/michalkurzeja/godi/v2/cmd/godi`, in this module. cobra is therefore one of the library's requirements — which costs a consumer nothing they link, since Go compiles only imported packages: three `/go.mod` hashes in their `go.sum` and three lines in `go list -m all`, no source, no bytes in the binary. `deps_test.go` asserts that nothing outside `cmd/godi` imports it.
+
+A nested module would have hidden even that, at the price of a workspace, a second `go.mod`/`go.sum`, extra CI steps, and a release dance (tag the library, bump the requirement, tag `cmd/godi/vX.Y.Z`) — with `go mod tidy` unable to succeed in between. Not worth it for three lines of SBOM.
+
+```
+godi export text|dot|html|json [--format flags] [file]   # stdout, or -o
+godi view [--addr] [--no-open] [html flags] [file]       # serve and open
+```
+
+Every flag maps onto the encoder option of the same name, with the flag default set to the encoder default, so there is no rendering logic here at all. `[file]` defaults to `-`, i.e. stdin. `--link` resolves through `html.EditorLink`, falling back to treating the value as a template — a value that is neither a known editor nor contains `{file}` is reported as a typo rather than silently producing dead links.
+
+Commands are built by `newXxxCmd` taking writers, so tests drive them with `SetArgs` over a buffer.
+
+Cobra supplies `godi completion bash|zsh|fish|powershell` on its own, but knows nothing about what a flag's *value* may be, so a choice flag would otherwise complete to filenames. `completion.go` registers the accepted values for each, and filters the file argument to `.json`. The values live in one list per flag (`rankDirs`, `dotThemes`, …) that the parser's error message, the usage line and the completion all read; `TestEveryOfferedValueIsAccepted` catches the case where the list and the parser's switch drift apart, which would tab-complete to an error.
 
 ---
 

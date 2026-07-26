@@ -906,6 +906,7 @@ package, so a binary compiles the ones it asks for and nothing else:
 | `graph/text` | An indented outline. Needs nothing installed, so it is what you reach for in a terminal or a test failure. |
 | `graph/dot` | Graphviz DOT. Scopes become nested clusters and every edge lands on the argument row it feeds. |
 | `graph/html` | One self-contained page you can search, filter and drag about. No CDN, no server, no network. |
+| `graph` | JSON, via `graph.JSON()` or `g.WriteJSON(w)`. The interchange format — read it back with `graph.ReadJSON`. |
 
 `graph/view` opens the result in whatever your system uses for the format — a browser tab for the viewer —
 via a temporary file:
@@ -998,7 +999,30 @@ dependencies missing, and an argument nothing has wired *yet* is not an argument
 
 #### When the build fails
 
-A failed `Build` leaves the builder standing, so the graph of exactly where the compiler stopped is one call away:
+Set one environment variable and a build that fails writes its own graph:
+
+```shell
+GODI_SNAPSHOT_ON_BUILD_ERR=true go run .
+```
+
+```
+godi: build failed at pass "argument validation"
+godi: graph written to /tmp/godi-graph-4821.json
+godi:   godi view /tmp/godi-graph-4821.json
+```
+
+| Variable | Meaning |
+|---|---|
+| `GODI_SNAPSHOT_ON_BUILD_ERR` | Write the graph when `Build` returns an error. Off unless set to something true. |
+| `GODI_SNAPSHOT_PATH` | A directory to write into, or the file to write. Defaults to the system's temporary directory. |
+
+It writes JSON and nothing else, so that no godi binary carries a renderer or the means to start a browser
+for a debugging aid it will almost never use. [The CLI](#the-godi-cli) turns the file into something to look
+at. Whatever happens, the error `Build` returns is untouched: a snapshot that cannot be written says so on
+stderr and is otherwise forgotten.
+
+In code, a failed `Build` leaves the builder standing, so the graph of exactly where the compiler stopped is
+one call away:
 
 ```go
 c, err := di.New().Services(...).Build()
@@ -1019,4 +1043,47 @@ go run ./examples/graph -format text            # read it here
 go run ./examples/graph | dot -Tsvg -o graph.svg
 go run ./examples/graph -format html -open      # open the interactive viewer
 go run ./examples/graph -format html -snapshot -open   # the wiring as declared, before it is compiled
+```
+
+### The godi CLI
+
+`cmd/godi` reads a graph written as JSON and renders it. It is a separate binary, so nothing it needs to draw
+a graph — Graphviz, the viewer assets, a browser — is ever compiled into yours:
+
+```shell
+go install github.com/michalkurzeja/godi/v2/cmd/godi@latest
+```
+
+```shell
+godi view graph.json                       # serve it and open a browser
+godi export text graph.json                # an outline, in the terminal
+godi export dot graph.json | dot -Tsvg -o graph.svg
+godi export html graph.json > graph.html
+godi export json --indent '  ' graph.json  # normalise it, for reading or diffing
+```
+
+Every export flag maps onto the encoder option of the same name — `--rankdir`, `--theme`, `--layout`,
+`--link` and the rest; `godi export dot --help` lists them. The file argument may be `-`, or left out, to read
+standard input. `godi view` builds the page for each request rather than writing one, and serves until you
+stop it.
+
+Shell completion covers the subcommands, the flags and the flag values — `--theme` completes to `light dark`,
+`--link` to the editors it knows, and a file argument to the `.json` files in the directory:
+
+```shell
+godi completion zsh > "${fpath[1]}/_godi"
+godi completion bash > /etc/bash_completion.d/godi
+# also: fish, powershell
+```
+
+The graph carries the schema it was written against. A file from a different version of godi is a warning
+rather than a refusal — it is drawn anyway, with a notice saying which version wrote it.
+
+To serve a graph from your own program, including one still being wired, `graph/serve` is the handler behind
+`godi view`:
+
+```go
+srv, err := serve.Listen("127.0.0.1:0", container)  // a container is a graph.Source
+fmt.Println(srv.URL())
+err = srv.Serve()
 ```

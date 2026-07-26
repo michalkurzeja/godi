@@ -9,6 +9,7 @@ require (
 	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.49.1
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a
 )
@@ -37,7 +38,6 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/vektra/mockery/v3 v3.7.2 // indirect

@@ -344,6 +344,18 @@ no CDN, no server). `graph/view` opens the result via a temporary file:
 path, err := view.Open(c, html.New())
 ```
 
+JSON is the exception: it lives in `graph` itself, because it is the interchange format the
+library writes when it cannot afford to depend on a renderer.
+
+```go
+err = g.WriteJSON(w)                      // or g.Encode(w, graph.JSON(graph.Indent("  ")))
+g, md, err := graph.ReadJSON(r)           // md.Schema, md.WrittenAt, md.GodiVersion
+src := graph.Static(g)                    // a graph read from a file, as a graph.Source
+```
+
+A schema `ReadJSON` does not recognise is a warning `Diagnostic`, not an error — the graph
+is decoded anyway.
+
 Filters work on the model, so every format gets them. Reach for them on any real container:
 past a hundred nodes a whole-graph picture is unreadable.
 
@@ -382,6 +394,25 @@ A failed `Build` leaves the builder standing, so `graph.Extract(builder)` afterw
 where the compiler stopped. `Snapshot.Failed` names the pass that failed, and every node
 with `Incomplete` set — an argument naming a service that is not registered, or one nothing
 will wire — is drawn with a red border in the viewer.
+
+No code is needed for the common case. Set `GODI_SNAPSHOT_ON_BUILD_ERR=true` and a failed
+`Build` writes its graph as JSON, printing the path and the command to run on stderr;
+`GODI_SNAPSHOT_PATH` chooses a directory or a file, defaulting to the temporary directory.
+The error `Build` returns is unchanged either way.
+
+Rendering lives in a separate binary, so that no godi binary carries Graphviz or the means
+to start a browser:
+
+```shell
+go install github.com/michalkurzeja/godi/v2/cmd/godi@latest
+
+godi view graph.json                  # serve it and open a browser
+godi export text graph.json           # an outline, in the terminal
+godi export dot graph.json | dot -Tsvg -o graph.svg
+```
+
+`graph/serve` is the handler behind `godi view`, and takes a `graph.Source`, so it serves a
+live container as readily as a file: `serve.Listen("127.0.0.1:0", container)`.
 
 A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
 guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
