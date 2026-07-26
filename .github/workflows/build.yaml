@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -38,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -51,3 +49,29 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  viewer:
+    name: Viewer regressions
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The self-check: the runner image ships both, and the day it stops this
+      # line says so instead of the suite quietly skipping.
+      - name: Show what CI will drive
+        run: google-chrome --version && node --version
+
+      - name: Viewer regressions
+        env:
+          GODI_REQUIRE_VIEWER_TESTS: "1"
+        run: go test ./graph/html/... -run TestViewerRegressions -count=1 -v

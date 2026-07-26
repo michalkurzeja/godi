@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,9 @@ import (
 // decided in the browser. So the regression suite runs there, driven from here.
 //
 // It needs node and a Chrome, and skips when either is missing rather than
-// failing a build that was never going to have them.
+// failing a build that was never going to have them. Set
+// GODI_REQUIRE_VIEWER_TESTS to turn those skips into failures, which is how CI
+// asserts that the suite ran at all.
 func TestViewerRegressions(t *testing.T) {
 	node := toolOrSkip(t, "node")
 	chrome := chromeOrSkip(t)
@@ -128,12 +131,26 @@ func runWithTimeout(t *testing.T, cmd *exec.Cmd, limit time.Duration) (string, e
 	}
 }
 
+// skipOrFailf skips, unless GODI_REQUIRE_VIEWER_TESTS says the suite was meant
+// to run. Skipping quietly is right on a machine without a browser and wrong in
+// CI, where a suite that did not run reads as one that passed.
+func skipOrFailf(t *testing.T, format string, args ...any) {
+	t.Helper()
+
+	if on, _ := strconv.ParseBool(os.Getenv(envRequireViewerTests)); on {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
+const envRequireViewerTests = "GODI_REQUIRE_VIEWER_TESTS"
+
 func toolOrSkip(t *testing.T, name string) string {
 	t.Helper()
 
 	path, err := exec.LookPath(name)
 	if err != nil {
-		t.Skipf("%s is not installed, so the viewer cannot be driven", name)
+		skipOrFailf(t, "%s is not installed, so the viewer cannot be driven", name)
 	}
 	return path
 }
@@ -158,7 +175,7 @@ func chromeOrSkip(t *testing.T) string {
 		}
 	}
 
-	t.Skip("no Chrome found; set CHROME_PATH to run the viewer regression tests")
+	skipOrFailf(t, "no Chrome found; set CHROME_PATH to run the viewer regression tests")
 	return ""
 }
 
