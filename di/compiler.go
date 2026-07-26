@@ -15,8 +15,8 @@ type CompilerPass struct {
 	priority int
 	op       CompilerOp
 
-	argOrigin  argOrigin  // What a slot filled by this pass means.
-	bindOrigin bindOrigin // What a binding created by this pass means.
+	ArgOrigin  ArgOrigin  // What a slot filled by this pass means.
+	BindOrigin BindOrigin // What a binding created by this pass means.
 }
 
 func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerPass {
@@ -24,8 +24,8 @@ func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerP
 		name:       name,
 		stage:      stage,
 		op:         op,
-		argOrigin:  argOriginCompilerPass,
-		bindOrigin: bindOriginCompilerPass,
+		ArgOrigin:  ArgOriginCompilerPass,
+		BindOrigin: BindOriginCompilerPass,
 	}
 }
 
@@ -36,15 +36,15 @@ func (p *CompilerPass) WithPriority(priority int) *CompilerPass {
 
 // withArgOrigin marks the arguments this pass fills as one of godi's own
 // behaviours rather than a third-party extension.
-func (p *CompilerPass) withArgOrigin(origin argOrigin) *CompilerPass {
-	p.argOrigin = origin
+func (p *CompilerPass) withArgOrigin(origin ArgOrigin) *CompilerPass {
+	p.ArgOrigin = origin
 	return p
 }
 
 // withBindOrigin marks the bindings this pass creates as one of godi's own
 // behaviours rather than a third-party extension.
-func (p *CompilerPass) withBindOrigin(origin bindOrigin) *CompilerPass {
-	p.bindOrigin = origin
+func (p *CompilerPass) withBindOrigin(origin BindOrigin) *CompilerPass {
+	p.BindOrigin = origin
 	return p
 }
 
@@ -114,8 +114,8 @@ type Passes []*CompilerPass
 
 func BasePasses(skipCycleValidation bool) Passes {
 	passes := Passes{
-		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()).withBindOrigin(bindOriginAutobinding),
-		NewCompilerPass("autowiring", Automation, NewAutowiringPass()).withArgOrigin(argOriginAutowiring),
+		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()).withBindOrigin(BindOriginAutobinding),
+		NewCompilerPass("autowiring", Automation, NewAutowiringPass()).withArgOrigin(ArgOriginAutowiring),
 		NewCompilerPass("argument validation", Validation, NewArgValidationPass()),
 		NewCompilerPass("eager initialization", Finalization, NewEagerInitPass()),
 	}
@@ -165,7 +165,7 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	c.passes.sort()
 
 	// Whatever is already wired, the user wired: the passes have not run yet.
-	c.creditPendingWiring(builder.container, argOriginManual, bindOriginManual, "")
+	c.creditPendingWiring(builder.container, ArgOriginManual, BindOriginManual, "")
 
 	for _, pass := range c.passes {
 		c.running = pass
@@ -180,8 +180,8 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		c.done = append(c.done, pass.name)
 		// Asked of the pass rather than of its name: what a pass fills is what
 		// it says it fills, and nothing stops a user calling theirs "autowiring".
-		c.autowired = c.autowired || pass.argOrigin == argOriginAutowiring
-		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
+		c.autowired = c.autowired || pass.ArgOrigin == ArgOriginAutowiring
+		c.creditPendingWiring(builder.container, pass.ArgOrigin, pass.BindOrigin, pass.name)
 	}
 	return nil
 }
@@ -205,7 +205,7 @@ func (c *Compiler) snapshot() *graph.Snapshot {
 // and nothing else. Running it before the first pass, and again after each one,
 // is what tells a hand-written argument apart from one godi or an extension
 // supplied.
-func (c *Compiler) creditPendingWiring(container *Container, args argOrigin, binds bindOrigin, pass string) {
+func (c *Compiler) creditPendingWiring(container *Container, args ArgOrigin, binds BindOrigin, pass string) {
 	for slot := range container.slotsSeq() {
 		if slot.dirty {
 			slot.creditTo(args, pass)

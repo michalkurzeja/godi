@@ -7,22 +7,25 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// bindOrigin tells who created an InterfaceBinding. Unlike a Slot, a binding
+// BindOrigin tells who created an InterfaceBinding. Unlike a Slot, a binding
 // never exists before something creates it, so there is no "none" origin.
-type bindOrigin uint8
+//
+// It is the binding half of what ArgOrigin says about an argument, and a
+// compiler pass reads it for the same reason.
+type BindOrigin uint8
 
 const (
-	bindOriginManual       bindOrigin = iota // Declared by the user.
-	bindOriginAutobinding                    // Created by the interface binding pass.
-	bindOriginCompilerPass                   // Created by a Compiler pass.
+	BindOriginManual       BindOrigin = iota // Declared by the user.
+	BindOriginAutobinding                    // Created by the interface binding pass.
+	BindOriginCompilerPass                   // Created by a Compiler pass.
 )
 
 type InterfaceBinding struct {
 	ifaceTyp reflect.Type
 	boundTo  Arg
 
-	origin     bindOrigin
-	originPass string // Name of the pass, for bindOriginAutobinding and bindOriginCompilerPass.
+	origin     BindOrigin
+	originPass string // Name of the pass, for BindOriginAutobinding and BindOriginCompilerPass.
 	dirty      bool   // Whether the binding was created since the Compiler last looked.
 }
 
@@ -33,7 +36,7 @@ func NewInterfaceBinding(iface reflect.Type, boundTo Arg) (*InterfaceBinding, er
 	if !boundTo.Type().Implements(iface) {
 		return nil, fmt.Errorf("invalid binding: %s does not implement %s", util.Signature(boundTo.Type()), util.Signature(iface))
 	}
-	return &InterfaceBinding{ifaceTyp: iface, boundTo: boundTo, origin: bindOriginManual, dirty: true}, nil
+	return &InterfaceBinding{ifaceTyp: iface, boundTo: boundTo, origin: BindOriginManual, dirty: true}, nil
 }
 
 func (b *InterfaceBinding) Interface() reflect.Type {
@@ -44,8 +47,13 @@ func (b *InterfaceBinding) BoundTo() Arg {
 	return b.boundTo
 }
 
+// Origin says who created this binding, and names the pass when one did.
+func (b *InterfaceBinding) Origin() (BindOrigin, string) {
+	return b.origin, b.originPass
+}
+
 // creditTo names whoever created this binding.
-func (b *InterfaceBinding) creditTo(origin bindOrigin, pass string) {
+func (b *InterfaceBinding) creditTo(origin BindOrigin, pass string) {
 	b.origin = origin
 	b.originPass = pass
 	b.dirty = false

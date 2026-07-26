@@ -832,27 +832,27 @@ func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index i
 	return graph.ParamID(fmt.Sprintf("%s#f:%d", node, index))
 }
 
-func argOriginOf(origin argOrigin) graph.ArgOrigin {
+func argOriginOf(origin ArgOrigin) graph.ArgOrigin {
 	switch origin {
-	case argOriginManual:
+	case ArgOriginManual:
 		return graph.ArgOriginManual
-	case argOriginAutowiring:
+	case ArgOriginAutowiring:
 		return graph.ArgOriginAutowiring
-	case argOriginCompilerPass:
+	case ArgOriginCompilerPass:
 		return graph.ArgOriginCompilerPass
-	case argOriginNone:
+	case ArgOriginNone:
 		return graph.ArgOriginNone
 	}
 	return graph.ArgOriginNone
 }
 
-func bindOriginOf(origin bindOrigin) graph.BindOrigin {
+func bindOriginOf(origin BindOrigin) graph.BindOrigin {
 	switch origin {
-	case bindOriginManual:
+	case BindOriginManual:
 		return graph.BindOriginManual
-	case bindOriginAutobinding:
+	case BindOriginAutobinding:
 		return graph.BindOriginAutobinding
-	case bindOriginCompilerPass:
+	case BindOriginCompilerPass:
 		return graph.BindOriginCompilerPass
 	}
 	return graph.BindOriginManual

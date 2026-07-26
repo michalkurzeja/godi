@@ -163,15 +163,20 @@ func (slots Slots) Args() []Arg {
 	})
 }
 
-// argOrigin tells who filled a Slot. A slot exists before anything fills it -
-// NewArgList creates one per function parameter - so the zero value is argOriginNone.
-type argOrigin uint8
+// ArgOrigin tells who filled a Slot. A slot exists before anything fills it -
+// NewArgList creates one per function parameter - so the zero value is ArgOriginNone.
+//
+// A compiler pass reads it to tell an argument the user wrote from one godi
+// wired, which is what an override pass needs and cannot work out any other
+// way: the two are byte-identical by then. Declaring an origin is godi's own
+// business, so a pass is credited with its work rather than claiming it.
+type ArgOrigin uint8
 
 const (
-	argOriginNone         argOrigin = iota // Nothing has filled this slot.
-	argOriginManual                        // Filled by the user, at definition time.
-	argOriginAutowiring                    // Filled by the autowiring pass.
-	argOriginCompilerPass                  // Filled or replaced by a Compiler pass.
+	ArgOriginNone         ArgOrigin = iota // Nothing has filled this slot.
+	ArgOriginManual                        // Filled by the user, at definition time.
+	ArgOriginAutowiring                    // Filled by the autowiring pass.
+	ArgOriginCompilerPass                  // Filled or replaced by a Compiler pass.
 )
 
 type Slot struct {
@@ -181,8 +186,8 @@ type Slot struct {
 	i        uint
 	variadic bool
 
-	origin     argOrigin
-	originPass string // Name of the pass, for argOriginAutowiring and argOriginCompilerPass.
+	origin     ArgOrigin
+	originPass string // Name of the pass, for ArgOriginAutowiring and ArgOriginCompilerPass.
 	dirty      bool   // Whether the slot was filled since the Compiler last looked.
 }
 
@@ -264,13 +269,13 @@ func (s *Slot) Append(args ...Arg) error {
 // to credit. Until something does, the fill is the user's own: a container that
 // is never compiled still reports its wiring honestly.
 func (s *Slot) markFilled() {
-	s.origin = argOriginManual
+	s.origin = ArgOriginManual
 	s.originPass = ""
 	s.dirty = true
 }
 
 // creditTo names whoever made the pending fill.
-func (s *Slot) creditTo(origin argOrigin, pass string) {
+func (s *Slot) creditTo(origin ArgOrigin, pass string) {
 	s.origin = origin
 	s.originPass = pass
 	s.dirty = false
@@ -301,6 +306,11 @@ func (s *Slot) IsAppended() bool {
 
 func (s *Slot) Index() uint {
 	return s.i
+}
+
+// Origin says who filled this slot, and names the pass when one did.
+func (s *Slot) Origin() (ArgOrigin, string) {
+	return s.origin, s.originPass
 }
 
 type ArgList struct {

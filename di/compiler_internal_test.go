@@ -51,11 +51,11 @@ func TestSlotOriginIsManualWhenWiredAtDefinitionTime(t *testing.T) {
 	slots := factory.Args().Slots()
 
 	// Slot 0 is the interface: nobody filled it, so autowiring did.
-	require.Equal(t, argOriginAutowiring, slots[0].origin)
+	require.Equal(t, ArgOriginAutowiring, slots[0].origin)
 	require.Equal(t, "autowiring", slots[0].originPass)
 
 	// Slot 1 was given a literal by hand.
-	require.Equal(t, argOriginManual, slots[1].origin)
+	require.Equal(t, ArgOriginManual, slots[1].origin)
 	require.Empty(t, slots[1].originPass)
 }
 
@@ -77,7 +77,7 @@ func TestBindingOriginDistinguishesAutobindingFromUserBinding(t *testing.T) {
 
 		binding, ok := builder.RootScope().GetBinding(ifaceTyp)
 		require.True(t, ok)
-		require.Equal(t, bindOriginAutobinding, binding.origin)
+		require.Equal(t, BindOriginAutobinding, binding.origin)
 		require.Equal(t, "interface binding", binding.originPass)
 	})
 
@@ -105,7 +105,7 @@ func TestBindingOriginDistinguishesAutobindingFromUserBinding(t *testing.T) {
 
 		binding, ok := builder.RootScope().GetBinding(ifaceTyp)
 		require.True(t, ok)
-		require.Equal(t, bindOriginManual, binding.origin)
+		require.Equal(t, BindOriginManual, binding.origin)
 		require.Empty(t, binding.originPass)
 	})
 }
@@ -127,10 +127,10 @@ func TestSlotOriginCreditsThirdPartyPassByName(t *testing.T) {
 	require.NoError(t, err)
 
 	slots := factory.Args().Slots()
-	require.Equal(t, argOriginCompilerPass, slots[1].origin)
+	require.Equal(t, ArgOriginCompilerPass, slots[1].origin)
 	require.Equal(t, "my override", slots[1].originPass)
 
 	// The autowired slot is untouched by the override pass.
-	require.Equal(t, argOriginAutowiring, slots[0].origin)
+	require.Equal(t, ArgOriginAutowiring, slots[0].origin)
 	require.Equal(t, "autowiring", slots[0].originPass)
 }
