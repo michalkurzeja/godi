@@ -838,7 +838,7 @@ func TestTheWiringIsAGraphBeforeGodiHasWorkedAnythingOut(t *testing.T) {
 func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 	t.Parallel()
 
-	_, err := graph.Extract(func(graph.Config) (*graph.Graph, error) { return nil, nil })
+	_, err := graph.Extract(graph.SourceFunc(func(graph.Config) (*graph.Graph, error) { return nil, nil }))
 	require.ErrorContains(t, err, "produced no graph")
 }
 

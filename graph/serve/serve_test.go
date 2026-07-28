@@ -45,11 +45,9 @@ type countingSource struct {
 	calls int
 }
 
-func (s *countingSource) source() graph.Source {
-	return func(graph.Config) (*graph.Graph, error) {
-		s.calls++
-		return s.g, nil
-	}
+func (s *countingSource) Graph(graph.Config) (*graph.Graph, error) {
+	s.calls++
+	return s.g, nil
 }
 
 func get(t *testing.T, h http.Handler, path string) *http.Response {
@@ -81,7 +79,7 @@ func TestTheGraphIsExtractedOnEveryRequest(t *testing.T) {
 	t.Parallel()
 
 	src := &countingSource{g: testGraph(t)}
-	h := serve.Handler(src.source(), serve.WithEncoder(text.New()))
+	h := serve.Handler(src, serve.WithEncoder(text.New()))
 
 	for range 3 {
 		get(t, h, "/").Body.Close()

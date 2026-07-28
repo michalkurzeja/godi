@@ -4,12 +4,12 @@
 // That is what lets the same handler serve a file read from disk and a container
 // that is still running:
 //
-//	srv, err := serve.Listen("127.0.0.1:0", container)
+//	srv, err := serve.Listen("127.0.0.1:0", extract.Live(c))
 //	fmt.Println(srv.URL())
 //	err = srv.Serve()
 //
-// A running container is already a graph.Source, so watching one change as it is
-// wired needs nothing from this package beyond a page that asks again.
+// extract.Live reads the container again on every call, so watching one change as
+// it is wired needs nothing from this package beyond a page that asks again.
 //
 // It lives apart from graph because it draws the graph to answer a request, and
 // drawing means graph/html. No godi binary should carry that unless it asked for
@@ -44,8 +44,6 @@ func Handler(src graph.Source, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.page)
 	mux.HandleFunc("GET /graph.json", h.model)
-	// A live preview belongs here, as GET /events, with the page listening on
-	// it. Extracting per request is already what it would need.
 	return mux
 }
 
@@ -86,8 +84,8 @@ func (h *handler) write(w http.ResponseWriter, enc graph.Encoder) {
 // Server is bound to its port before it serves anything, which is what you need
 // when the port was chosen for you.
 type Server struct {
-	srv *http.Server
-	ln  net.Listener
+	srv      *http.Server
+	listener net.Listener
 }
 
 // Listen binds addr and prepares to serve the graph of src. Pass a zero port to
@@ -103,19 +101,19 @@ func Listen(addr string, src graph.Source, opts ...Option) (*Server, error) {
 			Handler:           Handler(src, opts...),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
-		ln: ln,
+		listener: ln,
 	}, nil
 }
 
 // Addr is the address the server bound to.
-func (s *Server) Addr() net.Addr { return s.ln.Addr() }
+func (s *Server) Addr() net.Addr { return s.listener.Addr() }
 
 // URL is the address to open. A server listening on every interface is reported as
 // the loopback one, which is what a browser on this machine wants.
 func (s *Server) URL() string {
-	addr, ok := s.ln.Addr().(*net.TCPAddr)
+	addr, ok := s.listener.Addr().(*net.TCPAddr)
 	if !ok {
-		return "http://" + s.ln.Addr().String()
+		return "http://" + s.listener.Addr().String()
 	}
 
 	host := addr.IP.String()
@@ -127,7 +125,7 @@ func (s *Server) URL() string {
 
 // Serve serves until Shutdown stops it, which it reports as no error at all.
 func (s *Server) Serve() error {
-	err := s.srv.Serve(s.ln)
+	err := s.srv.Serve(s.listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

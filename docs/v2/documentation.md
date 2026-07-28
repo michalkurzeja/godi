@@ -396,8 +396,9 @@ src := extract.Live(c)                            // a graph.Source, re-read on 
 src := graph.Static(g)                            // a graph you already have
 ```
 
-`graph.Source` is `func(Config) (*Graph, error)`. `graph/serve` takes one, which is how the same
-handler serves a file and a running container.
+`graph.Source` is an interface with one method, `Graph(Config) (*Graph, error)`; wrap a plain
+function in `graph.SourceFunc`. `graph/serve` takes a Source, which is how the same handler serves
+a file and a running container.
 
 Extraction options: `WithLiteralValues(maxRunes)`, `WithRedactor(fn)`, `WithoutLiterals()`.
 Literal values are left out by default: a literal is routinely a DSN or a token, and graphs get

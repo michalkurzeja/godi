@@ -1070,7 +1070,7 @@ To serve a graph from your own program, including one still being wired, `graph/
 `godi view`:
 
 ```go
-srv, err := serve.Listen("127.0.0.1:0", container)  // a container is a graph.Source
+srv, err := serve.Listen("127.0.0.1:0", extract.Live(c))  // read again on every request
 fmt.Println(srv.URL())
 err = srv.Serve()
 ```

@@ -78,12 +78,12 @@ func (x *extractor) assignScope(scope *di.Scope, id, parent graph.ScopeID, depth
 	// Name the definitions before recursing. A child scope is named after the
 	// node that declared it.
 	for def := range scope.ServiceDefinitionsSeq() {
-		nodeID := x.mint(id, "svc", util.Signature(def.Type()), def.Labels())
+		nodeID := x.newNodeID(id, "svc", util.Signature(def.Type()), def.Labels())
 		x.svcIDs[def] = nodeID
 		x.byUUID[def.ID()] = nodeID
 	}
 	for def := range scope.FunctionDefinitionsSeq() {
-		nodeID := x.mint(id, "fn", def.Func().Name(), def.Labels())
+		nodeID := x.newNodeID(id, "fn", def.Func().Name(), def.Labels())
 		x.funIDs[def] = nodeID
 		x.byUUID[def.ID()] = nodeID
 	}
@@ -135,9 +135,9 @@ func (x *extractor) depthOf(id graph.ScopeID) int {
 	return 0
 }
 
-// mint builds a readable, build-stable node ID. Definition uuids are new on every
+// newNodeID builds a readable, build-stable node ID. Definition uuids are new on every
 // build, so an ID made from one could not be diffed or compared.
-func (x *extractor) mint(scope graph.ScopeID, kind, name string, labels []di.Label) graph.NodeID {
+func (x *extractor) newNodeID(scope graph.ScopeID, kind, name string, labels []di.Label) graph.NodeID {
 	var sb strings.Builder
 	sb.WriteString(string(scope))
 	sb.WriteString("/")
@@ -152,8 +152,8 @@ func (x *extractor) mint(scope graph.ScopeID, kind, name string, labels []di.Lab
 	}
 
 	base := sb.String()
-	n := x.minted[base]
-	x.minted[base] = n + 1
+	n := x.nodeIDClaims[base]
+	x.nodeIDClaims[base] = n + 1
 	if n > 0 {
 		return graph.NodeID(fmt.Sprintf("%s#%d", base, n))
 	}

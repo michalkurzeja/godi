@@ -98,9 +98,9 @@ func TestLiveReadsAgainEveryTime(t *testing.T) {
 
 	src := extract.Live(container(t))
 
-	first, err := src(graph.NewConfig())
+	first, err := src.Graph(graph.NewConfig())
 	require.NoError(t, err)
-	second, err := src(graph.NewConfig())
+	second, err := src.Graph(graph.NewConfig())
 	require.NoError(t, err)
 
 	require.NotSame(t, first, second)
