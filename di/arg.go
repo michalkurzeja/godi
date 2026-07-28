@@ -33,6 +33,39 @@ type Arg interface {
 	trace(scope *Scope, path tracePath) ArgTrace
 }
 
+// ValidateArg reports whether the argument can be resolved in the scope.
+func ValidateArg(scope *Scope, arg Arg) error {
+	if arg == nil {
+		return fmt.Errorf("unsupported arg type %T", arg)
+	}
+	return arg.validate(scope)
+}
+
+// ResolveArg produces the value the argument stands for.
+func ResolveArg(scope *Scope, arg Arg) (any, error) {
+	if arg == nil {
+		return reflect.Value{}, fmt.Errorf("unsupported arg type %T", arg)
+	}
+	return arg.resolve(scope)
+}
+
+// ResolveArgIDs lists the definitions the argument resolves to. A literal names
+// no service, so its list is empty.
+func ResolveArgIDs(scope *Scope, arg Arg) []ID {
+	if arg == nil {
+		return nil
+	}
+	return arg.resolveIDs(scope)
+}
+
+// TraceArg describes how the argument resolves in the scope.
+func TraceArg(scope *Scope, arg Arg) ArgTrace {
+	if arg == nil {
+		return ArgTrace{}
+	}
+	return arg.trace(scope, tracePath{})
+}
+
 type literalArg struct {
 	v any
 }
@@ -720,4 +753,18 @@ func (l *ArgList) AppendSlot(arg *SlottedArg) error {
 		return fmt.Errorf("argument %s is assigned to slot %d, but function has only %d argument slots", util.Signature(arg.Type()), arg.Slot(), slotsCount)
 	}
 	return l.slots[arg.Slot()].Append(arg.Arg)
+}
+
+// Utils
+
+func convertSlice(vs []any, elemType reflect.Type) (any, error) {
+	sl := reflect.MakeSlice(reflect.SliceOf(elemType), 0, len(vs))
+	for _, v := range vs {
+		rv := reflect.ValueOf(v)
+		if !rv.Type().AssignableTo(elemType) {
+			return nil, fmt.Errorf("type %s is not assignable to %s", util.Signature(rv.Type()), util.Signature(elemType))
+		}
+		sl = reflect.Append(sl, rv)
+	}
+	return sl.Interface(), nil
 }

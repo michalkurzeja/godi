@@ -66,9 +66,9 @@ type ServiceDefinition struct {
 	factory     *Factory
 	methodCalls map[string]*Method
 
-	// val is the value the definition was built from, for the ones built from
-	// one. The factory that holds it is godi's own, so reports name the value
-	// instead.
+	// val is the value this definition was handed, rather than one it builds.
+	// fromVal says whether there is one. Checking val is not enough: a nil
+	// interface leaves it invalid.
 	val     reflect.Value
 	fromVal bool
 
@@ -150,22 +150,10 @@ func (d *ServiceDefinition) FactoryName() string {
 	return d.factory.Name()
 }
 
-// Implementation is whatever actually provides the service: the factory that
-// builds it, or the value it was registered with when that value is a function.
-// A function registered as a value is the whole of the service, so it is what
-// gets named and pointed at.
-//
-// A value that is not a function has neither a name nor a place to point at. The
-// factory holding it is godi's own.
-func (d *ServiceDefinition) Implementation() (name string, typ reflect.Type, at Location) {
-	impl := d.factory.value()
-	if d.fromVal {
-		if !d.val.IsValid() || d.val.Kind() != reflect.Func {
-			return "", nil, Location{}
-		}
-		impl = d.val
-	}
-	return util.FuncName(impl), impl.Type(), declaredAt(impl)
+// DeclaredAt is where the factory function is written, as against RegisteredAt,
+// which is where this definition was created.
+func (d *ServiceDefinition) DeclaredAt() Location {
+	return declaredAt(d.factory.value())
 }
 
 func (d *ServiceDefinition) String() string {
@@ -204,8 +192,9 @@ func (d *FunctionDefinition) SetFunc(fn *Func) *FunctionDefinition {
 	return d
 }
 
-// DefinedAt is where the function itself is declared.
-func (d *FunctionDefinition) DefinedAt() Location {
+// DeclaredAt is where the function itself is written, as against RegisteredAt,
+// which is where this definition was created.
+func (d *FunctionDefinition) DeclaredAt() Location {
 	return declaredAt(d.function.value())
 }
 

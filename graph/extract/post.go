@@ -172,7 +172,7 @@ func (x *extractor) sortAll() {
 func (x *extractor) trimSourceRoot() {
 	var paths []string
 	for _, node := range x.out.Nodes {
-		for _, loc := range []graph.Location{node.Registered, node.Defined} {
+		for _, loc := range []graph.Location{node.Registered, node.Declared} {
 			if loc.File != "" {
 				paths = append(paths, loc.File)
 			}
@@ -187,7 +187,7 @@ func (x *extractor) trimSourceRoot() {
 	x.out.SourceRoot = root
 	for _, node := range x.out.Nodes {
 		node.Registered.File = strings.TrimPrefix(node.Registered.File, root+"/")
-		node.Defined.File = strings.TrimPrefix(node.Defined.File, root+"/")
+		node.Declared.File = strings.TrimPrefix(node.Declared.File, root+"/")
 	}
 }
 

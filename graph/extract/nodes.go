@@ -25,7 +25,7 @@ func (x *extractor) buildNodes() {
 			Instantiated: scope.Instantiated(def.ID()),
 			Registered:   x.registered(def.RegisteredAt()),
 		}
-		node.Name, node.Signature, node.Defined = x.implementation(def)
+		node.Name, node.Signature, node.Declared = x.declaration(def)
 		_, node.FromValue = def.Val()
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]
@@ -55,7 +55,7 @@ func (x *extractor) buildNodes() {
 			Lazy:       def.IsLazy(),
 			Autowired:  def.IsAutowired(),
 			Registered: x.registered(def.RegisteredAt()),
-			Defined:    x.registered(def.DefinedAt()),
+			Declared:    x.registered(def.DeclaredAt()),
 		}
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]
@@ -75,17 +75,22 @@ func (x *extractor) registered(loc di.Location) graph.Location {
 	return graph.Location{File: loc.File, Line: loc.Line, Func: loc.Func}
 }
 
-// implementation is how the model names whatever provides a service.
+// declaration names the code behind a service and says where it is written: the
+// factory, or the registered value when that value is a function.
 //
-// The engine picks which it is: the factory, or the value when the service was
-// registered as one. This is the display half, a name a reader would recognise
-// and a signature rather than a type.
-func (x *extractor) implementation(def *di.ServiceDefinition) (name, signature string, at graph.Location) {
-	implName, typ, loc := def.Implementation()
-	if typ == nil {
+// A value that is not a function leaves nothing to name. The factory holding it
+// is one godi wrote, so a reader sent there would land in godi.
+func (x *extractor) declaration(def *di.ServiceDefinition) (name, signature string, at graph.Location) {
+	val, fromVal := def.Val()
+	if !fromVal {
+		return x.trimMethodWrapper(def.FactoryName()), x.funcSignature(def.Factory().Type()), x.registered(def.DeclaredAt())
+	}
+
+	if !val.IsValid() || val.Kind() != reflect.Func {
 		return "", "", graph.Location{}
 	}
-	return x.trimMethodWrapper(implName), x.funcSignature(typ), x.registered(loc)
+	file, line := util.FuncLocation(val)
+	return x.trimMethodWrapper(util.FuncName(val)), x.funcSignature(val.Type()), graph.Location{File: file, Line: line}
 }
 
 // funcSignature is what a function takes and returns, as Go would write it.

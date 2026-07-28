@@ -124,7 +124,7 @@ type Node struct {
 	Shared    bool `json:"shared"` // Always false for functions.
 	Autowired bool `json:"autowired"`
 	// FromValue reports that the service was handed to the container as a value
-	// rather than built by a factory. Name, Signature and Defined then describe
+	// rather than built by a factory. Name, Signature and Declared then describe
 	// that value, if it is a function. They are empty if it is not: a struct
 	// someone passed in has nothing to name.
 	FromValue bool `json:"fromValue,omitzero"`
@@ -135,10 +135,10 @@ type Node struct {
 	// Registered is where the definition was written: the di.Svc or di.Func
 	// call, or the compiler pass that created it.
 	Registered Location `json:"registered,omitzero"`
-	// Defined is where the factory or function itself is declared. It is empty
+	// Declared is where the factory or function itself is written. It is empty
 	// when the factory is one godi synthesised, as SvcVal does, because then
 	// there is no source of the user's to point at.
-	Defined Location `json:"defined,omitzero"`
+	Declared Location `json:"declared,omitzero"`
 
 	InDegree  int `json:"inDegree"`
 	OutDegree int `json:"outDegree"`
@@ -219,7 +219,7 @@ func (n *Node) Subtitle() string {
 	return render.Short(n.Signature)
 }
 
-// Anonymous reports whether what implements this node is a function literal:
+// Anonymous reports whether the code behind this node is a function literal:
 // the function itself for a function node, and for a service either the factory
 // that builds it or the value it was registered as.
 //

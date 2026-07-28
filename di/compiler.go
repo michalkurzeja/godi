@@ -15,13 +15,6 @@ type CompilerPass struct {
 	priority int
 	op       CompilerOp
 
-	// seq is when this pass was added. It is the last word on the order two
-	// passes run in.
-	//
-	// The sort is not stable, and the queue is re-sorted whenever a pass is
-	// added, so the order has to be recorded rather than relied on.
-	seq int
-
 	argOrigin  ArgOrigin  // What a slot filled by this pass means.
 	bindOrigin BindOrigin // What a binding created by this pass means.
 }
@@ -152,20 +145,22 @@ func BasePasses(skipCycleValidation bool) Passes {
 	return passes
 }
 
+// sort orders the passes by stage, then priority, leaving passes tied on both in
+// the order they were added.
+//
+// That last part is the stability of the sort, and it holds only because a pass
+// enters the queue by being appended to it. Insert one anywhere else and it runs
+// at a place it never asked for.
 func (passes Passes) sort() {
-	slices.SortFunc(passes, (*CompilerPass).compare)
+	slices.SortStableFunc(passes, (*CompilerPass).compare)
 }
 
-// compare is the whole of the order: the stage, then the priority, then when the
-// pass was added.
+// compare is the whole of the order: the stage, then the priority.
 func (p *CompilerPass) compare(other *CompilerPass) int {
 	if c := cmp.Compare(p.stage, other.stage); c != 0 {
 		return c
 	}
-	if c := cmp.Compare(p.priority, other.priority); c != 0 {
-		return c
-	}
-	return cmp.Compare(p.seq, other.seq)
+	return cmp.Compare(p.priority, other.priority)
 }
 
 // Compiler is responsible for configuration of the container after all user changes are done.
@@ -176,8 +171,6 @@ type Compiler struct {
 	// pending holds the passes a running pass registered. They join the queue
 	// once that pass returns.
 	pending Passes
-	// added counts the passes registered so far. Each pass is stamped with it.
-	added int
 
 	// running is the pass in progress, done names the ones that have finished,
 	// and failed the one that stopped compilation.
@@ -203,9 +196,6 @@ func NewCompiler(conf CompilerConfig) *Compiler {
 // A pass may call this while it runs, to schedule work over what it found. The
 // new pass joins the queue as soon as the one adding it returns.
 func (c *Compiler) AddPass(pass *CompilerPass) {
-	pass.seq = c.added
-	c.added++
-
 	if c.running != nil {
 		c.pending = append(c.pending, pass)
 		return

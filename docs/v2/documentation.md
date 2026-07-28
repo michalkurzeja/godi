@@ -276,16 +276,16 @@ Common: `ID()`, `Scope()`/`SetScope`, `ChildScope()`/`SetChildScope`/`NewChildSc
 
 Service-only: `Type()`, `Factory()`/`SetFactory`, `MethodCalls()`/`SetMethodCalls`/
 `AddMethodCalls`/`RemoveMethodCalls`, `IsShared()`/`SetShared`, `Val()`/`SetVal`, `FactoryName()`,
-`Implementation()`.
+`DeclaredAt()`.
 
-Function-only: `Type()`, `Func()`/`SetFunc`, `DefinedAt()`.
+Function-only: `Type()`, `Func()`/`SetFunc`, `DeclaredAt()`.
 
 **Resolve against `EffectiveScope()`, never `Scope()`** — a definition with a child scope resolves
 its own dependencies from inside it.
 
-`Implementation()` returns the name, type and declaration site of whatever provides the service:
-the factory, or the value when the service was registered as a function value. The engine keeps
-its reflection to itself: what comes back is a resolved `Location`, not a `reflect.Value`.
+`FactoryName()`, `Factory().Type()` and `DeclaredAt()` describe the factory. A service registered
+as a value is described by `Val()` instead, and deciding which of the two a reader should be shown
+belongs to whoever is doing the showing — `graph/extract` makes that call, not the engine.
 
 ### 4.4 Arguments
 
@@ -341,10 +341,10 @@ out of order, and running it later is not the place it asked for.
 
 `Compiler`: `AddPass(pass)`, `Passes()`, `Progress()`, `Run(builder)`.
 `CompilerPass`: `Name()`, `Stage()`, `Priority()`, `WithPriority(n)`, `Run(builder)`.
-`BasePasses(skipCycleValidation)` returns godi's own five; `AutowiringPass`,
-`ArgValidationPass`, `InterfaceBindingPass`, `CycleValidationPass` and `EagerInitPass` are
-exported as examples of the shape. The pipeline is readable, not replaceable: turning behaviour
-off is expressed per definition (`NotAutowired()`, `Lazy()`) and per container
+`BasePasses(skipCycleValidation)` returns godi's own five, and each is exported on its own as an
+example of the shape: `NewInterfaceBindingPass()`, `NewAutowiringPass()`, `NewArgValidationPass()`,
+`NewCycleValidationPass()` and `NewEagerInitPass()`. The pipeline is readable, not replaceable:
+turning behaviour off is expressed per definition (`NotAutowired()`, `Lazy()`) and per container
 (`SkipCycleValidation`).
 
 ### 4.6 Provenance

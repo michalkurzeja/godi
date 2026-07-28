@@ -182,15 +182,15 @@ func (p *printer) node(n *graph.Node, depth int) {
 	title := n.Title()
 
 	p.linef(depth, "%s%s", title, bracketed(p.nodeFlags(n)))
-	if label, what := p.implementation(n); what != "" && what != title {
+	if label, what := p.subtitle(n); what != "" && what != title {
 		p.linef(depth+1, "%s: %s", label, what)
 	}
 	if p.cfg.locations {
 		if !n.Registered.IsZero() {
 			p.linef(depth+1, "registered: %s", n.Registered)
 		}
-		if !n.Defined.IsZero() {
-			p.linef(depth+1, "defined: %s", n.Defined)
+		if !n.Declared.IsZero() {
+			p.linef(depth+1, "declared: %s", n.Declared)
 		}
 	}
 
@@ -201,14 +201,13 @@ func (p *printer) node(n *graph.Node, depth int) {
 	}
 }
 
-// implementation describes what provides a node, for the line under its
-// heading: the factory that builds a service, the value it was registered as,
-// or the signature of a function.
+// subtitle is the line under a node's heading: the factory that builds a
+// service, the value it was registered as, or the signature of a function.
 //
 // What to say is the model's answer, the same one the picture puts under a node
 // box. What to call it is this format's own: a line of text has room to say
 // which of the three it is, and a box does not.
-func (p *printer) implementation(n *graph.Node) (label, what string) {
+func (p *printer) subtitle(n *graph.Node) (label, what string) {
 	switch {
 	case n.Kind == graph.NodeFunction:
 		label = "signature"

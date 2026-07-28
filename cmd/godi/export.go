@@ -65,7 +65,7 @@ func newExportTextCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&noLocations, "no-locations", false, "leave out where each definition was registered and defined")
+	cmd.Flags().BoolVar(&noLocations, "no-locations", false, "leave out where each definition was registered and declared")
 	cmd.Flags().IntVar(&maxType, "max-type", 48, "truncate type names to this many runes, or 0 for no limit")
 	completeGraphFiles(cmd)
 

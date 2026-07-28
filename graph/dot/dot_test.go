@@ -147,7 +147,7 @@ func TestProvenanceIsDrawnWithoutRelyingOnColour(t *testing.T) {
 
 // The head says how the dependency was matched. The colour says who chose it.
 // Keeping them independent is what lets a reader tell "godi picked the
-// implementation" from "you did" at a glance.
+// dependency" from "you did" at a glance.
 func TestHeadSaysHowAndColourSaysWho(t *testing.T) {
 	t.Parallel()
 
@@ -608,12 +608,12 @@ func TestSourceLocationsAreInTheTooltip(t *testing.T) {
 	g := modelWith(nil)
 	g.SourceRoot = "/home/me/app"
 	g.Nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
-	g.Nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
+	g.Nodes[0].Declared = graph.Location{File: "http/server.go", Line: 118}
 
 	out := encode(t, g)
 
 	require.Contains(t, out, `registered: wiring.go:42`)
-	require.Contains(t, out, `defined: http/server.go:118`)
+	require.Contains(t, out, `declared: http/server.go:118`)
 }
 
 // A node godi could find no source for must not grow an empty row.
@@ -621,7 +621,7 @@ func TestAnUnknownLocationIsLeftOut(t *testing.T) {
 	out := encode(t, modelWith(nil))
 
 	require.NotContains(t, out, "registered:")
-	require.NotContains(t, out, "defined:")
+	require.NotContains(t, out, "declared:")
 }
 
 // Extraction never fails on odd input. It records it, and a drawing that leaves that

@@ -220,72 +220,63 @@ func (p *ArgValidationPass) validateArgs(scope *Scope, args *ArgList) error {
 	return joinedErr
 }
 
-// CycleValidationPass rejects a container whose services depend on each other
-// in a circle.
-type CycleValidationPass struct{}
-
-// NewCycleValidationPass returns a compiler pass that validates that there are no circular references.
+// NewCycleValidationPass returns a compiler pass that rejects a container whose
+// services depend on each other in a circle.
 func NewCycleValidationPass() CompilerOp {
-	return new(CycleValidationPass)
-}
+	return CompilerOpFunc(func(builder *ContainerBuilder) error {
+		var joinedErr error
+		g := graph.New((*ServiceDefinition).ID, graph.PreventCycles(), graph.Directed())
 
-func (p *CycleValidationPass) Run(builder *ContainerBuilder) error {
-	var joinedErr error
-	g := graph.New((*ServiceDefinition).ID, graph.PreventCycles(), graph.Directed())
-
-	for _, def := range builder.ServiceDefinitionsSeq() {
-		err := g.AddVertex(def)
-		if err != nil {
-			return err
+		for _, def := range builder.ServiceDefinitionsSeq() {
+			err := g.AddVertex(def)
+			if err != nil {
+				return err
+			}
 		}
-	}
 
-	for _, def := range builder.ServiceDefinitionsSeq() {
-		for _, slot := range def.Factory().Args().Slots() {
-			for _, id := range ResolveArgIDs(def.EffectiveScope(), slot.Arg()) {
-				err := g.AddEdge(def.ID(), id)
-				if errors.Is(err, graph.ErrEdgeAlreadyExists) {
-					continue
-				}
-				if errors.Is(err, graph.ErrEdgeCreatesCycle) {
-					argDef, _ := def.EffectiveScope().GetServiceDefinitionInChain(id) // Definition must exist, it's been validated by the resolver.
-					joinedErr = errors.Join(joinedErr, fmt.Errorf("service %s has a circular dependency on %s", def, argDef))
+		for _, def := range builder.ServiceDefinitionsSeq() {
+			for _, slot := range def.Factory().Args().Slots() {
+				for _, id := range ResolveArgIDs(def.EffectiveScope(), slot.Arg()) {
+					err := g.AddEdge(def.ID(), id)
+					if errors.Is(err, graph.ErrEdgeAlreadyExists) {
+						continue
+					}
+					if errors.Is(err, graph.ErrEdgeCreatesCycle) {
+						argDef, _ := def.EffectiveScope().GetServiceDefinitionInChain(id) // Definition must exist, it's been validated by the resolver.
+						joinedErr = errors.Join(joinedErr, fmt.Errorf("service %s has a circular dependency on %s", def, argDef))
+					}
 				}
 			}
 		}
-	}
 
-	return joinedErr
+		return joinedErr
+	})
 }
 
 // stage: Finalization
 
-// EagerInitPass builds everything that asked not to wait.
-type EagerInitPass struct{}
-
-// NewEagerInitPass returns a compiler pass that initializes all eager services and functions.
+// NewEagerInitPass returns a compiler pass that builds the services and runs the
+// functions that asked not to wait.
 func NewEagerInitPass() CompilerOp {
-	return new(EagerInitPass)
-}
-
-func (p *EagerInitPass) Run(builder *ContainerBuilder) error {
-	for scope, def := range builder.ServiceDefinitionsSeq() {
-		if def.IsLazy() {
-			continue
+	return CompilerOpFunc(func(builder *ContainerBuilder) error {
+		for scope, def := range builder.ServiceDefinitionsSeq() {
+			if def.IsLazy() {
+				continue
+			}
+			_, err := scope.GetService(def.ID())
+			if err != nil {
+				return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
+			}
 		}
-		_, err := scope.GetService(def.ID())
-		if err != nil {
-			return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
+		for scope, def := range builder.FunctionDefinitionsSeq() {
+			if def.IsLazy() {
+				continue
+			}
+			_, err := scope.ExecuteFunction(def.ID())
+			if err != nil {
+				return errorsx.Wrapf(err, "failed to execute eager function %s", def)
+			}
 		}
-	}
-	for scope, def := range builder.FunctionDefinitionsSeq() {
-		if def.IsLazy() {
-			continue
-		}
-		_, err := scope.ExecuteFunction(def.ID())
-		if err != nil {
-			return errorsx.Wrapf(err, "failed to execute eager function %s", def)
-		}
-	}
-	return nil
+		return nil
+	})
 }

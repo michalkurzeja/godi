@@ -262,7 +262,7 @@ func regressionModel() *graph.Graph {
 	// godi puts on a definition and has to read as one.
 	nodes[6].Labels = []string{"data"}
 	nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
-	nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
+	nodes[0].Declared = graph.Location{File: "http/server.go", Line: 118}
 
 	g := &graph.Graph{
 		Schema: graph.Schema,

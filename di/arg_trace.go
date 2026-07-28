@@ -82,14 +82,6 @@ type ArgTrace struct {
 	Fault   ArgFault
 }
 
-// TraceArg describes how the argument resolves in the scope.
-func TraceArg(scope *Scope, arg Arg) ArgTrace {
-	if arg == nil {
-		return ArgTrace{}
-	}
-	return arg.trace(scope, tracePath{})
-}
-
 // tracePath is where a trace has got to: the bindings followed to reach the
 // current argument, and the interfaces already followed.
 //

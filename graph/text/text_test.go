@@ -73,7 +73,7 @@ func model() *graph.Graph {
 				Type: pkg + ".(*Server)", Name: pkg + ".NewServer",
 				Lazy: false, Shared: true, Autowired: true, Root: true, InDegree: 0, OutDegree: 2,
 				Registered: graph.Location{File: "wiring.go", Line: 42},
-				Defined:    graph.Location{File: "http/server.go", Line: 118},
+				Declared:    graph.Location{File: "http/server.go", Line: 118},
 				Params:     []*graph.Param{serverRouter, serverAddr, setLogger},
 			},
 			{
@@ -294,7 +294,7 @@ func TestLocationsCanBeLeftOut(t *testing.T) {
 
 	with := encode(t, model())
 	require.Contains(t, with, "registered: wiring.go:42")
-	require.Contains(t, with, "defined: http/server.go:118")
+	require.Contains(t, with, "declared: http/server.go:118")
 
 	without := encode(t, model(), text.WithoutLocations())
 	require.NotContains(t, without, "wiring.go")

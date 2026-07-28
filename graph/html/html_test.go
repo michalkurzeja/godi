@@ -378,7 +378,7 @@ func TestLocationsReachThePayload(t *testing.T) {
 	g := model()
 	g.SourceRoot = "/home/me/app"
 	g.Nodes[0].Registered = graph.Location{File: "wiring.go", Line: 42, Func: "app.wire"}
-	g.Nodes[0].Defined = graph.Location{File: "http/server.go", Line: 118}
+	g.Nodes[0].Declared = graph.Location{File: "http/server.go", Line: 118}
 
 	var data struct {
 		SourceRoot string `json:"sourceRoot"`
@@ -388,9 +388,9 @@ func TestLocationsReachThePayload(t *testing.T) {
 				File string `json:"file"`
 				Line int    `json:"line"`
 			} `json:"registered"`
-			Defined *struct {
+			Declared *struct {
 				Text string `json:"text"`
-			} `json:"defined"`
+			} `json:"declared"`
 		} `json:"nodes"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(capture(t, dataRe, encode(t, g))), &data))
@@ -399,11 +399,11 @@ func TestLocationsReachThePayload(t *testing.T) {
 	require.Equal(t, "wiring.go:42", data.Nodes[0].Registered.Text)
 	require.Equal(t, "wiring.go", data.Nodes[0].Registered.File)
 	require.Equal(t, 42, data.Nodes[0].Registered.Line)
-	require.Equal(t, "http/server.go:118", data.Nodes[0].Defined.Text)
+	require.Equal(t, "http/server.go:118", data.Nodes[0].Declared.Text)
 
 	// A node with no location carries none, rather than an empty one.
 	require.Nil(t, data.Nodes[1].Registered)
-	require.Nil(t, data.Nodes[1].Defined)
+	require.Nil(t, data.Nodes[1].Declared)
 }
 
 // A link is only offered when the caller says how to build one: a file:// link

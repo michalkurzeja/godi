@@ -69,6 +69,11 @@ func (f *Factory) Creates() reflect.Type {
 	return f.returnedType
 }
 
+// Type is the factory function's own type, as against what it creates.
+func (f *Factory) Type() reflect.Type {
+	return f.fn.Type()
+}
+
 // value is the factory function itself, for reading where it was declared.
 func (f *Factory) value() reflect.Value {
 	return f.fn.value()

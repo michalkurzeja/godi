@@ -880,9 +880,9 @@ func TestLocationsPointAtTheWiringAndTheFactory(t *testing.T) {
 	require.Equal(t, wantLine+3, fn.Registered.Line)
 
 	// The definition is where the factory itself is written.
-	require.Equal(t, wantFile, filepath.Join(g.SourceRoot, svc.Defined.File))
-	require.Equal(t, factoryLine(t, "newLocService"), svc.Defined.Line)
-	require.Equal(t, factoryLine(t, "locFunction"), fn.Defined.Line)
+	require.Equal(t, wantFile, filepath.Join(g.SourceRoot, svc.Declared.File))
+	require.Equal(t, factoryLine(t, "newLocService"), svc.Declared.Line)
+	require.Equal(t, factoryLine(t, "locFunction"), fn.Declared.Line)
 }
 
 // A factory godi synthesised has no source of the user's behind it, so pointing
@@ -894,7 +894,7 @@ func TestASynthesisedFactoryHasNoDefinitionSite(t *testing.T) {
 	g := graphOf(t, c)
 
 	node := serviceByType(t, g, "string")
-	require.True(t, node.Defined.IsZero(), "got %s", node.Defined)
+	require.True(t, node.Declared.IsZero(), "got %s", node.Declared)
 	require.False(t, node.Registered.IsZero(), "the registration is still the caller's")
 	require.Contains(t, node.Registered.Func, "TestASynthesisedFactoryHasNoDefinitionSite")
 }
@@ -910,7 +910,7 @@ func TestPathsAreRelativeToASharedRoot(t *testing.T) {
 	require.True(t, filepath.IsAbs(g.SourceRoot), "the root carries the absolute part")
 	for _, node := range g.Nodes {
 		require.False(t, filepath.IsAbs(node.Registered.File), "%s", node.Registered)
-		require.False(t, filepath.IsAbs(node.Defined.File), "%s", node.Defined)
+		require.False(t, filepath.IsAbs(node.Declared.File), "%s", node.Declared)
 		require.FileExists(t, filepath.Join(g.SourceRoot, node.Registered.File),
 			"the root and the path must join back into something real")
 	}
@@ -1028,8 +1028,9 @@ func TestSelectNarrowsAnExtractedGraph(t *testing.T) {
 }
 
 // A function is a value like any other, so SvcVal is how one becomes a service.
-// The factory holding it is godi's own, and reporting that as the implementation
-// would point the reader into godi rather than at the function they registered.
+// The factory holding it is godi's own, and reporting that as the code behind the
+// service would point the reader into godi rather than at the function they
+// registered.
 
 type Validate func(string) error
 
@@ -1040,6 +1041,8 @@ func (Rules) Check(string) error { return nil }
 func validateEmail(string) error { return nil }
 
 type Settings struct{ Addr string }
+
+type markPackage func(string)
 
 func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 	t.Parallel()
@@ -1064,14 +1067,14 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.validateEmail", n.Name)
 		require.Equal(t, "func(string) error", n.Signature,
 			"the value's own type is the named one, which says nothing about what it takes")
-		require.Equal(t, "graph_test.go", filepath.Base(n.Defined.File))
-		require.NotZero(t, n.Defined.Line)
+		require.Equal(t, "graph_test.go", filepath.Base(n.Declared.File))
+		require.NotZero(t, n.Declared.Line)
 	})
 
-	t.Run("and nothing of godi's is reported as the implementation", func(t *testing.T) {
+	t.Run("and nothing of godi's is reported as the code behind a service", func(t *testing.T) {
 		for _, n := range g.Nodes {
 			require.NotContains(t, n.Name, "SvcVal", "the wrapper godi built to hold the value")
-			require.NotContains(t, n.Defined.File, "definition.go")
+			require.NotContains(t, n.Declared.File, "definition.go")
 		}
 	})
 
@@ -1081,7 +1084,7 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 		require.True(t, n.FromValue)
 		require.Empty(t, n.Name, "there is no name for a struct someone handed over")
 		require.Empty(t, n.Signature)
-		require.True(t, n.Defined.IsZero(), "and nowhere to point at for it")
+		require.True(t, n.Declared.IsZero(), "and nowhere to point at for it")
 	})
 
 	t.Run("a factory-built service is unaffected", func(t *testing.T) {
@@ -1102,7 +1105,7 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 
 		require.Equal(t, "github.com/michalkurzeja/godi/v2_test.Rules.Check", n.Name,
 			"the suffix the compiler puts on a method value is not part of the name")
-		require.True(t, n.Defined.IsZero(),
+		require.True(t, n.Declared.IsZero(),
 			"the wrapper it points at is generated, so there is no source to offer")
 	})
 
@@ -1116,7 +1119,23 @@ func TestAServiceRegisteredAsAValueIsDescribedByTheValue(t *testing.T) {
 
 		require.True(t, n.Anonymous())
 		require.Equal(t, "func(string) error", n.Signature)
-		require.Equal(t, "graph_test.go", filepath.Base(n.Defined.File),
-			"the literal itself is the implementation, and it has a line of its own")
+		require.Equal(t, "graph_test.go", filepath.Base(n.Declared.File),
+			"the literal itself is the code behind the service, and it has a line of its own")
+	})
+
+	// The wiring packages are skipped when a definition is asked where it was
+	// registered, because a frame in one says how it got registered rather than
+	// where. A function someone hands to SvcVal is not such a frame: it is the
+	// service. godi's own packages are the wiring packages every build has, so a
+	// function of godi's stands in for one a library marked.
+	t.Run("a function declared in a wiring package points at its own source", func(t *testing.T) {
+		c, err := godi.New().Services(godi.SvcVal[markPackage](di.MarkWiringPackage)).Build()
+		require.NoError(t, err)
+
+		n := nodeOf(t, graphOf(t, c), "v2_test.markPackage")
+
+		require.Equal(t, "github.com/michalkurzeja/godi/v2/di.MarkWiringPackage", n.Name)
+		require.Equal(t, "source.go", filepath.Base(n.Declared.File))
+		require.NotZero(t, n.Declared.Line)
 	})
 }

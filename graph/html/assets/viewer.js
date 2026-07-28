@@ -1173,7 +1173,7 @@ function showPanel(id) {
 		dl.append(make('dt', null, 'Labels'), cell);
 	}
 	if (n.registered) dl.append(make('dt', null, 'Registered'), locationCell(n.registered));
-	if (n.defined) dl.append(make('dt', null, 'Defined'), locationCell(n.defined));
+	if (n.declared) dl.append(make('dt', null, 'Declared'), locationCell(n.declared));
 	parts.push(dl);
 
 	// The signature says in one line what the argument rows say one at a time, so

@@ -8,7 +8,7 @@ type config struct {
 // Option configures the text encoder.
 type Option func(*config)
 
-// WithoutLocations leaves out where each definition was registered and defined.
+// WithoutLocations leaves out where each definition was registered and declared.
 //
 // Worth reaching for when the output is compared: paths depend on the machine
 // that built the binary, so a golden file that includes them only matches on

@@ -116,10 +116,10 @@ func (TextReporter) Report() {}
 
 // Not everything in a container is built by a factory. SvcVal registers a value as
 // it stands, and a function is a value like any other. These two are services whose
-// whole implementation is the function registered as them.
+// whole code is the function registered as them.
 //
 // godi wraps the value in a factory of its own to hold it, which is why neither
-// has a definition site in the graph: there is no source of yours to point at,
+// has a declaration site in the graph: there is no source of yours to point at,
 // only the line that registered it.
 
 type Validate func(string) error

@@ -109,7 +109,7 @@ type viewNode struct {
 	Params []viewParam `json:"params,omitzero"`
 
 	Registered *viewLocation `json:"registered,omitzero"`
-	Defined    *viewLocation `json:"defined,omitzero"`
+	Declared   *viewLocation `json:"declared,omitzero"`
 }
 
 type viewParam struct {
@@ -230,7 +230,7 @@ func newViewNode(node *graph.Node) viewNode {
 		Incomplete:   node.Incomplete,
 		Elided:       node.Elided,
 		Registered:   newViewLocation(node.Registered),
-		Defined:      newViewLocation(node.Defined),
+		Declared:     newViewLocation(node.Declared),
 	}
 
 	for _, param := range node.Params {

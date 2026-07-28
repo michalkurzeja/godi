@@ -85,12 +85,12 @@ func ByID(pats ...string) Matcher {
 	return func(n *Node) bool { return p.match(string(n.ID)) }
 }
 
-// ByFile matches nodes registered or defined in a matching file. Paths are
+// ByFile matches nodes registered or declared in a matching file. Paths are
 // relative to the graph's SourceRoot, so "internal/*" reaches a whole tree.
 func ByFile(pats ...string) Matcher {
 	p := patterns(pats)
 	return func(n *Node) bool {
-		return p.match(n.Registered.File) || p.match(n.Defined.File)
+		return p.match(n.Registered.File) || p.match(n.Declared.File)
 	}
 }
 

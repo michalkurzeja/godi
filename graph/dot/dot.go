@@ -188,9 +188,9 @@ func (p *printer) nodeTooltip(node *graph.Node) string {
 		sb.WriteString("\nregistered: ")
 		sb.WriteString(node.Registered.String())
 	}
-	if !node.Defined.IsZero() {
-		sb.WriteString("\ndefined: ")
-		sb.WriteString(node.Defined.String())
+	if !node.Declared.IsZero() {
+		sb.WriteString("\ndeclared: ")
+		sb.WriteString(node.Declared.String())
 	}
 	if node.Root {
 		sb.WriteString("\nnothing injects this: it is the top of a tree")

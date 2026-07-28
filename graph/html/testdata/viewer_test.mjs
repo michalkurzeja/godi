@@ -1530,13 +1530,13 @@ await test('and Escape puts it away', async () => {
 
 // --- source locations ------------------------------------------------------
 
-await test('the panel shows where a service was registered and defined', async () => {
+await test('the panel shows where a service was registered and declared', async () => {
 	await selectNode(SERVER);
 	const rows = await ev(`(() => {
 		const dl = document.querySelector('#panel dl');
 		return [...dl.children].map(el => el.textContent);
 	})()`);
-	const want = ['Registered', 'wiring.go:42', 'Defined', 'http/server.go:118'];
+	const want = ['Registered', 'wiring.go:42', 'Declared', 'http/server.go:118'];
 	return want.every((w) => rows.includes(w)) || `panel rows were ${JSON.stringify(rows)}`;
 });
 
@@ -1553,7 +1553,7 @@ await test('a node with no location grows no rows for it', async () => {
 	await selectNode('root/svc:app.(*Router)');
 	const text = await panelText();
 	await selectNode(SERVER);
-	return (!text.includes('Registered') && !text.includes('Defined'))
+	return (!text.includes('Registered') && !text.includes('Declared'))
 		|| 'the panel invented a location for a node that has none';
 });
 
