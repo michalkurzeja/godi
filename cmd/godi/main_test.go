@@ -307,11 +307,11 @@ func TestEveryOfferedValueIsAccepted(t *testing.T) {
 		values []string
 		parse  func(string) error
 	}{
-		{"--rankdir", rankDirs, func(s string) error { _, err := parseRankDir(s); return err }},
-		{"--theme (dot)", dotThemes, func(s string) error { _, err := parseDotTheme(s); return err }},
-		{"--ports", portModes, func(s string) error { _, err := parsePorts(s); return err }},
-		{"--theme (html)", htmlThemes, func(s string) error { _, err := parseHTMLTheme(s); return err }},
-		{"--layout", layouts, func(s string) error { _, err := parseLayout(s); return err }},
+		{"--rankdir", rankDirs, func(s string) error { _, err := (&dotOptions{rankDir: s}).parseRankDir(); return err }},
+		{"--theme (dot)", dotThemes, func(s string) error { _, err := (&dotOptions{theme: s}).parseTheme(); return err }},
+		{"--ports", portModes, func(s string) error { _, err := (&dotOptions{ports: s}).parsePorts(); return err }},
+		{"--theme (html)", htmlThemes, func(s string) error { _, err := (&htmlOptions{theme: s}).parseTheme(); return err }},
+		{"--layout", layouts, func(s string) error { _, err := (&htmlOptions{layout: s}).parseLayout(); return err }},
 	}
 
 	for _, test := range tests {

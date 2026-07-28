@@ -110,9 +110,9 @@ func (e *Encoder) policy(page pageData) string {
 		// unsafe-eval stays out.
 		sources = append(sources, "'wasm-unsafe-eval'")
 	}
-	sources = append(sources, "'"+hash(page.Data)+"'")
+	sources = append(sources, "'"+e.hash(page.Data)+"'")
 	for _, script := range page.Scripts {
-		sources = append(sources, "'"+hash(script)+"'")
+		sources = append(sources, "'"+e.hash(script)+"'")
 	}
 
 	return strings.Join([]string{
@@ -132,7 +132,7 @@ func (e *Encoder) policy(page pageData) string {
 }
 
 // hash is the content security policy's name for a piece of inline content.
-func hash(content string) string {
+func (e *Encoder) hash(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
 }

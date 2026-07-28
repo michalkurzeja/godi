@@ -366,7 +366,7 @@ func (a *flexibleSliceArg) trace(scope *Scope, path tracePath) ArgTrace {
 
 	// First try to match by the slice type.
 	sliceTyp := a.Type()
-	if bindScope, binding, ok := bindingInChain(scope, sliceTyp); ok {
+	if bindScope, binding, ok := scope.bindingInChain(sliceTyp); ok {
 		t.follow(scope, sliceTyp, bindScope, binding, path)
 		return t
 	}
@@ -376,7 +376,7 @@ func (a *flexibleSliceArg) trace(scope *Scope, path tracePath) ArgTrace {
 	}
 
 	// Now let's try to match by the element type.
-	if bindScope, binding, ok := bindingInChain(scope, a.elemType); ok {
+	if bindScope, binding, ok := scope.bindingInChain(a.elemType); ok {
 		t.follow(scope, a.elemType, bindScope, binding, path)
 		return t
 	}

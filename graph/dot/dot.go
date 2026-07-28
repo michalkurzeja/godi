@@ -50,8 +50,8 @@ func (e *Encoder) Format() graph.Format {
 
 func (e *Encoder) Encode(g *graph.Graph, w io.Writer) error {
 	buf := bufio.NewWriter(w)
-	p := &printer{w: buf, cfg: e.cfg, palette: paletteFor(e.cfg.theme), graph: g}
-	p.write(g)
+	p := &printer{w: buf, cfg: e.cfg, palette: e.cfg.theme.palette(), graph: g}
+	p.write()
 	return buf.Flush()
 }
 
@@ -63,26 +63,26 @@ type printer struct {
 	ports   bool
 }
 
-func (p *printer) write(g *graph.Graph) {
-	p.ports = p.cfg.ports.enabled(len(g.Nodes))
+func (p *printer) write() {
+	p.ports = p.cfg.ports.enabled(len(p.graph.Nodes))
 
 	p.printf("digraph godi {\n")
 	p.preamble()
 
-	for _, scope := range g.Scopes {
+	for _, scope := range p.graph.Scopes {
 		if scope.Parent == "" {
-			p.scope(g, scope)
+			p.scope(scope)
 		}
 	}
 
-	for _, edge := range g.Edges {
+	for _, edge := range p.graph.Edges {
 		p.edge(edge)
 	}
 
 	if p.cfg.legend {
-		p.legend(g)
+		p.legend()
 	}
-	p.notices(g)
+	p.notices()
 	p.printf("}\n")
 }
 
@@ -102,7 +102,7 @@ func (p *printer) preamble() {
 	p.printf("\t      fontname=%s, fontsize=8];\n\n", quote(fontName))
 }
 
-func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
+func (p *printer) scope(scope *graph.Scope) {
 	// A child scope's label already reads as a sentence. A bare scope name does
 	// not, so it is labelled as a scope.
 	label := scope.Label()
@@ -119,11 +119,11 @@ func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
 	p.printf("\t\t       fontcolor=%s, class=%s, id=%s];\n",
 		quote(p.palette.text), quote(fmt.Sprintf("scope depth%d", scope.Depth)), quote("scope:"+string(scope.ID)))
 
-	for _, node := range g.ScopeNodes(scope.ID) {
+	for _, node := range p.graph.ScopeNodes(scope.ID) {
 		p.node(node)
 	}
-	for _, child := range g.ChildScopes(scope.ID) {
-		p.scope(g, child)
+	for _, child := range p.graph.ChildScopes(scope.ID) {
+		p.scope(child)
 	}
 
 	p.printf("\t}\n")
@@ -223,13 +223,13 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 	if subtitle != "" && subtitle != title {
 		p.labelRow(&sb, "", small(8, p.palette.muted, esc(p.clip(subtitle))))
 	}
-	if badges := nodeBadges(node); badges != "" {
+	if badges := p.nodeBadges(node); badges != "" {
 		p.labelRow(&sb, "", small(7, p.palette.muted, esc(badges)))
 	}
 
 	if p.ports {
 		for _, param := range node.Params {
-			p.labelRow(&sb, portName(param), small(8, "", esc(p.paramText(param))))
+			p.labelRow(&sb, p.portName(param), small(8, "", esc(p.paramText(param))))
 		}
 	}
 
@@ -282,7 +282,7 @@ func (p *printer) paramText(param *graph.Param) string {
 	return sb.String()
 }
 
-func nodeBadges(node *graph.Node) string {
+func (p *printer) nodeBadges(node *graph.Node) string {
 	var badges []string
 	if node.Kind == graph.NodeService {
 		if node.Shared {
@@ -306,9 +306,9 @@ func nodeBadges(node *graph.Node) string {
 func (p *printer) edge(edge *graph.Edge) {
 	attrs := []string{
 		fmt.Sprintf("style=%s", quote(p.lineStyle(edge))),
-		fmt.Sprintf("arrowhead=%s", arrowHead(edge)),
+		fmt.Sprintf("arrowhead=%s", p.arrowHead(edge)),
 		fmt.Sprintf("color=%s", quote(p.edgeColour(edge))),
-		fmt.Sprintf("class=%s", quote(edgeClasses(edge))),
+		fmt.Sprintf("class=%s", quote(p.edgeClasses(edge))),
 	}
 	if edge.ID != "" {
 		// Graphviz copies id and class into the SVG. That is what lets the HTML
@@ -318,7 +318,7 @@ func (p *printer) edge(edge *graph.Edge) {
 	if edge.Origin == graph.ArgOriginCompilerPass {
 		attrs = append(attrs, "penwidth=2")
 	}
-	if label := edgeLabel(edge); label != "" {
+	if label := p.edgeLabel(edge); label != "" {
 		attrs = append(attrs, fmt.Sprintf("label=%s", quote(label)))
 	}
 	if edge.Cycle {
@@ -344,7 +344,7 @@ func (p *printer) tail(edge *graph.Edge) string {
 	if p.cfg.rankDir == TB {
 		compass = "s"
 	}
-	return fmt.Sprintf("%s:%s:%s", node, portName(param), compass)
+	return fmt.Sprintf("%s:%s:%s", node, p.portName(param), compass)
 }
 
 // lineStyle says who wired the argument.
@@ -363,7 +363,7 @@ func (p *printer) lineStyle(edge *graph.Edge) string {
 // arrowHead says how the dependency was matched: a point for an exact type, a
 // diamond for anything that went through an interface binding. Who created that
 // binding is the colour's job, not the shape's.
-func arrowHead(edge *graph.Edge) string {
+func (p *printer) arrowHead(edge *graph.Edge) string {
 	if _, bound := edge.Binding(); bound {
 		return "odiamond"
 	}
@@ -395,7 +395,7 @@ func (p *printer) edgeColour(edge *graph.Edge) string {
 }
 
 // edgeLabel names the extension responsible, when one is, and flags a cycle.
-func edgeLabel(edge *graph.Edge) string {
+func (p *printer) edgeLabel(edge *graph.Edge) string {
 	var parts []string
 	if pass := edge.PassCredit(); pass != "" {
 		parts = append(parts, pass)
@@ -406,7 +406,7 @@ func edgeLabel(edge *graph.Edge) string {
 	return strings.Join(parts, ", ")
 }
 
-func edgeClasses(edge *graph.Edge) string {
+func (p *printer) edgeClasses(edge *graph.Edge) string {
 	classes := []string{"edge", "origin-" + string(edge.Origin), string(edge.Kind)}
 	if hop, ok := edge.Binding(); ok {
 		classes = append(classes, "bind-"+string(hop.Origin))
@@ -442,18 +442,18 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 // the extractor could not make sense of, and what is odd about the picture
 // itself. A drawing that leaves that out is the last place a reader would think
 // to look for it.
-func (p *printer) notices(g *graph.Graph) {
+func (p *printer) notices() {
 	// Escaped a line at a time, then joined with a break. Inside an HTML-like
 	// label a newline is only whitespace, and <BR/> is the only line ending.
-	notices := g.AllDiagnostics()
+	notices := p.graph.AllDiagnostics()
 	lines := make([]string, 0, len(notices)+3)
 
 	// A half-wired picture looks like a finished one with dependencies missing,
 	// so the drawing has to say which it is.
-	if g.Partial() {
-		lines = append(lines, esc("snapshot: "+g.Snapshot.Label()))
-		if len(g.Snapshot.Done) > 0 {
-			lines = append(lines, esc("passes run: "+strings.Join(g.Snapshot.Done, ", ")))
+	if p.graph.Partial() {
+		lines = append(lines, esc("snapshot: "+p.graph.Snapshot.Label()))
+		if len(p.graph.Snapshot.Done) > 0 {
+			lines = append(lines, esc("passes run: "+strings.Join(p.graph.Snapshot.Done, ", ")))
 		}
 	}
 
@@ -478,7 +478,7 @@ func (p *printer) notices(g *graph.Graph) {
 //
 // The two channels are independent. The head says how the dependency was matched.
 // The colour says who decided on it.
-func (p *printer) legend(g *graph.Graph) {
+func (p *printer) legend() {
 	rows := []struct {
 		style, arrow, colour, penWidth, text string
 	}{
@@ -494,7 +494,7 @@ func (p *printer) legend(g *graph.Graph) {
 		quote(p.palette.clusterBorder), quote(p.palette.text), quote("legend"))
 
 	for i, row := range rows {
-		from, to := legendAnchor(i), legendCaptionNode(i)
+		from, to := p.legendAnchor(i), p.legendCaptionNode(i)
 
 		// An anchor with no shape, so the sample reads as a free-standing arrow.
 		// It matches the caption's height, so both columns span the same distance
@@ -503,7 +503,7 @@ func (p *printer) legend(g *graph.Graph) {
 		// Every caption is boxed to the same width, so every sample arrow comes
 		// out the same length. dot centres a node within its rank, so a short
 		// caption would otherwise be pushed away from its own arrow.
-		p.printf("\t\t%s [shape=plaintext, style=\"\", height=%s, label=%s];\n", to, legendRowHeight, legendCaption(row.text, p.palette.text))
+		p.printf("\t\t%s [shape=plaintext, style=\"\", height=%s, label=%s];\n", to, legendRowHeight, p.legendCaption(row.text))
 		// The weight asks dot to keep the sample level rather than let it slope
 		// towards a neighbouring row.
 		p.printf("\t\t%s -> %s [style=%s, arrowhead=%s, color=%s, penwidth=%s, weight=100];\n",
@@ -513,12 +513,12 @@ func (p *printer) legend(g *graph.Graph) {
 	// Pin both columns. Without this the rows come out in whatever order the
 	// layout settles on, and a row whose two halves land at different heights
 	// gets a sloping arrow. Chaining last to first puts row zero on top.
-	p.orderColumn(len(rows), legendAnchor)
-	p.orderColumn(len(rows), legendCaptionNode)
+	p.orderColumn(len(rows), p.legendAnchor)
+	p.orderColumn(len(rows), p.legendCaptionNode)
 
 	p.printf("\t}\n")
 
-	p.reserveLegendRanks(g)
+	p.reserveLegendRanks()
 }
 
 // orderColumn fixes the top-to-bottom order of one column of the key.
@@ -545,10 +545,10 @@ func (p *printer) orderColumn(rows int, name func(int) string) {
 //
 // Holding every source node back by two ranks leaves the first two columns to the
 // legend, which keeps its arrows short.
-func (p *printer) reserveLegendRanks(g *graph.Graph) {
+func (p *printer) reserveLegendRanks() {
 	p.printf("\t%s [style=invis, shape=point, width=0.01, height=0.01];\n", legendPad)
 
-	for _, node := range g.Nodes {
+	for _, node := range p.graph.Nodes {
 		if node.InDegree == 0 {
 			p.printf("\t%s -> %s [style=invis, minlen=2];\n", legendPad, quote(string(node.ID)))
 		}
@@ -556,11 +556,11 @@ func (p *printer) reserveLegendRanks(g *graph.Graph) {
 }
 
 // legendCaption boxes the text at a fixed width so every row measures the same.
-func legendCaption(text, colour string) string {
+func (p *printer) legendCaption(text string) string {
 	return fmt.Sprintf(
 		`<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD WIDTH="185" ALIGN="LEFT">`+
 			`<FONT POINT-SIZE="9" COLOR="%s">%s</FONT></TD></TR></TABLE>>`,
-		colour, esc(text))
+		p.palette.text, esc(text))
 }
 
 const (
@@ -568,9 +568,9 @@ const (
 	legendRowHeight = "0.2" // Keeps the rows close together; a plaintext node is half an inch tall by default.
 )
 
-func legendAnchor(row int) string { return fmt.Sprintf("legend_%d_from", row) }
+func (p *printer) legendAnchor(row int) string { return fmt.Sprintf("legend_%d_from", row) }
 
-func legendCaptionNode(row int) string { return fmt.Sprintf("legend_%d_to", row) }
+func (p *printer) legendCaptionNode(row int) string { return fmt.Sprintf("legend_%d_to", row) }
 
 func (p *printer) printf(format string, args ...any) {
 	fmt.Fprintf(p.w, format, args...)
@@ -584,7 +584,7 @@ func (p *printer) clip(s string) string {
 
 // portName is the row anchor for one argument. Method names are Go identifiers,
 // so the result is always a valid DOT port name.
-func portName(param *graph.Param) string {
+func (p *printer) portName(param *graph.Param) string {
 	switch param.Kind {
 	case graph.InjectFunctionArg:
 		return fmt.Sprintf("c%d", param.Index)

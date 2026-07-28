@@ -16,7 +16,7 @@ import (
 
 func NewScope(name string, container *Container, parent *Scope) *Scope {
 	s := &Scope{
-		name:      unusedScopeName(container, name),
+		name:      container.unusedScopeName(name),
 		container: container,
 		parent:    parent,
 		svcs:      NewDefinitionRegistry[*ServiceDefinition](),
@@ -26,26 +26,6 @@ func NewScope(name string, container *Container, parent *Scope) *Scope {
 	}
 	container.scopes.Set(s.name, s)
 	return s
-}
-
-// unusedScopeName stops a second scope from taking a name that is already in use.
-//
-// The container holds its scopes in a map keyed by name. A scope that lost its
-// place there would still exist in the parent tree, but nothing walking the
-// container would find it again, and its definitions would never be built.
-//
-// godi names its own child scopes after the definition that declared them, so
-// those never collide. Two calls to NewChild("plugins") do.
-func unusedScopeName(container *Container, name string) string {
-	if _, taken := container.scopes.Get(name); !taken {
-		return name
-	}
-	for n := 2; ; n++ {
-		candidate := fmt.Sprintf("%s#%d", name, n)
-		if _, taken := container.scopes.Get(candidate); !taken {
-			return candidate
-		}
-	}
 }
 
 type Scope struct {
@@ -107,10 +87,10 @@ func (s *Scope) HasService(id ID) bool {
 
 // bindingInChain finds the binding covering typ, and the scope that declared it.
 // GetBoundArgInChain alone would not say which scope it came from.
-func bindingInChain(scope *Scope, typ reflect.Type) (*Scope, *InterfaceBinding, bool) {
-	for s := range scope.Chain() {
-		if binding, ok := s.GetBinding(typ); ok {
-			return s, binding, true
+func (s *Scope) bindingInChain(typ reflect.Type) (*Scope, *InterfaceBinding, bool) {
+	for scope := range s.Chain() {
+		if binding, ok := scope.GetBinding(typ); ok {
+			return scope, binding, true
 		}
 	}
 	return nil, nil, false

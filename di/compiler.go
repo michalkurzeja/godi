@@ -153,19 +153,19 @@ func BasePasses(skipCycleValidation bool) Passes {
 }
 
 func (passes Passes) sort() {
-	slices.SortFunc(passes, comparePasses)
+	slices.SortFunc(passes, (*CompilerPass).compare)
 }
 
-// comparePasses is the whole of the order: the stage, then the priority, then
-// when the pass was added.
-func comparePasses(a, b *CompilerPass) int {
-	if c := cmp.Compare(a.stage, b.stage); c != 0 {
+// compare is the whole of the order: the stage, then the priority, then when the
+// pass was added.
+func (p *CompilerPass) compare(other *CompilerPass) int {
+	if c := cmp.Compare(p.stage, other.stage); c != 0 {
 		return c
 	}
-	if c := cmp.Compare(a.priority, b.priority); c != 0 {
+	if c := cmp.Compare(p.priority, other.priority); c != 0 {
 		return c
 	}
-	return cmp.Compare(a.seq, b.seq)
+	return cmp.Compare(p.seq, other.seq)
 }
 
 // Compiler is responsible for configuration of the container after all user changes are done.
@@ -285,7 +285,7 @@ func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
 	c.pending = nil
 
 	for _, p := range added {
-		if comparePasses(p, pass) < 0 {
+		if p.compare(pass) < 0 {
 			return fmt.Errorf("compiler pass (%s) added pass (%s), which would have had to run before it", pass, p)
 		}
 	}

@@ -1,6 +1,7 @@
 package di
 
 import (
+	"fmt"
 	"io"
 	"iter"
 	"reflect"
@@ -171,6 +172,26 @@ func (c *Container) bindingsSeq() iter.Seq[*InterfaceBinding] {
 					return
 				}
 			}
+		}
+	}
+}
+
+// unusedScopeName stops a second scope from taking a name that is already in use.
+//
+// The container holds its scopes in a map keyed by name. A scope that lost its
+// place there would still exist in the parent tree, but nothing walking the
+// container would find it again, and its definitions would never be built.
+//
+// godi names its own child scopes after the definition that declared them, so
+// those never collide. Two calls to NewChild("plugins") do.
+func (c *Container) unusedScopeName(name string) string {
+	if _, taken := c.scopes.Get(name); !taken {
+		return name
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s#%d", name, n)
+		if _, taken := c.scopes.Get(candidate); !taken {
+			return candidate
 		}
 	}
 }

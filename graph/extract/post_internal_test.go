@@ -29,7 +29,7 @@ func TestTheSourceRootIsTheDirectoryEveryPathShares(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, test.want, commonDir(test.paths))
+			require.Equal(t, test.want, new(extractor).commonDir(test.paths))
 		})
 	}
 }

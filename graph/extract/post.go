@@ -39,7 +39,7 @@ func (x *extractor) buildBindings() {
 			entry := &graph.Binding{
 				Scope:      scopeID,
 				Interface:  util.Signature(binding.Interface()),
-				Origin:     bindOriginOf(origin),
+				Origin:     x.bindOriginOf(origin),
 				OriginPass: pass,
 				BoundTo:    binding.BoundTo().String(),
 			}
@@ -106,7 +106,7 @@ func (x *extractor) markIncomplete() {
 			// failed to resolve. One that nothing filled fails no lookup, so this
 			// is where it gets its words. It needs them: the note is what a reader
 			// counting faults is counting.
-			p.Note = notSet(p)
+			p.Note = x.notSet(p)
 			node.Incomplete = true
 		}
 	}
@@ -115,7 +115,7 @@ func (x *extractor) markIncomplete() {
 // notSet words an argument nobody filled the way the compiler does. It names the
 // method when the argument belongs to one, because "argument 2" alone means two
 // different slots on a service with a method call.
-func notSet(p *graph.Param) string {
+func (x *extractor) notSet(p *graph.Param) string {
 	if p.Method != "" {
 		return fmt.Sprintf("argument %d of %s is not set", p.Index, p.Method)
 	}
@@ -179,7 +179,7 @@ func (x *extractor) trimSourceRoot() {
 		}
 	}
 
-	root := commonDir(paths)
+	root := x.commonDir(paths)
 	if root == "" {
 		return
 	}
@@ -194,7 +194,7 @@ func (x *extractor) trimSourceRoot() {
 // commonDir is the longest directory prefix shared by every path. It is empty when
 // there is nothing worth trimming: a container wired partly from the standard
 // library shares only the filesystem root.
-func commonDir(paths []string) string {
+func (x *extractor) commonDir(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}

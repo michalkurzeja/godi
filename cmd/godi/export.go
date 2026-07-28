@@ -73,11 +73,7 @@ func newExportTextCmd() *cobra.Command {
 }
 
 func newExportDotCmd() *cobra.Command {
-	var (
-		rankDir, theme, ports string
-		legend                bool
-		maxLabel              int
-	)
+	var opts dotOptions
 
 	cmd := &cobra.Command{
 		Use:   "dot [file]",
@@ -87,38 +83,15 @@ func newExportDotCmd() *cobra.Command {
 	godi export dot graph.json | dot -Tsvg -o graph.svg`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := parseRankDir(rankDir)
+			enc, err := opts.encoder()
 			if err != nil {
 				return err
 			}
-			palette, err := parseDotTheme(theme)
-			if err != nil {
-				return err
-			}
-			mode, err := parsePorts(ports)
-			if err != nil {
-				return err
-			}
-
-			return export(cmd, args, dot.New(
-				dot.RankDir(dir),
-				dot.Theme(palette),
-				dot.Ports(mode),
-				dot.Legend(legend),
-				dot.MaxLabel(maxLabel),
-			))
+			return export(cmd, args, enc)
 		},
 	}
 
-	cmd.Flags().StringVar(&rankDir, "rankdir", "LR", "direction the graph flows in: "+orList(rankDirs))
-	cmd.Flags().StringVar(&theme, "theme", "light", "colour palette: "+orList(dotThemes))
-	cmd.Flags().StringVar(&ports, "ports", "auto", "per-argument rows: "+orList(portModes))
-	cmd.Flags().BoolVar(&legend, "legend", true, "draw the key explaining the line styles")
-	cmd.Flags().IntVar(&maxLabel, "max-label", 44, "truncate type names in argument rows to this many characters")
-
-	completeWith(cmd, "rankdir", rankDirs)
-	completeWith(cmd, "theme", dotThemes)
-	completeWith(cmd, "ports", portModes)
+	opts.register(cmd)
 	completeGraphFiles(cmd)
 
 	return cmd
@@ -170,6 +143,49 @@ normalising it before a diff:
 	return cmd
 }
 
+type dotOptions struct {
+	rankDir  string
+	theme    string
+	ports    string
+	legend   bool
+	maxLabel int
+}
+
+func (o *dotOptions) register(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&o.rankDir, "rankdir", "LR", "direction the graph flows in: "+orList(rankDirs))
+	cmd.Flags().StringVar(&o.theme, "theme", "light", "colour palette: "+orList(dotThemes))
+	cmd.Flags().StringVar(&o.ports, "ports", "auto", "per-argument rows: "+orList(portModes))
+	cmd.Flags().BoolVar(&o.legend, "legend", true, "draw the key explaining the line styles")
+	cmd.Flags().IntVar(&o.maxLabel, "max-label", 44, "truncate type names in argument rows to this many characters")
+
+	completeWith(cmd, "rankdir", rankDirs)
+	completeWith(cmd, "theme", dotThemes)
+	completeWith(cmd, "ports", portModes)
+}
+
+func (o *dotOptions) encoder() (graph.Encoder, error) {
+	dir, err := o.parseRankDir()
+	if err != nil {
+		return nil, err
+	}
+	palette, err := o.parseTheme()
+	if err != nil {
+		return nil, err
+	}
+	mode, err := o.parsePorts()
+	if err != nil {
+		return nil, err
+	}
+
+	return dot.New(
+		dot.RankDir(dir),
+		dot.Theme(palette),
+		dot.Ports(mode),
+		dot.Legend(o.legend),
+		dot.MaxLabel(o.maxLabel),
+	), nil
+}
+
 // htmlOptions is shared by export html and view, which draw the same page.
 type htmlOptions struct {
 	title  string
@@ -191,11 +207,11 @@ func (o *htmlOptions) register(cmd *cobra.Command) {
 }
 
 func (o *htmlOptions) encoder() (graph.Encoder, error) {
-	theme, err := parseHTMLTheme(o.theme)
+	theme, err := o.parseTheme()
 	if err != nil {
 		return nil, err
 	}
-	layout, err := parseLayout(o.layout)
+	layout, err := o.parseLayout()
 	if err != nil {
 		return nil, err
 	}
@@ -238,28 +254,28 @@ func orList(values []string) string {
 	return strings.Join(values[:len(values)-1], ", ") + " or " + values[len(values)-1]
 }
 
-func parseRankDir(s string) (dot.RankDirection, error) {
-	switch strings.ToUpper(s) {
+func (o *dotOptions) parseRankDir() (dot.RankDirection, error) {
+	switch strings.ToUpper(o.rankDir) {
 	case "LR":
 		return dot.LR, nil
 	case "TB":
 		return dot.TB, nil
 	}
-	return "", fmt.Errorf("--rankdir %q: want %s", s, orList(rankDirs))
+	return "", fmt.Errorf("--rankdir %q: want %s", o.rankDir, orList(rankDirs))
 }
 
-func parseDotTheme(s string) (dot.ThemeName, error) {
-	switch strings.ToLower(s) {
+func (o *dotOptions) parseTheme() (dot.ThemeName, error) {
+	switch strings.ToLower(o.theme) {
 	case "light":
 		return dot.Light, nil
 	case "dark":
 		return dot.Dark, nil
 	}
-	return "", fmt.Errorf("--theme %q: want %s", s, orList(dotThemes))
+	return "", fmt.Errorf("--theme %q: want %s", o.theme, orList(dotThemes))
 }
 
-func parsePorts(s string) (dot.PortMode, error) {
-	switch strings.ToLower(s) {
+func (o *dotOptions) parsePorts() (dot.PortMode, error) {
+	switch strings.ToLower(o.ports) {
 	case "auto":
 		return dot.PortsAuto, nil
 	case "on":
@@ -267,11 +283,11 @@ func parsePorts(s string) (dot.PortMode, error) {
 	case "off":
 		return dot.PortsOff, nil
 	}
-	return 0, fmt.Errorf("--ports %q: want %s", s, orList(portModes))
+	return 0, fmt.Errorf("--ports %q: want %s", o.ports, orList(portModes))
 }
 
-func parseHTMLTheme(s string) (html.ThemeName, error) {
-	switch strings.ToLower(s) {
+func (o *htmlOptions) parseTheme() (html.ThemeName, error) {
+	switch strings.ToLower(o.theme) {
 	case "auto":
 		return html.Auto, nil
 	case "light":
@@ -279,15 +295,15 @@ func parseHTMLTheme(s string) (html.ThemeName, error) {
 	case "dark":
 		return html.Dark, nil
 	}
-	return "", fmt.Errorf("--theme %q: want %s", s, orList(htmlThemes))
+	return "", fmt.Errorf("--theme %q: want %s", o.theme, orList(htmlThemes))
 }
 
-func parseLayout(s string) (html.LayoutEngine, error) {
-	switch strings.ToLower(s) {
+func (o *htmlOptions) parseLayout() (html.LayoutEngine, error) {
+	switch strings.ToLower(o.layout) {
 	case "graphviz":
 		return html.Graphviz, nil
 	case "dagre":
 		return html.Dagre, nil
 	}
-	return "", fmt.Errorf("--layout %q: want %s", s, orList(layouts))
+	return "", fmt.Errorf("--layout %q: want %s", o.layout, orList(layouts))
 }

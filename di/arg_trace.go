@@ -122,7 +122,7 @@ func (p tracePath) through(typ reflect.Type, bindScope *Scope, binding *Interfac
 // matchType records a type match, following an interface binding if one covers
 // the type.
 func (t *ArgTrace) matchType(scope *Scope, typ reflect.Type, path tracePath, by Resolution) {
-	if bindScope, binding, ok := bindingInChain(scope, typ); ok {
+	if bindScope, binding, ok := scope.bindingInChain(typ); ok {
 		t.follow(scope, typ, bindScope, binding, path)
 		return
 	}

@@ -248,19 +248,19 @@ func (n *Node) Anonymous() bool {
 		}
 
 		part := local[dot+1:]
-		if counter, ok := strings.CutPrefix(part, "func"); ok && digits(counter) {
+		if counter, ok := strings.CutPrefix(part, "func"); ok && n.digits(counter) {
 			return true
 		}
 		// A nested literal adds a bare counter of its own. Walk back past those to
 		// reach the marker.
-		if !digits(part) {
+		if !n.digits(part) {
 			return false
 		}
 		local = local[:dot]
 	}
 }
 
-func digits(s string) bool {
+func (n *Node) digits(s string) bool {
 	if s == "" {
 		return false
 	}

@@ -21,21 +21,23 @@ import (
 // them; All, Any and Not combine them.
 type Matcher func(*Node) bool
 
-// Patterns are globs in which * stands for any run of characters, including
+// patterns are globs in which * stands for any run of characters, including
 // none. Each is tried against the full name and against the short form, so a
 // node named "github.com/acme/app.(*Server)" is found by that, by
 // "app.(*Server)", and by "github.com/acme/*".
-func matches(patterns []string, full string) bool {
+type patterns []string
+
+func (p patterns) match(full string) bool {
 	short := render.Short(full)
-	for _, pattern := range patterns {
-		if glob(pattern, full) || glob(pattern, short) {
+	for _, pattern := range p {
+		if p.glob(pattern, full) || p.glob(pattern, short) {
 			return true
 		}
 	}
 	return false
 }
 
-func glob(pattern, s string) bool {
+func (p patterns) glob(pattern, s string) bool {
 	parts := strings.Split(pattern, "*")
 	if len(parts) == 1 {
 		return pattern == s
@@ -60,34 +62,35 @@ func glob(pattern, s string) bool {
 
 // ByType matches services by the type they provide, and functions by their
 // signature.
-func ByType(patterns ...string) Matcher {
-	return func(n *Node) bool { return matches(patterns, n.Type) }
+func ByType(pats ...string) Matcher {
+	p := patterns(pats)
+	return func(n *Node) bool { return p.match(n.Type) }
 }
 
 // ByName matches nodes by the name of their factory or function.
-func ByName(patterns ...string) Matcher {
-	return func(n *Node) bool { return matches(patterns, n.Name) }
+func ByName(pats ...string) Matcher {
+	p := patterns(pats)
+	return func(n *Node) bool { return p.match(n.Name) }
 }
 
 // ByLabel matches nodes carrying any of the given labels.
-func ByLabel(patterns ...string) Matcher {
-	return func(n *Node) bool {
-		return slices.ContainsFunc(n.Labels, func(label string) bool {
-			return matches(patterns, label)
-		})
-	}
+func ByLabel(pats ...string) Matcher {
+	p := patterns(pats)
+	return func(n *Node) bool { return slices.ContainsFunc(n.Labels, p.match) }
 }
 
 // ByID matches nodes by their graph ID.
-func ByID(patterns ...string) Matcher {
-	return func(n *Node) bool { return matches(patterns, string(n.ID)) }
+func ByID(pats ...string) Matcher {
+	p := patterns(pats)
+	return func(n *Node) bool { return p.match(string(n.ID)) }
 }
 
 // ByFile matches nodes registered or defined in a matching file. Paths are
 // relative to the graph's SourceRoot, so "internal/*" reaches a whole tree.
-func ByFile(patterns ...string) Matcher {
+func ByFile(pats ...string) Matcher {
+	p := patterns(pats)
 	return func(n *Node) bool {
-		return matches(patterns, n.Registered.File) || matches(patterns, n.Defined.File)
+		return p.match(n.Registered.File) || p.match(n.Defined.File)
 	}
 }
 
@@ -213,13 +216,12 @@ func ExcludeLabels(patterns ...string) Filter { return Exclude(ByLabel(patterns.
 
 // OnlyScope keeps the nodes of the matching scopes. A scope matches on its ID,
 // on the container's own name for it, or on the name a reader would see.
-func OnlyScope(patterns ...string) Filter {
+func OnlyScope(pats ...string) Filter {
+	p := patterns(pats)
 	return newFilter(func(g *Graph, s *selection) {
 		wanted := make(map[ScopeID]bool)
 		for _, scope := range g.Scopes {
-			if matches(patterns, string(scope.ID)) ||
-				matches(patterns, scope.Name) ||
-				matches(patterns, scope.Label()) {
+			if p.match(string(scope.ID)) || p.match(scope.Name) || p.match(scope.Label()) {
 				wanted[scope.ID] = true
 			}
 		}
@@ -507,7 +509,7 @@ func (g *Graph) rebuild(sel *selection) *Graph {
 	}
 
 	out.Scopes = g.keptScopes(kept)
-	out.Bindings = keptBindings(g.Bindings, out.Edges, kept)
+	out.Bindings = g.keptBindings(out.Edges, kept)
 	return out
 }
 
@@ -543,7 +545,7 @@ func (g *Graph) keptScopes(kept map[NodeID]*Node) []*Scope {
 // keptBindings drops the bindings of scopes that went, points the rest at the
 // targets that remain, and counts them against the edges still drawn. A binding
 // reported as unused in a narrowed graph is unused in that graph.
-func keptBindings(bindings []*Binding, edges []*Edge, kept map[NodeID]*Node) []*Binding {
+func (g *Graph) keptBindings(edges []*Edge, kept map[NodeID]*Node) []*Binding {
 	type hop struct {
 		scope ScopeID
 		iface string
@@ -557,7 +559,7 @@ func keptBindings(bindings []*Binding, edges []*Edge, kept map[NodeID]*Node) []*
 	}
 
 	var out []*Binding
-	for _, b := range bindings {
+	for _, b := range g.Bindings {
 		targets := make([]NodeID, 0, len(b.Targets))
 		for _, id := range b.Targets {
 			if kept[id] != nil {

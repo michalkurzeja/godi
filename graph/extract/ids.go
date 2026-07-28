@@ -2,7 +2,6 @@ package extract
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/michalkurzeja/godi/v2/di"
@@ -147,13 +146,8 @@ func (x *extractor) mint(scope graph.ScopeID, kind, name string, labels []di.Lab
 	sb.WriteString(name)
 
 	if len(labels) > 0 {
-		strs := make([]string, len(labels))
-		for i, l := range labels {
-			strs[i] = string(l)
-		}
-		slices.Sort(strs)
 		sb.WriteString("[")
-		sb.WriteString(strings.Join(strs, ","))
+		sb.WriteString(strings.Join(x.labelStrings(labels), ","))
 		sb.WriteString("]")
 	}
 

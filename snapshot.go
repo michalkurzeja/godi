@@ -2,6 +2,7 @@ package di
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 
@@ -35,7 +36,8 @@ const (
 // Nothing here may change what Build returns. A snapshot that cannot be written
 // says so on stderr and is otherwise forgotten.
 func (b *Builder) reportFailedBuild(container *di.Container) {
-	if !snapshotOnBuildErr() {
+	w := newSnapshotWriter()
+	if !w.enabled {
 		return
 	}
 
@@ -47,31 +49,45 @@ func (b *Builder) reportFailedBuild(container *di.Container) {
 		g, err = extract.From(container)
 	}
 	if err != nil {
-		warnNoSnapshot(err)
+		w.warnNoSnapshot(err)
 		return
 	}
 
-	path, err := writeSnapshot(g)
+	path, err := w.write(g)
 	if err != nil {
-		warnNoSnapshot(err)
+		w.warnNoSnapshot(err)
 		return
 	}
 
 	if g.Snapshot != nil && g.Snapshot.Failed != "" {
-		fmt.Fprintf(os.Stderr, "godi: build failed at pass %q\n", g.Snapshot.Failed)
+		w.warnf("godi: build failed at pass %q\n", g.Snapshot.Failed)
 	}
-	fmt.Fprintf(os.Stderr, "godi: graph written to %s\n", path)
-	fmt.Fprintf(os.Stderr, "godi:   godi view %s\n", path)
+	w.warnf("godi: graph written to %s\n", path)
+	w.warnf("godi:   godi view %s\n", path)
 }
 
-func snapshotOnBuildErr() bool {
+// snapshotWriter is what the environment asked for, read once. Nothing below
+// reads it again, so one failed build cannot write to two different places.
+type snapshotWriter struct {
+	enabled bool
+	// path is a directory to put a file in, or the file itself. Empty means the
+	// system's temporary directory.
+	path string
+	warn io.Writer
+}
+
+func newSnapshotWriter() snapshotWriter {
 	on, err := strconv.ParseBool(os.Getenv(envSnapshotOnBuildErr))
-	return err == nil && on
+	return snapshotWriter{
+		enabled: err == nil && on,
+		path:    os.Getenv(envSnapshotPath),
+		warn:    os.Stderr,
+	}
 }
 
-// writeSnapshot writes the graph out and returns where it went.
-func writeSnapshot(g *graph.Graph) (string, error) {
-	f, err := createSnapshotFile()
+// write writes the graph out and returns where it went.
+func (w snapshotWriter) write(g *graph.Graph) (string, error) {
+	f, err := w.createFile()
 	if err != nil {
 		return "", err
 	}
@@ -90,16 +106,16 @@ func writeSnapshot(g *graph.Graph) (string, error) {
 	return f.Name(), nil
 }
 
-// createSnapshotFile makes the file readable only by you. A graph asked for
-// literal values carries whatever those literals are, and a temporary directory
-// is not a private place.
+// createFile makes the file readable only by you. A graph asked for literal
+// values carries whatever those literals are, and a temporary directory is not a
+// private place.
 //
 // The path is GODI_SNAPSHOT_PATH, set by whoever runs the program. Choosing it is
 // the point of the variable, so there is no untrusted input for gosec to follow.
 //
 //nolint:gosec // G703: the path is the operator's own, by design.
-func createSnapshotFile() (*os.File, error) {
-	path := os.Getenv(envSnapshotPath)
+func (w snapshotWriter) createFile() (*os.File, error) {
+	path := w.path
 	if path == "" {
 		path = os.TempDir()
 	}
@@ -110,6 +126,10 @@ func createSnapshotFile() (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 }
 
-func warnNoSnapshot(err error) {
-	fmt.Fprintf(os.Stderr, "godi: could not write the graph of the failed build: %s\n", err)
+func (w snapshotWriter) warnNoSnapshot(err error) {
+	w.warnf("godi: could not write the graph of the failed build: %s\n", err)
+}
+
+func (w snapshotWriter) warnf(format string, args ...any) {
+	fmt.Fprintf(w.warn, format, args...)
 }

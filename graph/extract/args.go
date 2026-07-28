@@ -22,9 +22,9 @@ func (x *extractor) methodParams(node *graph.Node, scope *di.Scope, def *di.Serv
 
 	// The method's own name is enough. Qualifying it would repeat the type
 	// already on the node.
-	name := shortMethodName(method.Name())
+	name := x.shortMethodName(method.Name())
 
-	if receiver := slots[0]; receiver.IsFilled() && !refersTo(scope, receiver, def) {
+	if receiver := slots[0]; receiver.IsFilled() && !x.refersTo(scope, receiver, def) {
 		x.param(node, scope, receiver, graph.InjectMethodReceiver, name)
 	}
 
@@ -36,12 +36,12 @@ func (x *extractor) methodParams(node *graph.Node, scope *di.Scope, def *di.Serv
 // refersTo reports whether the slot holds the plain reference to the definition
 // itself, which is what godi puts in a method's receiver slot. An edge from a
 // service to itself says nothing. Anything else in that slot is worth showing.
-func refersTo(scope *di.Scope, slot *di.Slot, def *di.ServiceDefinition) bool {
+func (x *extractor) refersTo(scope *di.Scope, slot *di.Slot, def *di.ServiceDefinition) bool {
 	t := di.TraceArg(scope, slot.Arg())
 	return t.Kind == di.ArgKindRef && len(t.Matches) == 1 && t.Matches[0] == def.ID()
 }
 
-func shortMethodName(name string) string {
+func (x *extractor) shortMethodName(name string) string {
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		return name[i+1:]
 	}
@@ -50,7 +50,7 @@ func shortMethodName(name string) string {
 
 func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind graph.InjectionKind, method string) {
 	p := &graph.Param{
-		ID:       paramID(node.ID, kind, method, int(slot.Index())),
+		ID:       x.paramID(node.ID, kind, method, int(slot.Index())),
 		Node:     node.ID,
 		Kind:     kind,
 		Method:   method,
@@ -73,11 +73,11 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 	}
 
 	origin, pass := slot.Origin()
-	p.Origin, p.OriginPass = argOriginOf(origin), pass
+	p.Origin, p.OriginPass = x.argOriginOf(origin), pass
 
 	arg := slot.Arg() // Fabricates a fresh compound for appended slots: call it once.
 	trace := di.TraceArg(scope, arg)
-	p.Arg = argKindOf(trace.Kind)
+	p.Arg = x.argKindOf(trace.Kind)
 	x.walk(p, trace)
 }
 
@@ -94,7 +94,7 @@ func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
 
 	hops := x.hops(t.Bindings)
 	for _, id := range t.Matches {
-		x.edge(p, x.byUUID[id], resolutionOf(t.By), hops)
+		x.edge(p, x.byUUID[id], x.resolutionOf(t.By), hops)
 	}
 
 	x.fault(p, t.Fault)
@@ -134,7 +134,7 @@ func (x *extractor) hops(hops []di.BindingHop) []graph.BindingHop {
 		out[i] = graph.BindingHop{
 			Interface:  util.Signature(hop.Interface),
 			Scope:      x.scopeIDs[hop.Scope],
-			Origin:     bindOriginOf(hop.Origin),
+			Origin:     x.bindOriginOf(hop.Origin),
 			OriginPass: hop.OriginPass,
 		}
 	}
@@ -157,8 +157,8 @@ func (x *extractor) literal(p *graph.Param, v any) {
 				return
 			}
 		}
-		if hasReadableValue(typ) {
-			lit.Value, lit.Truncated = render(v, x.cfg.LiteralMax)
+		if x.hasReadableValue(typ) {
+			lit.Value, lit.Truncated = x.render(v)
 		}
 	}
 
@@ -171,7 +171,7 @@ func (x *extractor) literal(p *graph.Param, v any) {
 // A func, a channel or a plain pointer formats as a machine address. That tells
 // the reader nothing and differs on every run, so two graphs of the same wiring
 // would not compare equal.
-func hasReadableValue(typ reflect.Type) bool {
+func (x *extractor) hasReadableValue(typ reflect.Type) bool {
 	if typ == nil {
 		return true // A nil literal formats as <nil>, which is worth showing.
 	}
@@ -239,7 +239,7 @@ func (x *extractor) note(severity graph.Severity, d graph.Diagnostic) {
 	x.out.GraphDiagnostics = append(x.out.GraphDiagnostics, &d)
 }
 
-func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {
+func (x *extractor) paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {
 	switch kind {
 	case graph.InjectFunctionArg:
 		return graph.ParamID(fmt.Sprintf("%s#c:%d", node, index))
@@ -251,7 +251,7 @@ func paramID(node graph.NodeID, kind graph.InjectionKind, method string, index i
 	return graph.ParamID(fmt.Sprintf("%s#f:%d", node, index))
 }
 
-func argOriginOf(origin di.ArgOrigin) graph.ArgOrigin {
+func (x *extractor) argOriginOf(origin di.ArgOrigin) graph.ArgOrigin {
 	switch origin {
 	case di.ArgOriginManual:
 		return graph.ArgOriginManual
@@ -265,7 +265,7 @@ func argOriginOf(origin di.ArgOrigin) graph.ArgOrigin {
 	return graph.ArgOriginNone
 }
 
-func bindOriginOf(origin di.BindOrigin) graph.BindOrigin {
+func (x *extractor) bindOriginOf(origin di.BindOrigin) graph.BindOrigin {
 	switch origin {
 	case di.BindOriginManual:
 		return graph.BindOriginManual
@@ -277,7 +277,7 @@ func bindOriginOf(origin di.BindOrigin) graph.BindOrigin {
 	return graph.BindOriginManual
 }
 
-func argKindOf(kind di.ArgKind) graph.ArgKind {
+func (x *extractor) argKindOf(kind di.ArgKind) graph.ArgKind {
 	switch kind {
 	case di.ArgKindLiteral:
 		return graph.ArgKindLiteral
@@ -295,7 +295,7 @@ func argKindOf(kind di.ArgKind) graph.ArgKind {
 	return graph.ArgKindUnknown
 }
 
-func resolutionOf(res di.Resolution) graph.Resolution {
+func (x *extractor) resolutionOf(res di.Resolution) graph.Resolution {
 	switch res {
 	case di.ResolutionRef:
 		return graph.ResolutionRef
@@ -313,12 +313,12 @@ func resolutionOf(res di.Resolution) graph.Resolution {
 
 // render formats a literal value for display. A value is arbitrary user data, so a
 // broken Stringer must not take the whole graph down with it.
-func render(v any, maxRunes int) (s string, truncated bool) {
+func (x *extractor) render(v any) (s string, truncated bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			s, truncated = "<panicked while formatting>", false
 		}
 	}()
 
-	return util.Truncate(fmt.Sprintf("%v", v), maxRunes)
+	return util.Truncate(fmt.Sprintf("%v", v), x.cfg.LiteralMax)
 }

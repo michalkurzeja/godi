@@ -40,7 +40,7 @@ func (e *Encoder) Format() graph.Format {
 func (e *Encoder) Encode(g *graph.Graph, w io.Writer) error {
 	buf := bufio.NewWriter(w)
 	p := &printer{w: buf, cfg: e.cfg, graph: g}
-	p.write(g)
+	p.write()
 	return buf.Flush()
 }
 
@@ -60,27 +60,27 @@ func (p *printer) linef(depth int, format string, args ...any) {
 	p.printf("%s%s\n", strings.Repeat("  ", depth), fmt.Sprintf(format, args...))
 }
 
-func (p *printer) write(g *graph.Graph) {
-	p.linef(0, "%s", p.summary(g))
-	p.snapshot(g)
-	if p.cfg.locations && g.SourceRoot != "" {
-		p.linef(0, "under %s", g.SourceRoot)
+func (p *printer) write() {
+	p.linef(0, "%s", p.summary())
+	p.snapshot()
+	if p.cfg.locations && p.graph.SourceRoot != "" {
+		p.linef(0, "under %s", p.graph.SourceRoot)
 	}
 
-	for _, scope := range g.Scopes {
+	for _, scope := range p.graph.Scopes {
 		if scope.Parent == "" {
-			p.scope(g, scope, 0)
+			p.scope(scope, 0)
 		}
 	}
 
-	p.diagnostics(g)
+	p.diagnostics()
 }
 
 // summary is the first line: enough to tell at a glance whether this is the
 // container you meant.
-func (p *printer) summary(g *graph.Graph) string {
+func (p *printer) summary() string {
 	var services, functions, roots int
-	for _, n := range g.Nodes {
+	for _, n := range p.graph.Nodes {
 		if n.Kind == graph.NodeFunction {
 			functions++
 		} else {
@@ -94,7 +94,7 @@ func (p *printer) summary(g *graph.Graph) string {
 	return strings.Join([]string{
 		count(services, "service", "services"),
 		count(functions, "function", "functions"),
-		count(len(g.Edges), "dependency", "dependencies"),
+		count(len(p.graph.Edges), "dependency", "dependencies"),
 		count(roots, "root", "roots"),
 	}, ", ")
 }
@@ -102,14 +102,14 @@ func (p *printer) summary(g *graph.Graph) string {
 // snapshot says the container was still being built when this was taken. It goes
 // directly under the counts, which are the first thing a half-wired graph
 // misleads you about.
-func (p *printer) snapshot(g *graph.Graph) {
-	if !g.Partial() {
+func (p *printer) snapshot() {
+	if !p.graph.Partial() {
 		return
 	}
 
-	p.linef(0, "snapshot: %s", g.Snapshot.Label())
-	if len(g.Snapshot.Done) > 0 {
-		p.linef(1, "passes run: %s", strings.Join(g.Snapshot.Done, ", "))
+	p.linef(0, "snapshot: %s", p.graph.Snapshot.Label())
+	if len(p.graph.Snapshot.Done) > 0 {
+		p.linef(1, "passes run: %s", strings.Join(p.graph.Snapshot.Done, ", "))
 	}
 }
 
@@ -120,14 +120,14 @@ func count(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-func (p *printer) scope(g *graph.Graph, scope *graph.Scope, depth int) {
+func (p *printer) scope(scope *graph.Scope, depth int) {
 	p.printf("\n")
 	p.linef(depth, "scope %s", scope.Label())
 
-	p.bindings(g, scope, depth+1)
+	p.bindings(scope, depth+1)
 
 	var services, functions []*graph.Node
-	for _, n := range g.ScopeNodes(scope.ID) {
+	for _, n := range p.graph.ScopeNodes(scope.ID) {
 		if n.Kind == graph.NodeFunction {
 			functions = append(functions, n)
 		} else {
@@ -135,19 +135,19 @@ func (p *printer) scope(g *graph.Graph, scope *graph.Scope, depth int) {
 		}
 	}
 
-	p.nodes(g, "services", services, depth+1)
-	p.nodes(g, "functions", functions, depth+1)
+	p.nodes("services", services, depth+1)
+	p.nodes("functions", functions, depth+1)
 
 	// Nested, because a child scope is only reachable through the definition
 	// that declared it. The indentation says so.
-	for _, child := range g.ChildScopes(scope.ID) {
-		p.scope(g, child, depth+1)
+	for _, child := range p.graph.ChildScopes(scope.ID) {
+		p.scope(child, depth+1)
 	}
 }
 
-func (p *printer) bindings(g *graph.Graph, scope *graph.Scope, depth int) {
+func (p *printer) bindings(scope *graph.Scope, depth int) {
 	var declared []*graph.Binding
-	for _, b := range g.Bindings {
+	for _, b := range p.graph.Bindings {
 		if b.Scope == scope.ID {
 			declared = append(declared, b)
 		}
@@ -163,26 +163,26 @@ func (p *printer) bindings(g *graph.Graph, scope *graph.Scope, depth int) {
 			unused = "  (nothing uses it)"
 		}
 		p.linef(depth+1, "%s -> %s  [%s]%s",
-			render.Short(b.Interface), render.Short(b.BoundTo), bindingOrigin(b.Origin, b.OriginPass), unused)
+			render.Short(b.Interface), render.Short(b.BoundTo), p.bindingOrigin(b.Origin, b.OriginPass), unused)
 	}
 }
 
-func (p *printer) nodes(g *graph.Graph, heading string, nodes []*graph.Node, depth int) {
+func (p *printer) nodes(heading string, nodes []*graph.Node, depth int) {
 	if len(nodes) == 0 {
 		return
 	}
 
 	p.linef(depth, "%s:", heading)
 	for _, n := range nodes {
-		p.node(g, n, depth+1)
+		p.node(n, depth+1)
 	}
 }
 
-func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
+func (p *printer) node(n *graph.Node, depth int) {
 	title := n.Title()
 
-	p.linef(depth, "%s%s", title, bracketed(nodeFlags(n)))
-	if label, what := implementation(n); what != "" && what != title {
+	p.linef(depth, "%s%s", title, bracketed(p.nodeFlags(n)))
+	if label, what := p.implementation(n); what != "" && what != title {
 		p.linef(depth+1, "%s: %s", label, what)
 	}
 	if p.cfg.locations {
@@ -194,7 +194,7 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 		}
 	}
 
-	p.params(g, n, depth+1)
+	p.params(n, depth+1)
 
 	if n.Elided > 0 {
 		p.linef(depth+1, "... %d neighbours were filtered out", n.Elided)
@@ -208,7 +208,7 @@ func (p *printer) node(g *graph.Graph, n *graph.Node, depth int) {
 // What to say is the model's answer, the same one the picture puts under a node
 // box. What to call it is this format's own: a line of text has room to say
 // which of the three it is, and a box does not.
-func implementation(n *graph.Node) (label, what string) {
+func (p *printer) implementation(n *graph.Node) (label, what string) {
 	switch {
 	case n.Kind == graph.NodeFunction:
 		label = "signature"
@@ -223,7 +223,7 @@ func implementation(n *graph.Node) (label, what string) {
 // nodeFlags are the properties worth naming. Only the surprising half of each
 // pair is printed - a lazy shared service is the default and says nothing - so
 // what is left is what someone chose.
-func nodeFlags(n *graph.Node) []string {
+func (p *printer) nodeFlags(n *graph.Node) []string {
 	var flags []string
 	if n.Root {
 		flags = append(flags, "root")
@@ -243,7 +243,7 @@ func nodeFlags(n *graph.Node) []string {
 	return append(flags, n.Labels...)
 }
 
-func (p *printer) params(g *graph.Graph, n *graph.Node, depth int) {
+func (p *printer) params(n *graph.Node, depth int) {
 	var args, calls []*graph.Param
 	for _, param := range n.Params {
 		if param.Kind == graph.InjectMethodArg || param.Kind == graph.InjectMethodReceiver {
@@ -256,7 +256,7 @@ func (p *printer) params(g *graph.Graph, n *graph.Node, depth int) {
 	if len(args) > 0 {
 		p.linef(depth, "args:")
 		for _, param := range args {
-			p.param(g, param, depth+1)
+			p.param(param, depth+1)
 		}
 	}
 
@@ -271,26 +271,27 @@ func (p *printer) params(g *graph.Graph, n *graph.Node, depth int) {
 			method = param.Method
 			p.linef(depth+1, "%s():", method)
 		}
-		p.param(g, param, depth+2)
+		p.param(param, depth+2)
 	}
 }
 
 // param is one argument: what was asked for, what arrived, and who decided.
-func (p *printer) param(g *graph.Graph, param *graph.Param, depth int) {
+func (p *printer) param(param *graph.Param, depth int) {
 	head := fmt.Sprintf("%d <- %s", param.Index, render.Ellipsis(param.TypeShort(), p.cfg.maxType))
+	origin := bracketed(p.argOrigin(param))
 
-	edges := paramEdges(g, param)
+	edges := p.paramEdges(param)
 	switch {
 	case len(param.Literals) > 0:
-		p.linef(depth, "%s = %s%s", head, param.LiteralsText(), bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s = %s%s", head, param.LiteralsText(), origin)
 	case len(edges) == 0:
-		p.linef(depth, "%s%s%s", head, unresolved(param), bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s%s%s", head, p.unresolved(param), origin)
 	default:
-		p.linef(depth, "%s%s", head, bracketed(argOrigin(param.Origin, param.OriginPass)))
+		p.linef(depth, "%s%s", head, origin)
 	}
 
 	for _, e := range edges {
-		p.linef(depth+1, "-> %s%s", p.name(e.To), bracketed(resolution(e)))
+		p.linef(depth+1, "-> %s%s", p.name(e.To), bracketed(p.resolution(e)))
 	}
 }
 
@@ -304,9 +305,9 @@ func (p *printer) name(id graph.NodeID) string {
 	return n.Title()
 }
 
-func paramEdges(g *graph.Graph, param *graph.Param) []*graph.Edge {
+func (p *printer) paramEdges(param *graph.Param) []*graph.Edge {
 	var out []*graph.Edge
-	for _, e := range g.OutEdges(param.Node) {
+	for _, e := range p.graph.OutEdges(param.Node) {
 		if e.Param == param.ID {
 			out = append(out, e)
 		}
@@ -314,7 +315,7 @@ func paramEdges(g *graph.Graph, param *graph.Param) []*graph.Edge {
 	return out
 }
 
-func unresolved(param *graph.Param) string {
+func (p *printer) unresolved(param *graph.Param) string {
 	switch {
 	case param.Origin == graph.ArgOriginNone:
 		return "  (not wired)"
@@ -331,13 +332,13 @@ func unresolved(param *graph.Param) string {
 
 // resolution says how a dependency was matched, and names the binding it went
 // through when it went through one.
-func resolution(e *graph.Edge) []string {
+func (p *printer) resolution(e *graph.Edge) []string {
 	out := []string{string(e.Resolution)}
 	if hop, ok := e.Binding(); ok {
 		// Parenthesised rather than another colon: a pass-created binding would
 		// otherwise read "binding on X: compiler-pass: name".
 		out = append(out, fmt.Sprintf("binding on %s (%s)",
-			render.Short(hop.Interface), bindingOrigin(hop.Origin, hop.OriginPass)))
+			render.Short(hop.Interface), p.bindingOrigin(hop.Origin, hop.OriginPass)))
 	}
 	if e.Cycle {
 		out = append(out, "cycle")
@@ -347,14 +348,14 @@ func resolution(e *graph.Edge) []string {
 
 // Only an extension is worth naming: godi's own automation runs under a
 // compiler pass too, but "autowiring (autowiring)" tells nobody anything.
-func argOrigin(origin graph.ArgOrigin, pass string) []string {
-	if origin == graph.ArgOriginCompilerPass && pass != "" {
-		return []string{string(origin) + ": " + pass}
+func (p *printer) argOrigin(param *graph.Param) []string {
+	if param.Origin == graph.ArgOriginCompilerPass && param.OriginPass != "" {
+		return []string{string(param.Origin) + ": " + param.OriginPass}
 	}
-	return []string{string(origin)}
+	return []string{string(param.Origin)}
 }
 
-func bindingOrigin(origin graph.BindOrigin, pass string) string {
+func (p *printer) bindingOrigin(origin graph.BindOrigin, pass string) string {
 	if origin == graph.BindOriginCompilerPass && pass != "" {
 		return string(origin) + ": " + pass
 	}
@@ -368,8 +369,8 @@ func bracketed(parts []string) string {
 	return "  [" + strings.Join(parts, ", ") + "]"
 }
 
-func (p *printer) diagnostics(g *graph.Graph) {
-	notices := g.AllDiagnostics()
+func (p *printer) diagnostics() {
+	notices := p.graph.AllDiagnostics()
 	if len(notices) == 0 {
 		return
 	}

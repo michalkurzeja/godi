@@ -26,7 +26,7 @@ func TestPackageOf(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		require.Equal(t, tt.want, packageOf(tt.fn), tt.fn)
+		require.Equal(t, tt.want, wiring.packageOf(tt.fn), tt.fn)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestOnlyTheWiringPackagesAreWalkedPast(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		require.Equal(t, tt.want, isWiring(tt.fn), tt.fn)
+		require.Equal(t, tt.want, wiring.contains(tt.fn), tt.fn)
 	}
 }
 
@@ -56,18 +56,18 @@ func TestOnlyTheWiringPackagesAreWalkedPast(t *testing.T) {
 // godi's own extras package, and the reader wants their own wiring pointed at,
 // not the library's.
 func TestAMarkedPackageIsWalkedPastLikeGodisOwn(t *testing.T) {
-	original := slices.Clone(wiringPackages)
-	t.Cleanup(func() { wiringPackages = original })
+	original := slices.Clone(wiring.paths)
+	t.Cleanup(func() { wiring.paths = original })
 
 	const wrapper = "github.com/acme/wiring"
-	require.False(t, isWiring(wrapper+".Register"))
+	require.False(t, wiring.contains(wrapper+".Register"))
 
 	MarkWiringPackage(wrapper)
-	require.True(t, isWiring(wrapper+".Register"))
-	require.False(t, isWiring(wrapper+"/internal.Register"), "the path exactly, never a prefix")
+	require.True(t, wiring.contains(wrapper+".Register"))
+	require.False(t, wiring.contains(wrapper+"/internal.Register"), "the path exactly, never a prefix")
 
 	MarkWiringPackage(wrapper)
-	require.Len(t, wiringPackages, len(original)+1, "marking it twice marks it once")
+	require.Len(t, wiring.paths, len(original)+1, "marking it twice marks it once")
 }
 
 func TestAnEmptySourceResolvesToNothing(t *testing.T) {

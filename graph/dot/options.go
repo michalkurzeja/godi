@@ -101,8 +101,8 @@ func (p palette) clusterFill(depth int) string {
 	return p.clusterTint + alphas[min(depth, len(alphas)-1)]
 }
 
-func paletteFor(name ThemeName) palette {
-	if name == Dark {
+func (n ThemeName) palette() palette {
+	if n == Dark {
 		return palette{
 			background:    "#0d1117",
 			nodeFill:      "#161b22",
