@@ -13,12 +13,10 @@ import (
 )
 
 // Arg is one argument of a factory, a method call or a function: what to pass,
-// and how to find it. Every kind of argument answers for itself - validating,
-// resolving and listing what it resolves to - so that nothing outside has to
-// know the kinds apart.
+// and how to find it. Each kind of argument validates and resolves itself.
 //
-// It is sealed. An argument the compiler passes and the graph would not
-// understand is worse than no argument at all, so the kinds are godi's.
+// Its methods are unexported, so only godi can add a kind. The compiler passes
+// and the dependency graph have to understand every one of them.
 type Arg interface {
 	fmt.Stringer
 	Type() reflect.Type
@@ -27,8 +25,8 @@ type Arg interface {
 	validate(scope *Scope) error
 	// resolve produces the value to pass.
 	resolve(scope *Scope) (any, error)
-	// resolveIDs lists the definitions this argument resolves to, which is
-	// empty for an argument that names no service.
+	// resolveIDs lists the definitions this argument resolves to. A literal
+	// names no service, so its list is empty.
 	resolveIDs(scope *Scope) []ID
 	// trace says how the argument resolved: what matched, and by which
 	// mechanism. See ArgTrace.
@@ -280,9 +278,8 @@ func (a *flexibleSliceArg) Type() reflect.Type {
 	return reflect.SliceOf(a.elemType)
 }
 
-// The slice type wins over the element type, and each is checked against the
-// bindings first. The three methods below try them in that same order, and the
-// graph reads the order off them rather than repeating it.
+// The slice type wins over the element type. Each is checked against the
+// bindings first. The three methods below try them in that order.
 
 func (a *flexibleSliceArg) validate(scope *Scope) error {
 	// First try to match by the slice type.
@@ -478,13 +475,15 @@ func (slots Slots) Args() []Arg {
 	})
 }
 
-// ArgOrigin tells who filled a Slot. A slot exists before anything fills it -
-// NewArgList creates one per function parameter - so the zero value is ArgOriginNone.
+// ArgOrigin tells who filled a Slot. A slot exists before anything fills it, so
+// the zero value is ArgOriginNone.
 //
-// A compiler pass reads it to tell an argument the user wrote from one godi
-// wired, which is what an override pass needs and cannot work out any other
-// way: the two are byte-identical by then. Declaring an origin is godi's own
-// business, so a pass is credited with its work rather than claiming it.
+// We record origins to tell an argument wired by the user from one wired by godi
+// or by a third-party compiler pass. Once the container is built, the three look
+// the same.
+//
+// A pass cannot set an origin. The compiler credits each pass with whatever it
+// changed while it ran.
 type ArgOrigin uint8
 
 const (
@@ -580,9 +579,11 @@ func (s *Slot) Append(args ...Arg) error {
 	return nil
 }
 
-// markFilled records that the slot was just filled, leaving it for the Compiler
-// to credit. Until something does, the fill is the user's own: a container that
-// is never compiled still reports its wiring honestly.
+// markFilled records that the slot was just filled. The Compiler credits it
+// later.
+//
+// Until then the fill counts as the user's own. A container that is never
+// compiled still reports its wiring correctly.
 func (s *Slot) markFilled() {
 	s.origin = ArgOriginManual
 	s.originPass = ""

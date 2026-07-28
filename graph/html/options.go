@@ -4,32 +4,33 @@ package html
 type ThemeName string
 
 const (
-	// Auto follows the reader's system setting, and switches live when it
-	// changes. Colours are applied at render time rather than baked into a
-	// drawing, so this costs nothing.
+	// Auto follows the reader's system setting and switches live when it changes.
+	// Colours are applied at render time rather than baked into a drawing, so
+	// this costs nothing.
 	Auto ThemeName = "auto"
 	// Light and Dark commit the page to one scheme.
 	Light ThemeName = "light"
 	Dark  ThemeName = "dark"
 )
 
-// LayoutEngine is the algorithm that decides where the nodes go. Whichever is
-// chosen, the page is drawn and driven by Cytoscape: the engine only supplies
-// positions, and the reader can still drag a node anywhere afterwards.
+// LayoutEngine is the algorithm that decides where the nodes go.
+//
+// Whichever is chosen, the page is drawn and driven by Cytoscape. The engine only
+// supplies positions, and the reader can still drag a node anywhere afterwards.
 type LayoutEngine string
 
 const (
 	// Graphviz is Graphviz itself, compiled to WebAssembly and inlined. It runs
-	// in the browser, so nothing has to be installed, and it lays out a
-	// dependency graph better than anything else available: proper layered
-	// ranks, and scopes that come out as real nested boxes.
+	// in the browser, so nothing has to be installed. It also lays out a
+	// dependency graph better than the alternatives: proper layered ranks, and
+	// scopes that come out as real nested boxes.
 	//
-	// It costs about 1.3MB of page. That is the default because a graph you
-	// cannot read is worth less than a file you have to wait a moment for.
+	// It costs about 1.3MB of page. It is still the default, because a graph you
+	// cannot read is worth less than a file you wait a moment for.
 	Graphviz LayoutEngine = "graphviz"
 	// Dagre is a small layered layout in plain JavaScript, about 85KB. Choose it
 	// for a much smaller page, or to keep the file free of Graphviz's EPL-2.0
-	// object code. Its ranks are plainer and it handles nested scopes less
+	// object code. Its ranks are plainer, and it handles nested scopes less
 	// tidily.
 	Dagre LayoutEngine = "dagre"
 )

@@ -19,7 +19,7 @@ type Metadata struct {
 	// Schema is the shape the graph was written against. A reader compares it
 	// with its own Schema.
 	Schema string `json:"schema"`
-	// WrittenAt is when the file was written, which is how you tell one failure
+	// WrittenAt is when the file was written. It is how you tell one failure
 	// graph from another once a few have collected in a temporary directory.
 	WrittenAt time.Time `json:"writtenAt,omitzero"`
 	// GodiVersion is the version of godi that wrote the graph, where the build
@@ -36,10 +36,9 @@ type envelope struct {
 // WriteJSON writes the graph as JSON, wrapped in an envelope carrying the schema
 // it was written against.
 //
-// This is the interchange format, and it lives on the model rather than in an
-// encoder package of its own: a container that failed to build hands its graph
-// to something that can draw it this way, and that must cost a godi binary no
-// new dependency at all. graph/json is the same thing as an Encoder.
+// This is the interchange format. It lives on the model rather than in an encoder
+// package, because a build that failed has to be able to write its graph without
+// linking an encoder. graph/json is the same writing as an Encoder.
 func (g *Graph) WriteJSON(w io.Writer) error {
 	return g.WriteJSONIndented(w, "")
 }
@@ -77,10 +76,12 @@ func (g *Graph) WriteJSONIndented(w io.Writer, indent string) error {
 // file it came from.
 //
 // A schema it does not recognise is a warning rather than a failure. The model
-// grows by adding fields, so a reader of one version usually still makes sense
-// of a file from another, and half a graph beats none when you are looking at a
-// build that already went wrong. The warning is recorded as a Diagnostic, so it
-// travels with the graph into whatever renders it.
+// grows by adding fields, so a reader of one version usually still makes sense of
+// a file from another, and half a graph beats none when a build has already gone
+// wrong.
+//
+// The warning is recorded in GraphDiagnostics, so it travels with the graph into
+// whatever renders it.
 func ReadJSON(r io.Reader) (*Graph, Metadata, error) {
 	var env envelope
 

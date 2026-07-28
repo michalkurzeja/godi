@@ -22,18 +22,18 @@ const (
 )
 
 // reportFailedBuild writes the graph of a container that did not build, so that
-// what went wrong can be looked at rather than pieced together from an error
-// message. The graph of a failed build is as far as the container ever got,
-// which is where whatever stopped it is still visible.
+// what went wrong can be looked at instead of pieced together from an error
+// message. The graph is as far as the container ever got, which is where whatever
+// stopped it is still visible.
 //
-// It writes JSON and nothing else. Drawing a graph means Graphviz and a browser,
-// and no godi binary should carry those for the sake of a debugging aid it will
-// almost never use. The godi CLI turns the file into something to look at:
+// It writes JSON and nothing else. Drawing a graph needs Graphviz or a browser,
+// and no godi binary should carry either for a debugging aid it will almost never
+// use. The godi CLI turns the file into something to look at:
 //
 //	godi view <path>
 //
 // Nothing here may change what Build returns. A snapshot that cannot be written
-// says so and is otherwise forgotten: the build error is the one that matters.
+// says so on stderr and is otherwise forgotten.
 func (b *Builder) reportFailedBuild(container *di.Container) {
 	if !snapshotOnBuildErr() {
 		return
@@ -90,12 +90,12 @@ func writeSnapshot(g *graph.Graph) (string, error) {
 	return f.Name(), nil
 }
 
-// createSnapshotFile makes the file private to you: a graph asked for literal
-// values carries whatever those literals are, and a temporary directory is not
-// a private place.
-// The path is GODI_SNAPSHOT_PATH, set by whoever runs the program to say where
-// they want the graph written. Choosing it is the point of the variable, so
-// there is no untrusted end to the taint gosec follows.
+// createSnapshotFile makes the file readable only by you. A graph asked for
+// literal values carries whatever those literals are, and a temporary directory
+// is not a private place.
+//
+// The path is GODI_SNAPSHOT_PATH, set by whoever runs the program. Choosing it is
+// the point of the variable, so there is no untrusted input for gosec to follow.
 //
 //nolint:gosec // G703: the path is the operator's own, by design.
 func createSnapshotFile() (*os.File, error) {

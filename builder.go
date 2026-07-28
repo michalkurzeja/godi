@@ -25,13 +25,12 @@ type Builder struct {
 	bindings  []*InterfaceBindingBuilder
 	passes    []*di.CompilerPass
 
-	// defaults are what a definition takes for the properties its own
-	// registration did not choose.
+	// defaults are what a definition takes for the properties its registration
+	// did not set.
 	defaults di.Defaults
 
-	// prepared counts how many of each have been handed to the container
-	// builder already, so that reading the graph and then registering more
-	// still builds the lot.
+	// prepared counts how many of each have been handed to the container builder
+	// already, so that registering more after a prepare still builds the lot.
 	prepared struct{ services, functions, bindings, passes int }
 	prepErr  error
 }
@@ -69,16 +68,14 @@ func (b *Builder) Build() (Container, error) {
 
 // prepare hands everything registered since last time to the container builder:
 // the definition builders as definitions, and the compiler passes to the
-// compiler. It collects everything that went wrong rather than stopping at the
-// first.
+// compiler. It collects every error rather than stopping at the first.
 //
-// Each builder is prepared exactly once: the definitions it produces are the
+// Each builder is prepared exactly once. The definitions it produces are the
 // same objects Build compiles, so preparing one twice would fill its arguments
-// twice. Anything registered after a graph was read is still waiting here.
+// twice.
 //
-// The passes go in here rather than in Build so that a prepared builder is
-// prepared: one still missing the passes the user registered would compile into
-// a different container than the one its graph describes.
+// The compiler passes go in here too. A prepared builder still missing them
+// would compile into a different container than the one it describes.
 func (b *Builder) prepare() error {
 	services := b.services[b.prepared.services:]
 	b.prepared.services = len(b.services)

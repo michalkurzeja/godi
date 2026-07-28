@@ -21,10 +21,11 @@ type payload struct {
 	// being built. Nothing else on the page would give that away.
 	Snapshot *viewSnapshot `json:"snapshot,omitzero"`
 
-	// Diagnostics carry the ids they are about, not just their text: the panel
-	// links to the node, which is the half the text and DOT notices leave out.
-	// Some name nothing at all - a scope belonging to no definition, a schema
-	// this build does not know - and those have nowhere else on the page to go.
+	// Diagnostics carry the ids they are about, not just their text, so the panel
+	// can link to the node. The text and DOT notices leave that out.
+	//
+	// Some name nothing at all: a scope belonging to no definition, or a schema
+	// this build does not know. Those have nowhere else on the page to go.
 	Diagnostics []viewDiagnostic `json:"diagnostics,omitzero"`
 
 	// SourceRoot is the directory the file paths hang off, and SourceLink the
@@ -34,9 +35,8 @@ type payload struct {
 	SourceLink string `json:"sourceLink,omitzero"`
 }
 
-// viewSnapshot carries the wording rather than the parts: what a partial graph
-// has to tell the reader is the same in every format, so it is written once, in
-// the model.
+// viewSnapshot carries the wording rather than the parts. What a partial graph has
+// to tell the reader is the same in every format, so the model words it once.
 type viewSnapshot struct {
 	Label string   `json:"label"`
 	Done  []string `json:"done,omitzero"`
@@ -71,7 +71,7 @@ type viewScope struct {
 	Depth  int           `json:"depth"`
 	Label  string        `json:"label"`
 	// Owner is what declared the scope, on its own. The label says "children of
-	// X", which reads well on a box but not repeated at every level of a path.
+	// X", which reads well on a box but not at every level of a path.
 	Owner string `json:"owner,omitzero"`
 }
 
@@ -82,8 +82,7 @@ type viewNode struct {
 
 	Type string `json:"type"`
 	// Title and Subtitle are what the node is headed by and what goes under it.
-	// Worked out here rather than in the page: every format owes the reader the
-	// same answer, and the page had a second copy of the rule in JavaScript.
+	// The model works both out, so that every format gives the same answer.
 	Title     string `json:"title"`
 	Subtitle  string `json:"subtitle,omitzero"`
 	Short     string `json:"short"`
@@ -100,8 +99,8 @@ type viewNode struct {
 	Autowired    bool `json:"autowired"`
 	Instantiated bool `json:"instantiated"`
 	Root         bool `json:"root"`
-	// Incomplete is what the red border and the warning mark are drawn from:
-	// something this node needs is not there.
+	// Incomplete is what the red border and the warning mark are drawn from.
+	// Something this node needs is not there.
 	Incomplete bool `json:"incomplete,omitzero"`
 	// Elided is how many neighbours a filter cut off, so the page can say the
 	// graph carries on where it stops.
@@ -144,14 +143,13 @@ type viewEdge struct {
 
 	// DecidedBy is who chose this dependency: whoever created the binding it
 	// resolved through, and otherwise whoever wired the argument. The colour and
-	// the filters both key off it, so it is settled once here rather than twice
-	// in the page - which is how they came to disagree.
+	// the filters both key off it, so it is settled once here.
 	DecidedBy graph.ArgOrigin `json:"decidedBy"`
 	// Pass names the compiler pass responsible, however it was responsible.
 	Pass string `json:"pass,omitzero"`
 
-	// Only the first hop, which is the binding applied to the declared type.
-	// The rest are a detail no view of the page shows.
+	// Only the first hop, which is the binding applied to the declared type. No
+	// view of the page shows the rest.
 	BindInterface string           `json:"bindInterface,omitzero"`
 	BindOrigin    graph.BindOrigin `json:"bindOrigin,omitzero"`
 	BindPass      string           `json:"bindPass,omitzero"`
@@ -163,10 +161,10 @@ type viewEdge struct {
 }
 
 func newPayload(g *graph.Graph, cfg config) payload {
-	// Sized rather than grown, and never nil: the page iterates these three
+	// Sized rather than grown, and never nil. The page iterates these three
 	// without checking, and a nil slice marshals to null rather than to an empty
-	// array. A container whose services are all unwired has no edges at all, and
-	// that null stopped the viewer dead at boot.
+	// array. A container whose services are all unwired has no edges, and that
+	// null stopped the viewer dead at boot.
 	p := payload{
 		Schema:     g.Schema,
 		Title:      cfg.title,

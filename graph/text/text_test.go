@@ -331,9 +331,9 @@ func TestAValueRegisteredAsAServiceIsNamedByWhatItIs(t *testing.T) {
 		return g
 	}
 
-	// Its type is the function's signature, so the name is what heads it - the
-	// same way a function node is headed - and the signature is what the line
-	// under it has left to say.
+	// Its type is the function's signature, so the name heads it, the same way a
+	// function node is headed. The signature is what the line under it has left to
+	// say.
 	value := encode(t, named())
 	require.Contains(t, value, "app.validateEmail  [not shared, http]",
 		"a named value is headed by its name")

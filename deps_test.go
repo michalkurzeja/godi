@@ -36,9 +36,9 @@ func TestTheLibraryCarriesNoRenderersAndCannotRunPrograms(t *testing.T) {
 	}
 }
 
-// The model is a leaf, and that is what makes it worth having as a wire format:
-// a tool that only reads a graph - the godi CLI reading a file above all -
-// carries no container engine, and neither does a third-party encoder.
+// The model is a leaf, which is what makes it worth having as a wire format. A tool
+// that only reads a graph carries no container engine, and neither does a
+// third-party encoder.
 func TestTheGraphModelCarriesNoEngine(t *testing.T) {
 	t.Parallel()
 
@@ -55,11 +55,12 @@ func TestTheGraphModelCarriesNoEngine(t *testing.T) {
 	}
 }
 
-// No godi library package may start a process, and this is asserted over the
-// library as a whole rather than over the root package: it is now true by
-// construction - the only os/exec left in the module is in cmd/godi, where a
-// command-line tool opening a browser is unremarkable - and this is what keeps
-// it that way.
+// No godi library package may start a process.
+//
+// It is true by construction: the only os/exec left in the module is in cmd/godi,
+// where a command-line tool opening a browser is unremarkable. This is asserted
+// over every library package rather than over the root alone, to keep it that
+// way.
 func TestNothingInTheLibraryCanStartAProcess(t *testing.T) {
 	t.Parallel()
 

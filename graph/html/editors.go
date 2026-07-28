@@ -15,14 +15,14 @@ import (
 //
 //	html.New(html.SourceLink("myeditor://open?at={file}#{line}"))
 //
-// Two families, because that is how the editors split. The VS Code lineage
-// takes the path in the URL body; the rest take it as a query parameter.
+// Two families, because that is how the editors split. The VS Code lineage takes
+// the path in the URL body. The rest take it as a query parameter.
 //
-// Whether a link opens anything depends on the editor having registered its
-// scheme with the operating system, which most do on install. The JetBrains and
-// Sublime ones are the least certain: JetBrains publishes a second, project
-// relative form for its Toolbox, and Sublime's scheme comes from a plugin
-// rather than the editor itself.
+// Whether a link opens anything depends on the editor having registered its scheme
+// with the operating system, which most do on install. The JetBrains and Sublime
+// ones are the least certain: JetBrains publishes a second, project-relative form
+// for its Toolbox, and Sublime's scheme comes from a plugin rather than from the
+// editor.
 const (
 	VSCode         = "vscode://file{file}:{line}"
 	VSCodeInsiders = "vscode-insiders://file{file}:{line}"
@@ -55,12 +55,12 @@ var editors = map[string]string{
 	"sublime":         Sublime,
 }
 
-// EditorLink is the link template for a named editor, for anything that takes
-// the editor as a string: a command line flag, a config file, an environment
-// variable. Names are the lowercase ones in Editors.
+// EditorLink is the link template for a named editor, for anything that takes the
+// editor as a string: a command-line flag, a config file, an environment variable.
+// Names are the lowercase ones in Editors.
 //
-// It reports false for a name it does not know, so a caller can tell a typo
-// from a template of the reader's own and say so.
+// It reports false for a name it does not know, so a caller can tell a typo from a
+// template of the reader's own.
 func EditorLink(name string) (string, bool) {
 	template, ok := editors[strings.ToLower(strings.TrimSpace(name))]
 	return template, ok

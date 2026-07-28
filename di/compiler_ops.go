@@ -107,8 +107,8 @@ func (p *InterfaceBindingPass) findImplementations(scope *Scope, parentID ID, if
 	return impls
 }
 
-// AutowiringPass fills in the arguments nobody wrote, by type. It is exported
-// as an example of the shape a pass takes; what it does is godi's own.
+// AutowiringPass fills in the arguments nobody wrote, by type. It is exported as
+// an example of the shape a pass takes.
 type AutowiringPass struct{}
 
 // NewAutowiringPass returns a compiler pass that automatically wires the arguments

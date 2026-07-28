@@ -8,16 +8,10 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 )
 
-// launch hands a path or a URL to the operating system to open however it sees
-// fit.
+// launch opens a path or a URL with whatever the operating system uses for it.
 //
-// It waits only for the command to start, not for whatever it opened to close:
-// on some desktops the opener does not return until the browser does, and a
-// graph is something you look at while carrying on.
-//
-// This is the only place in the module that starts a process, and it is a
-// command-line tool opening a browser, which is unremarkable. Nothing a program
-// links godi for can do the same.
+// It returns once the command has started, not when the user closes what it
+// opened. Some desktop openers do not exit until the browser does.
 func launch(target string) error {
 	name, args := opener(target)
 	if name == "" {

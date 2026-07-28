@@ -8,10 +8,11 @@ import (
 	di "github.com/michalkurzeja/godi/v2"
 )
 
-// The builder registers nothing until it is prepared, which is what makes the
-// order and the number of Services/Functions/Bindings calls irrelevant. Both
-// tests below pass by construction today; they are here so that a builder
-// "simplified" into registering eagerly says so.
+// The builder registers nothing until it is prepared. That is what makes the order
+// and the number of Services/Functions/Bindings calls irrelevant.
+//
+// Both tests below already pass. They are here so that a builder "simplified" into
+// registering eagerly says so.
 
 type deferredDep struct{}
 

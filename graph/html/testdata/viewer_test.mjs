@@ -6,9 +6,9 @@
 //
 //   node viewer_test.mjs <page.html> <chrome> <profile-dir>
 //
-// It speaks the DevTools protocol directly - node's own WebSocket and fetch are
-// enough - so the repo needs no JavaScript toolchain. Results go to stdout as
-// one JSON object per line; anything else is a diagnostic.
+// It speaks the DevTools protocol directly, using node's own WebSocket and fetch,
+// so the repo needs no JavaScript toolchain. Results go to stdout as one JSON
+// object per line. Anything else is a diagnostic.
 
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -153,10 +153,10 @@ const tapScope = async () => {
 	await sleep(120);
 };
 
-// A tap toggles, and the panel may be showing something else entirely - the
-// shortcuts, the credits - while the selection is unchanged. So selecting means
-// clearing first and then tapping, which leaves both the selection and the
-// panel where the test expects them however the previous test left things.
+// A tap toggles, and the panel may be showing the shortcuts or the credits while
+// the selection is unchanged. So selecting means clearing first, then tapping. That
+// leaves the selection and the panel where the test expects them, whatever the
+// previous test left behind.
 const selectNode = async (id) => {
 	await tapScope();
 	await tapNode(id);
@@ -229,9 +229,9 @@ await test('a function box is its name and nothing else', async () => {
 		|| `the box reads ${JSON.stringify(lines.slice(0, 2))}`;
 });
 
-// The runtime's name for a literal - the enclosing function and a counter -
-// identifies it without describing it, so the signature is the one thing that
-// says what it is.
+// The runtime's name for a literal is the enclosing function and a counter. It
+// identifies the function without describing it, so the signature is the one thing
+// that does.
 await test('unless it is a literal, which has only a signature to go on', async () => {
 	await borrowAsFunction({
 		kind: 'function', anonymous: true, title: 'app.NewServer', subtitle: 'app.(*Server)',
@@ -255,7 +255,7 @@ await test('and a rule is drawn across each one', async () => {
 });
 
 // The image is stretched over the box, so a guess at the box's size slides the
-// lines - and slides the lower ones furthest.
+// lines. It slides the lower ones furthest.
 await test('the rules image is sized to the box it is stretched over', async () => {
 	const [uri, w, h] = await ev(`(() => {
 		const n = godi.cy.getElementById(${JSON.stringify(SERVER)});
@@ -412,8 +412,8 @@ await test('a service is headed by the type it provides', async () => {
 });
 
 // The qualified type and factory used to sit here. A generic names its type
-// arguments in full, so those rows ran to several lines to say what the heading
-// already said plus where it lives - which is all the package says, on one line.
+// arguments in full, so those rows ran to several lines and mostly repeated the
+// heading. The package says the rest of it on one line.
 await test('the package sits in a labelled row under the heading', async () =>
 	eq(await ev(`(() => {
 		const dl = document.querySelector('#panel dl');
@@ -437,8 +437,8 @@ await test('the signature is shortened throughout', async () => {
 		|| `the signature reads ${JSON.stringify(shown)}`;
 });
 
-// Shortening is for reading; the qualified form is still the answer to "which
-// app package", so it stays a hover away.
+// Shortening is for reading. The qualified form is still the answer to "which app
+// package", so it stays a hover away.
 await test('and the whole of it is still there on hover', async () => {
 	const full = await ev(`document.querySelector('#panel .sig').title`);
 	return full === 'func(github.com/acme/app.Handler[github.com/acme/app.Request], app.Logger) github.com/acme/app.(*Server)'
@@ -706,8 +706,8 @@ await test('the samples are the colours the graph actually uses', async () => {
 
 // The tab rides on the panel's edge rather than the window's, so it has to move
 // when the panel opens.
-// Only the Head section is about heads; elsewhere an arrow would draw the eye
-// to the wrong channel.
+// Only the Head section is about heads. Elsewhere an arrow would draw the eye to the
+// wrong channel.
 await test('only the head section draws arrowheads', async () =>
 	eq(await ev(`[...document.querySelectorAll('#legend .legend-group')].map(g =>
 		[g.querySelector('.legend-head').firstChild.textContent, g.querySelectorAll('.sample .head').length])`),
@@ -1204,9 +1204,9 @@ await test('dragging the grip widens the panel', async () => {
 // Cytoscape measures its container once and then watches only the window, so
 // without being told, the canvas keeps the width it had and everything on it
 // lands in the wrong place.
-// Cytoscape watches its own container, so nothing here has to tell it - but if
-// that ever stopped being true the graph would be drawn at the wrong size, and
-// this is the only place it would show.
+// Cytoscape watches its own container, so nothing here has to tell it. If that ever
+// stopped being true, the graph would be drawn at the wrong size, and this is the
+// only place it would show.
 await test('and the drawing follows the space it has', async () => {
 	// The drawing surface, not the element around it: cy.width() reads the
 	// container live and so agrees either way, while the <canvas> layers keep
@@ -1262,9 +1262,9 @@ await test('double-clicking the grip puts the default back', async () => {
 
 // Reported: a long type in "Used by" ran off the side and the panel grew a
 // horizontal scrollbar. Everything in there is a name of some kind and names are
-// unbroken words, so the check is over the whole panel and every view of it
-// rather than the one row that was reported - and at the narrowest the panel
-// goes, since a reader who wants more room can drag it wider.
+// unbroken words, so the check is over the whole panel and every view of it rather
+// than the one row that was reported. It runs at the narrowest the panel goes,
+// since a reader who wants more room can drag it wider.
 await test('nothing in the panel scrolls it sideways', async () => {
 	await dragGrip(2000); // As narrow as the grip allows.
 
@@ -1372,9 +1372,9 @@ await test('a named value is headed by its name, and says its signature once', a
 		'the value block, which must not repeat the heading');
 });
 
-// A literal has no name of its own - the runtime's is the enclosing function and
-// a counter - so its signature heads it and the made-up name is what the block
-// adds. The two used to run together into one paragraph of monospace.
+// A literal has no name of its own. The runtime's is the enclosing function and a
+// counter, so the signature heads it and the made-up name is what the block adds.
+// The two used to run together into one paragraph of monospace.
 await test('and an anonymous one is headed by its signature, naming the literal below', async () => {
 	await asValue({ fromValue: true, anonymous: true, name: 'github.com/acme/app.build.func1' });
 	const lines = await sigLines();
@@ -1755,10 +1755,10 @@ await test('the hop limit follows the wiring, not the drawing', async () => {
 	return !dim.includes('root/svc:app.(*Config)') || 'Config is still dim at two hops';
 });
 
-// Repo and Router both take the Config, and neither knows about the other. A
-// walk that follows both directions at once gets from one to the other by going
-// down to the Config and back up, and calls that two hops - but a sibling is not
-// on any path through the selection.
+// Repo and Router both take the Config, and neither knows about the other. A walk
+// that follows both directions at once gets from one to the other by going down to
+// the Config and back up, and calls that two hops. A sibling is not on any path
+// through the selection.
 await test('a hop never turns around: siblings are not neighbours', async () => {
 	await selectNode('root/svc:app.(*Repo)');
 	await setHops(2);
@@ -1815,8 +1815,8 @@ await test('and a remembered line routing is drawn after one', async () => {
 // page never derived anything from. Headless Chrome does not do it, so the same
 // situation is set up by hand: the slider is moved off its default and the
 // search box filled in the markup, while the label beside the slider still reads
-// what it always did - which is exactly what restoration leaves behind, since an
-// <output> is not a form control and does not come back with the rest.
+// what it always did. That is what restoration leaves behind: an <output> is not a
+// form control and does not come back with the rest.
 await test('the controls are read at load rather than assumed', async () => {
 	const restored = pagePath.replace(/\.html$/, '-restored.html');
 	const before = readFileSync(pagePath, 'utf8');
@@ -1860,8 +1860,8 @@ const clickRelayout = async () => {
 
 // Reported: isolating a selection and then picking another service left the
 // survivors scattered across the layout of the whole container, with their scope
-// box stretched over the gaps to reach them - and pressing re-layout was the
-// only way to get a picture back.
+// box stretched over the gaps to reach them. Pressing re-layout was the only way to
+// get a picture back.
 //
 // Asserted against re-layout rather than against a number: whatever the right
 // arrangement is, selecting must already have produced it, so the button has
@@ -1957,7 +1957,7 @@ await test('a graph taken mid-build says so across the top', async () => {
 });
 
 // Two facts, either of which can be true on its own, so they are two strips and
-// both are up at once - stacked in the order the reader needs them: what the
+// both are up at once. They are stacked in the order the reader needs: what the
 // graph is, then what is wrong with it.
 await test('a graph that is both unfinished and faulty says both, one under the other', async () => {
 	const strips = await ev(`[...document.querySelectorAll('.strip')].map((el) => ({
@@ -2049,10 +2049,10 @@ await test('an argument nothing has wired yet says so, rather than saying none',
 
 // Reported twice: isolating a selection on a container with scopes inside
 // scopes left the root box stretched down over a screenful of nothing. The
-// scopes that had been emptied were the cause - Cytoscape stops drawing one
-// whose children are all hidden, so it looks gone, but it goes on counting
-// towards the box of the scope holding it, from wherever the last layout left
-// it. On the reporter's graph that was 1640px of empty space.
+// scopes that had been emptied were the cause. Cytoscape stops drawing one whose
+// children are all hidden, so it looks gone, but it goes on counting towards the box
+// of the scope holding it, from wherever the last layout left it. On the reporter's
+// graph that was 1640px of empty space.
 
 await ev(`location.href = ${JSON.stringify('file://' + scopesPath)}`);
 await sleep(500);

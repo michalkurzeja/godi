@@ -17,22 +17,22 @@ var (
 )
 
 // Inlining a bundle redistributes it, and the MIT licence asks that the notice
-// travels with the copy. All of them begin with their own header except dagre,
-// so its is prepended here rather than left in a file nobody receives.
+// travels with the copy. All of them carry their own header except dagre, so its
+// header is prepended here.
 const dagreNotice = "/*! dagre 3.0.0 | (c) 2012-2014 Chris Pettitt | MIT" +
 	" | https://github.com/dagrejs/dagre */\n"
 
 // scripts returns the bundles the page needs, in load order: the renderer, then
 // whichever layout engine was asked for, then the viewer itself.
 //
-// Only the chosen engine is inlined. Graphviz is by far the larger of the two,
-// so a page laid out by dagre is a fraction of the size.
+// Only the chosen engine is inlined. Graphviz is much the larger of the two, so a
+// page laid out by dagre is a fraction of the size.
 func (cfg config) scripts() []string {
 	out := []string{cytoscapeJS}
 
 	if cfg.layout == Dagre {
-		// cytoscape-dagre registers itself with the global cytoscape, so the
-		// order matters: renderer first, then the engine, then the adapter.
+		// cytoscape-dagre registers itself with the global cytoscape, so the order
+		// matters: renderer first, then the engine, then the adapter.
 		out = append(out, dagreNotice+dagreJS, cytoscapeDagreJS)
 	} else {
 		out = append(out, vizJS)

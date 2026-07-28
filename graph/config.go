@@ -5,7 +5,7 @@ import "reflect"
 // Config tells the extractor what to put in the graph. Build it with NewConfig,
 // or leave it zero for the defaults.
 //
-// It says nothing about which nodes to keep: a source is asked for the whole
+// It says nothing about which nodes to keep. A source is asked for the whole
 // graph, and narrowing it is a separate step. See Filter and Graph.Select.
 type Config struct {
 	// Literals says how much of a literal argument to put in the graph.
@@ -17,21 +17,20 @@ type Config struct {
 	Redactor func(typ reflect.Type, value any) (replacement string, redact bool)
 }
 
-// LiteralMode says how much of a literal argument a graph carries. Two
-// independent flags could contradict each other, and only one of the three
-// states they describe is worth having.
+// LiteralMode says how much of a literal argument a graph carries. It is one
+// setting rather than two flags, which could contradict each other.
 type LiteralMode uint8
 
 const (
-	// LiteralTypes carries the type of each literal and not its value. The
-	// default: literals routinely carry connection strings and API keys, and
+	// LiteralTypes carries the type of each literal and not its value. It is the
+	// default, because literals often carry connection strings and API keys, and
 	// graphs get committed and pasted into issues.
 	LiteralTypes LiteralMode = iota
 	// LiteralValues carries the values too.
 	//
-	// Values that format as a machine address - a func, a channel, a plain
-	// pointer - are left out even so, unless the type formats itself: an
-	// address says nothing and differs on every run.
+	// Values that format as a machine address are left out even so, unless the
+	// type formats itself. A func, a channel or a plain pointer prints an
+	// address, which says nothing and differs on every run.
 	LiteralValues
 	// LiteralNone leaves literal arguments out of the graph entirely.
 	LiteralNone
@@ -52,7 +51,7 @@ func NewConfig(opts ...Option) Config {
 // WithLiteralValues includes literal argument values, truncated to maxRunes.
 // Pass zero or less for no truncation.
 //
-// Consider what ends up in the output before turning this on: a literal is often
+// Consider what ends up in the output before turning this on. A literal is often
 // a DSN or a token.
 func WithLiteralValues(maxRunes int) Option {
 	return func(cfg *Config) {

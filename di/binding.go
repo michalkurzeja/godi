@@ -7,11 +7,8 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// BindOrigin tells who created an InterfaceBinding. Unlike a Slot, a binding
-// never exists before something creates it, so there is no "none" origin.
-//
-// It is the binding half of what ArgOrigin says about an argument, and a
-// compiler pass reads it for the same reason.
+// BindOrigin tells who created an InterfaceBinding. There is no "none" origin: a
+// binding does not exist until something creates it.
 type BindOrigin uint8
 
 const (

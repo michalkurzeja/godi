@@ -1,14 +1,16 @@
 // Package dot encodes a dependency graph as Graphviz DOT.
 //
 // Scopes become nested clusters, each service becomes a table with one row per
-// constructor argument, and every edge lands on the row it feeds - so what is
-// passed where is visible without reading a legend.
+// constructor argument, and every edge lands on the row it feeds. What is passed
+// where is then visible without reading a legend.
 //
-// Provenance uses two independent channels. The arrowhead says how the
-// dependency was matched: a point for an exact type, a diamond for anything that
-// went through an interface binding. The colour says who decided on it - you,
-// godi, or a compiler pass - which for a binding means whoever created the
-// binding. The line style repeats who wired the argument itself.
+// Provenance uses two independent channels. The arrowhead says how the dependency
+// was matched: a point for an exact type, a diamond for anything that went
+// through an interface binding.
+//
+// The colour says who decided on it: you, godi, or a compiler pass. For a binding
+// that means whoever created the binding. The line style repeats who wired the
+// argument itself.
 package dot
 
 import (
@@ -101,8 +103,8 @@ func (p *printer) preamble() {
 }
 
 func (p *printer) scope(g *graph.Graph, scope *graph.Scope) {
-	// A child scope's label already reads as a sentence; a bare scope name does
-	// not, so it is said what it is.
+	// A child scope's label already reads as a sentence. A bare scope name does
+	// not, so it is labelled as a scope.
 	label := scope.Label()
 	if scope.Owner == "" {
 		label = "scope: " + label
@@ -145,8 +147,8 @@ func (p *printer) node(node *graph.Node) {
 		penWidth = "2.4" // Built during Build, not on demand.
 	}
 
-	// Nothing injects a root, so it is the top of a tree. The fill says so:
-	// border width and style are already spoken for by lazy and shared.
+	// Nothing injects a root, so it is the top of a tree. The fill says so,
+	// because border width and style are already taken by lazy and shared.
 	fill := p.palette.nodeFill
 	if node.Root {
 		fill = p.palette.rootFill
@@ -199,8 +201,9 @@ func (p *printer) nodeTooltip(node *graph.Node) string {
 	return sb.String()
 }
 
-// nodeLabel builds an HTML-like table. Record shapes are not an option: their
-// structure characters collide with Go type syntax ("interface {}", "chan<- T").
+// nodeLabel builds an HTML-like table. Record shapes are not an option, because
+// their structure characters collide with Go type syntax ("interface {}",
+// "chan<- T").
 func (p *printer) nodeLabel(node *graph.Node) string {
 	var sb strings.Builder
 	sb.WriteString(`<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">`)
@@ -230,8 +233,8 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 		}
 	}
 
-	// A filter stopped here rather than the wiring, and a picture that does not
-	// say so reads as the whole story.
+	// A filter stopped here rather than the wiring. A picture that does not say
+	// so reads as the whole story.
 	if node.Elided > 0 {
 		p.labelRow(&sb, "", small(8, p.palette.muted, esc(fmt.Sprintf("⋯ +%d more", node.Elided))))
 	}
@@ -271,7 +274,7 @@ func (p *printer) paramText(param *graph.Param) string {
 	}
 
 	// A constant produces no edge, so the row is the only place its provenance
-	// can show. Without this, an argument a pass substituted looks hand-written.
+	// can show. Without it, an argument a pass substituted looks hand-written.
 	if param.EdgeCount == 0 && param.Origin == graph.ArgOriginCompilerPass {
 		sb.WriteString(" ← " + param.OriginPass)
 	}
@@ -308,7 +311,7 @@ func (p *printer) edge(edge *graph.Edge) {
 		fmt.Sprintf("class=%s", quote(edgeClasses(edge))),
 	}
 	if edge.ID != "" {
-		// Graphviz copies id and class into the SVG, which is what lets the HTML
+		// Graphviz copies id and class into the SVG. That is what lets the HTML
 		// viewer join the drawing back to the model it was drawn from.
 		attrs = append(attrs, fmt.Sprintf("id=%s", quote(string(edge.ID))))
 	}
@@ -367,12 +370,12 @@ func arrowHead(edge *graph.Edge) string {
 	return "normal"
 }
 
-// edgeColour reinforces the arrowhead: it says who decided on this particular
-// dependency. That is whoever created the binding it resolved through, and
-// otherwise whoever wired the argument.
+// edgeColour reinforces the arrowhead. It says who decided on this particular
+// dependency: whoever created the binding it resolved through, and otherwise
+// whoever wired the argument.
 //
-// Arrowheads are small, so the colour carries the same distinction again rather
-// than repeating what the line style already shows.
+// Arrowheads are small, so the colour repeats that distinction rather than the
+// one the line style already shows.
 func (p *printer) edgeColour(edge *graph.Edge) string {
 	if edge.Cycle {
 		return p.palette.warn
@@ -435,18 +438,18 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 	return sb.String()
 }
 
-// notices draws everything worth saying about the graph that is not in it:
-// what the extractor could not make sense of, and what is odd about the picture
-// itself. A drawing that leaves the record out is the one place a reader would
-// never think to look for it.
+// notices draws everything worth saying about the graph that is not in it: what
+// the extractor could not make sense of, and what is odd about the picture
+// itself. A drawing that leaves that out is the last place a reader would think
+// to look for it.
 func (p *printer) notices(g *graph.Graph) {
-	// Escaped a line at a time, then joined with a break: inside an HTML-like
-	// label a newline is just whitespace, and <BR/> is the only line ending.
+	// Escaped a line at a time, then joined with a break. Inside an HTML-like
+	// label a newline is only whitespace, and <BR/> is the only line ending.
 	notices := g.AllDiagnostics()
 	lines := make([]string, 0, len(notices)+3)
 
-	// A half-wired picture looks exactly like a finished one with dependencies
-	// missing, so the drawing has to say which it is.
+	// A half-wired picture looks like a finished one with dependencies missing,
+	// so the drawing has to say which it is.
 	if g.Partial() {
 		lines = append(lines, esc("snapshot: "+g.Snapshot.Label()))
 		if len(g.Snapshot.Done) > 0 {
@@ -470,11 +473,11 @@ func (p *printer) notices(g *graph.Graph) {
 	p.printf("\t}\n")
 }
 
-// legend draws one real edge per channel, rather than describing them: the point
-// of a key is to show the mark, which no amount of prose replaces.
+// legend draws one real edge per channel rather than describing them. The point of
+// a key is to show the mark.
 //
-// The two channels are independent. The head says how the dependency was
-// matched; the colour says who decided on it.
+// The two channels are independent. The head says how the dependency was matched.
+// The colour says who decided on it.
 func (p *printer) legend(g *graph.Graph) {
 	rows := []struct {
 		style, arrow, colour, penWidth, text string
@@ -494,11 +497,11 @@ func (p *printer) legend(g *graph.Graph) {
 		from, to := legendAnchor(i), legendCaptionNode(i)
 
 		// An anchor with no shape, so the sample reads as a free-standing arrow.
-		// It matches the caption's height so that both columns span the same
-		// distance and every arrow comes out level.
+		// It matches the caption's height, so both columns span the same distance
+		// and every arrow comes out level.
 		p.printf("\t\t%s [shape=none, style=\"\", label=\"\", width=0.02, height=%s];\n", from, legendRowHeight)
 		// Every caption is boxed to the same width, so every sample arrow comes
-		// out the same length: dot centres a node within its rank, and a short
+		// out the same length. dot centres a node within its rank, so a short
 		// caption would otherwise be pushed away from its own arrow.
 		p.printf("\t\t%s [shape=plaintext, style=\"\", height=%s, label=%s];\n", to, legendRowHeight, legendCaption(row.text, p.palette.text))
 		// The weight asks dot to keep the sample level rather than let it slope
@@ -509,7 +512,7 @@ func (p *printer) legend(g *graph.Graph) {
 
 	// Pin both columns. Without this the rows come out in whatever order the
 	// layout settles on, and a row whose two halves land at different heights
-	// gets a sloping arrow. Chaining last to first puts row zero at the top.
+	// gets a sloping arrow. Chaining last to first puts row zero on top.
 	p.orderColumn(len(rows), legendAnchor)
 	p.orderColumn(len(rows), legendCaptionNode)
 
@@ -520,9 +523,9 @@ func (p *printer) legend(g *graph.Graph) {
 
 // orderColumn fixes the top-to-bottom order of one column of the key.
 //
-// minlen=0 matters: dot reserves room to route an edge between two nodes of the
-// same rank, and at the default it pads the rows apart by a third of an inch
-// each for edges that are never drawn.
+// minlen=0 matters. dot reserves room to route an edge between two nodes of the
+// same rank, and at the default it pads the rows a third of an inch apart for
+// edges that are never drawn.
 func (p *printer) orderColumn(rows int, name func(int) string) {
 	p.printf("\t\t{ rank=same; ")
 	for i := rows - 1; i >= 0; i-- {
@@ -536,10 +539,12 @@ func (p *printer) orderColumn(rows int, name func(int) string) {
 
 // reserveLegendRanks keeps the key out of the graph's own columns.
 //
-// Ranks are global in dot, so without this the legend's two columns are as far
+// Ranks are global in dot. Without this the legend's two columns end up as far
 // apart as the widest service table in the graph, and the sample arrows come out
-// several inches long. Holding every source node back by two ranks leaves the
-// first two columns to the legend alone, which is what makes its arrows short.
+// several inches long.
+//
+// Holding every source node back by two ranks leaves the first two columns to the
+// legend, which keeps its arrows short.
 func (p *printer) reserveLegendRanks(g *graph.Graph) {
 	p.printf("\t%s [style=invis, shape=point, width=0.01, height=0.01];\n", legendPad)
 
@@ -572,7 +577,7 @@ func (p *printer) printf(format string, args ...any) {
 }
 
 // clip keeps a long signature from stretching a node across the page. The full
-// text stays in the tooltip.
+// text is still in the tooltip.
 func (p *printer) clip(s string) string {
 	return render.Ellipsis(s, p.cfg.maxLabel)
 }
@@ -599,23 +604,23 @@ func small(size int, colour, content string) string {
 }
 
 // esc escapes text going into an HTML-like label. Go signatures are full of
-// characters that would otherwise be read as markup: "chan<- int" breaks a
+// characters that would otherwise be read as markup, and "chan<- int" breaks a
 // label without it.
 //
-// The backslash goes first: Graphviz substitutes \N, \G and friends inside
+// The backslash goes first. Graphviz substitutes \N, \G and friends inside
 // HTML-like labels just as it does in quoted strings, so a literal such as
-// `C:\Notes` would otherwise silently become the node's own name.
+// `C:\Notes` would otherwise become the node's own name.
 func esc(s string) string {
 	return html.EscapeString(strings.ReplaceAll(s, `\`, `\\`))
 }
 
-// quote renders a DOT quoted string. The backslash must be escaped before the
-// quote, or an intentional escape would be doubled - and a literal containing
-// "\N" would otherwise be substituted with the node's name by Graphviz.
+// quote renders a DOT quoted string. The backslash is escaped before the quote,
+// or an intentional escape would be doubled. Graphviz would also substitute the
+// node's name for a literal "\N".
 func quote(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
-	// Left-justify multi-line text; a trailing \l keeps the last line aligned.
+	// Left-justify multi-line text. A trailing \l keeps the last line aligned.
 	s = strings.ReplaceAll(s, "\n", `\l`)
 	return `"` + s + `"`
 }

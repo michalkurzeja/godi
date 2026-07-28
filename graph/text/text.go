@@ -1,12 +1,12 @@
 // Package text encodes a dependency graph as plain text.
 //
-// It is the format for reading a container in a terminal, in a log, or in a
-// test failure: an indented outline of the scopes, what is registered in each,
-// and where every argument comes from. Nothing here needs a tool to look at.
+// It is the format for reading a container in a terminal, in a log, or in a test
+// failure: an indented outline of the scopes, what is registered in each, and
+// where every argument comes from. Nothing here needs a tool to look at.
 //
-// Where the other encoders draw the wiring, this one states it. Each argument
-// row says what was declared, what it resolved to, and who decided - so the
-// same three questions the picture answers are answerable without one.
+// Where the other encoders draw the wiring, this one states it. Each argument row
+// says what was declared, what it resolved to, and who decided, so the picture's
+// three questions are answerable without the picture.
 package text
 
 import (
@@ -54,8 +54,8 @@ func (p *printer) printf(format string, args ...any) {
 	_, _ = fmt.Fprintf(p.w, format, args...)
 }
 
-// linef writes one indented line. Indentation is the whole of the structure
-// here, so it goes through one place.
+// linef writes one indented line. Indentation is the whole of the structure here,
+// so it goes through one place.
 func (p *printer) linef(depth int, format string, args ...any) {
 	p.printf("%s%s\n", strings.Repeat("  ", depth), fmt.Sprintf(format, args...))
 }
@@ -99,9 +99,9 @@ func (p *printer) summary(g *graph.Graph) string {
 	}, ", ")
 }
 
-// snapshot says the container was still being built when this was taken. It
-// goes directly under the counts, because those counts are the first thing a
-// half-wired graph misleads you about.
+// snapshot says the container was still being built when this was taken. It goes
+// directly under the counts, which are the first thing a half-wired graph
+// misleads you about.
 func (p *printer) snapshot(g *graph.Graph) {
 	if !g.Partial() {
 		return
@@ -139,7 +139,7 @@ func (p *printer) scope(g *graph.Graph, scope *graph.Scope, depth int) {
 	p.nodes(g, "functions", functions, depth+1)
 
 	// Nested, because a child scope is only reachable through the definition
-	// that declared it, and the indentation is what says so.
+	// that declared it. The indentation says so.
 	for _, child := range g.ChildScopes(scope.ID) {
 		p.scope(g, child, depth+1)
 	}

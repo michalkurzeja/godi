@@ -21,13 +21,13 @@ import (
 //		})).
 //		Build()
 //
-// The graph says which passes had run when it was taken, so wiring a later pass
-// would have added does not read as wiring that is missing.
+// The graph says which passes had run when it was taken, so wiring that a later
+// pass would add does not read as wiring that is missing.
 //
-// Stages run in order, and passes within a stage in priority order, so the
-// stage - with WithPriority where a stage is not precise enough - is what
-// chooses the moment. An error from capture fails the build, like any other
-// pass.
+// Stages run in order, and passes within a stage in priority order, so the stage
+// chooses the moment. Use WithPriority where a stage is not precise enough.
+//
+// An error from capture fails the build, like any other pass.
 func CaptureGraph(stage di.CompilerStage, capture func(*graph.Graph) error, opts ...graph.Option) *di.CompilerPass {
 	return di.NewCompilerPass("graph snapshot", stage, di.CompilerOpFunc(func(builder *di.ContainerBuilder) error {
 		if capture == nil {

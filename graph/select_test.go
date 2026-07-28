@@ -238,7 +238,7 @@ func TestFocusFollowsBothDirectionsAsFarAsTheyGo(t *testing.T) {
 }
 
 // The same rule the viewer's hop slider follows. A sibling shares a dependency
-// and nothing else; it is not on any path through the selection.
+// and nothing else. It is not on any path through the selection.
 func TestAHopNeverTurnsAround(t *testing.T) {
 	t.Parallel()
 
@@ -278,7 +278,7 @@ func TestFocusSaysHowManyNeighboursItCutOff(t *testing.T) {
 }
 
 // An exclusion is a node the caller named. Its absence is not news, so nothing
-// is said about it - unlike a limit, which stops somewhere arbitrary.
+// is said about it. A limit is different: it stops somewhere arbitrary.
 func TestAnExclusionSaysNothing(t *testing.T) {
 	t.Parallel()
 
@@ -354,8 +354,8 @@ func TestMaxNodesKeepsTheMostConnected(t *testing.T) {
 
 	got := model().Select(graph.MaxNodes(3))
 
-	// Server has three edges, the Config and the Router two each; the tie goes
-	// to the lower ID so that the same graph always yields the same view.
+	// Server has three edges, the Config and the Router two each. The tie goes to
+	// the lower ID, so the same graph always yields the same view.
 	require.ElementsMatch(t, []string{server, config, router}, ids(got))
 	require.Equal(t, 2, node(t, got, server).Elided, "the Conn and the logger")
 	require.Equal(t, 1, node(t, got, config).Elided, "the Repo")

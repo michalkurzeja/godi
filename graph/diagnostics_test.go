@@ -40,9 +40,9 @@ func TestWiringFaultsAreReadOffTheParameters(t *testing.T) {
 	require.Equal(t, graph.SeverityInfo, all[2].Severity)
 }
 
-// Before autowiring has run every argument is unwired, so an unfilled one is
-// work outstanding rather than a fault - the same gate that decides whether a
-// node is drawn as incomplete.
+// Before autowiring has run every argument is unwired, so an unfilled one is work
+// outstanding rather than a fault. It is the same gate that decides whether a node
+// is drawn as incomplete.
 func TestAnUnwiredArgumentIsNoFaultUntilAutowiringHasRun(t *testing.T) {
 	t.Parallel()
 

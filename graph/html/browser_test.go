@@ -57,8 +57,8 @@ func TestViewerRegressions(t *testing.T) {
 
 	// Not under t.TempDir: Chrome goes on writing to its profile for a moment
 	// after it is killed, and t.TempDir fails the test when what it removes is
-	// not empty - so a suite that passed reported a red build. Cleaning it up is
-	// ours to do, and best effort, because a stray profile is not worth that.
+	// not empty, so a suite that passed reported a red build. Cleaning it up is
+	// ours to do, and best effort: a stray profile is not worth failing over.
 	profile, err := os.MkdirTemp("", "godi-viewer-profile-")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(profile) })
@@ -320,10 +320,11 @@ func snapshotModel() *graph.Graph {
 		Arg:    graph.ArgKindNone,
 		Note:   "argument is not wired",
 	}}
-	// Both set by the extractor from the argument above; written down here
-	// because this fixture is built by hand. The notice the page lists for it is
-	// not: the graph reads that off the parameter, which is what keeps the count
-	// and the red borders from disagreeing.
+	// Both are set by the extractor from the argument above, and written down here
+	// because this fixture is built by hand.
+	//
+	// The notice the page lists is not written down. The graph reads it off the
+	// parameter, which is what keeps the count and the red borders in step.
 	metrics.Incomplete = true
 
 	// About the graph rather than the container, with no node to be marked on -
@@ -340,9 +341,9 @@ func snapshotModel() *graph.Graph {
 //
 // What it is for: isolating the selection below leaves whole scopes with nothing
 // on show. Cytoscape stops drawing such a scope, so it looks gone, but it goes
-// on counting towards the box of the scope holding it - from wherever the layout
-// of the whole container left it. On a real graph that stretched the root box
-// down over a screenful of empty space.
+// on counting towards the box of the scope holding it, from wherever the layout of
+// the whole container left it. On a real graph that stretched the root box down
+// over a screenful of empty space.
 //
 // Selecting app.(*Worker) reaches app.(*Queue) and nothing else, so both child
 // scopes empty out and the root box has to close up around the two survivors.

@@ -9,13 +9,14 @@ import (
 	"github.com/michalkurzeja/godi/v2/graph"
 )
 
-// -open writes the graph out and hands it to the desktop. A browser cannot be
-// handed bytes, so the page goes to a file first, created private to you
-// because a graph asked for literal values carries whatever those literals are.
-// The operating system clears it up in its own time.
+// -open writes the graph out and hands it to the desktop.
 //
-// It lives in the example rather than in godi: a program that draws a graph is
-// welcome to start a browser, and a library nobody asked to do that is not.
+// A browser cannot be handed bytes, so the page goes to a file first. The file is
+// readable only by you, because a graph asked for literal values carries whatever
+// those literals are. The operating system clears it up in its own time.
+//
+// It lives in the example rather than in godi. A program that draws a graph may
+// start a browser; a library nobody asked to do that may not.
 func openGraphFile(g *graph.Graph, enc graph.Encoder) (string, error) {
 	path, err := writeToTmpFile(g, enc)
 	if err != nil {

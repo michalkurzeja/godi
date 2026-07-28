@@ -75,10 +75,11 @@ func registered(loc di.Location) graph.Location {
 	return graph.Location{File: loc.File, Line: loc.Line, Func: loc.Func}
 }
 
-// implementation is how the model names whatever provides a service. The engine
-// picks it - the factory, or the value when the service was registered as one -
-// and this is the display half: a name a reader would recognise, and a
-// signature rather than a type.
+// implementation is how the model names whatever provides a service.
+//
+// The engine picks which it is: the factory, or the value when the service was
+// registered as one. This is the display half, a name a reader would recognise
+// and a signature rather than a type.
 func implementation(def *di.ServiceDefinition) (name, signature string, at graph.Location) {
 	implName, typ, loc := def.Implementation()
 	if typ == nil {
@@ -89,9 +90,9 @@ func implementation(def *di.ServiceDefinition) (name, signature string, at graph
 
 // funcSignature is what a function takes and returns, as Go would write it.
 //
-// Not the value's own type, which for a service registered as a value is
-// usually a named one - and a name is exactly what a signature is not. Rebuilt
-// unnamed, which leaves an ordinary factory's type as it already was.
+// Not the value's own type. For a service registered as a value that is usually a
+// named type, and a name is what a signature is not. The type is rebuilt unnamed,
+// which leaves an ordinary factory's type as it already was.
 func funcSignature(typ reflect.Type) string {
 	in := make([]reflect.Type, typ.NumIn())
 	for i := range in {
@@ -105,8 +106,8 @@ func funcSignature(typ reflect.Type) string {
 }
 
 // trimMethodWrapper is what to call a function. A method value is a wrapper the
-// compiler writes, and it names it after the method with a suffix of its own;
-// the method is what the reader means.
+// compiler writes, named after the method with a suffix of its own. The method is
+// what the reader means.
 func trimMethodWrapper(name string) string {
 	return strings.TrimSuffix(name, "-fm")
 }

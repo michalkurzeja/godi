@@ -9,10 +9,11 @@ import (
 	"github.com/michalkurzeja/godi/v2/di"
 )
 
-// BasePasses is exported and nothing could consume it: a pass had no way to
+// BasePasses was exported with nothing able to consume it. A pass had no way to
 // find out what it runs beside, and a CompilerPass would not say its own name,
-// stage or priority. Reading the pipeline is now possible; replacing it is
-// still not, which is deliberate.
+// stage or priority.
+//
+// The pipeline can be read now. It still cannot be replaced, which is deliberate.
 func TestAPassCanSeeWhatItRunsBeside(t *testing.T) {
 	t.Parallel()
 

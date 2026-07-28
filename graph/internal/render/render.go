@@ -15,16 +15,16 @@ import (
 // Names without a package path, such as "string" or "[]int", are returned as
 // they are.
 //
-// Every path in the string goes, not just one. A signature can carry several -
-// a generic instantiation names its type arguments, and a binding onto more
-// than one implementation records them together - and shortening only the last
-// would leave the rest with their paths still on.
+// Every path in the string goes, not just one. A signature can carry several: a
+// generic instantiation names its type arguments, and a binding onto more than one
+// implementation records them together. Shortening only the last would leave the
+// rest qualified.
 func Short(signature string) string {
 	var sb strings.Builder
 
 	// Anything that is not part of a path is type syntax and has to stay:
 	// "[]github.com/acme/app.T" must keep its brackets. So the string is walked
-	// in runs, and only the runs that hold a path are cut.
+	// in runs, and only the runs holding a path are cut.
 	for i := 0; i < len(signature); {
 		if !isPathByte(signature[i]) {
 			sb.WriteByte(signature[i])
@@ -50,9 +50,9 @@ func Short(signature string) string {
 // Package is the import path of the first qualified name in a signature:
 // "[]github.com/acme/app.(*Server)" gives "github.com/acme/app".
 //
-// The first, because that is the type itself - the ones after it belong to a
-// generic's type arguments, or to a map's key. Anything unqualified, a builtin
-// or a bare func type, has no package and gives "".
+// The first, because that is the type itself. The ones after it belong to a
+// generic's type arguments, or to a map's key. Anything unqualified, such as a
+// builtin or a bare func type, gives "".
 func Package(signature string) string {
 	for i := 0; i < len(signature); {
 		if !isPathByte(signature[i]) {
@@ -65,8 +65,8 @@ func Package(signature string) string {
 			i++
 		}
 
-		// The path ends at its last slash; the name it qualifies starts at the
-		// first dot after that. Everything before is the package - dots and all,
+		// The path ends at its last slash, and the name it qualifies starts at the
+		// first dot after that. Everything before is the package, dots and all,
 		// since "github.com" has one of its own.
 		run := signature[start:i]
 		slash := strings.LastIndexByte(run, '/')
@@ -85,7 +85,7 @@ func isPathByte(b byte) bool {
 	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
 		return true
 	default:
-		// The slash among them, so a whole import path is one run.
+		// The slash is one of them, so a whole import path is a single run.
 		return strings.IndexByte("./-_~+", b) >= 0
 	}
 }
@@ -97,7 +97,7 @@ func Ellipsis(s string, maxRunes int) string {
 		return s // Fits as it is, ellipsis included.
 	}
 
-	// Leave room for the ellipsis, so the result still fits the budget.
+	// Leave room for the ellipsis, so the result still fits the limit.
 	clipped, _ := util.Truncate(s, maxRunes-1)
 	return clipped + "…"
 }

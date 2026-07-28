@@ -15,10 +15,11 @@ type CompilerPass struct {
 	priority int
 	op       CompilerOp
 
-	// seq is when this pass was added, and the last word on the order two
-	// passes run in. Sorting is not stable, and stability would say nothing
-	// across repeated sorts of a slice that has grown in between, so the order
-	// the docs promise is written down rather than hoped for.
+	// seq is when this pass was added. It is the last word on the order two
+	// passes run in.
+	//
+	// The sort is not stable, and the queue is re-sorted whenever a pass is
+	// added, so the order has to be recorded rather than relied on.
 	seq int
 
 	argOrigin  ArgOrigin  // What a slot filled by this pass means.
@@ -40,24 +41,25 @@ func (p *CompilerPass) WithPriority(priority int) *CompilerPass {
 	return p
 }
 
-// withArgOrigin marks the arguments this pass fills as one of godi's own
-// behaviours rather than a third-party extension. Unexported on purpose:
-// reading provenance is open to a pass, claiming godi's own is not.
+// withArgOrigin marks the arguments this pass fills as godi's own automation
+// rather than a third-party extension.
+//
+// It is unexported on purpose. A pass may read an origin. It may not claim one
+// of godi's.
 func (p *CompilerPass) withArgOrigin(origin ArgOrigin) *CompilerPass {
 	p.argOrigin = origin
 	return p
 }
 
-// withBindOrigin marks the bindings this pass creates as one of godi's own
-// behaviours rather than a third-party extension.
+// withBindOrigin marks the bindings this pass creates as godi's own automation
+// rather than a third-party extension.
 func (p *CompilerPass) withBindOrigin(origin BindOrigin) *CompilerPass {
 	p.bindOrigin = origin
 	return p
 }
 
-// Name is what the pass is called. It is not unique and not stable: two passes
-// may share a name, so it is worth reading and worth printing, and never worth
-// identifying a pass by.
+// Name is what the pass is called. Names are neither unique nor stable, so print
+// it but never identify a pass by it.
 func (p *CompilerPass) Name() string {
 	return p.name
 }
@@ -172,17 +174,16 @@ func comparePasses(a, b *CompilerPass) int {
 type Compiler struct {
 	passes Passes
 	// pending holds the passes a running pass registered. They join the queue
-	// once it returns, rather than being appended to a slice the loop has
-	// already taken the header of and would never look at again.
+	// once that pass returns.
 	pending Passes
-	// added counts the passes registered so far, and is what each of them is
-	// stamped with.
+	// added counts the passes registered so far. Each pass is stamped with it.
 	added int
 
 	// running is the pass in progress, done names the ones that have finished,
-	// and failed the one that stopped compilation. A graph taken mid-build is
-	// only readable if it says how much of the wiring had happened, and this is
-	// where that is known.
+	// and failed the one that stopped compilation.
+	//
+	// A graph taken mid-build reports all three. Without them it reads as a
+	// finished container with wiring missing.
 	running   *CompilerPass
 	done      []string
 	failed    string
@@ -197,9 +198,10 @@ func NewCompiler(conf CompilerConfig) *Compiler {
 	return c
 }
 
-// AddPass registers a pass. Called from inside a pass - which is a fair thing
-// to want: discover the services, then schedule work over them - the new pass
-// joins the queue as soon as the one adding it returns.
+// AddPass registers a pass.
+//
+// A pass may call this while it runs, to schedule work over what it found. The
+// new pass joins the queue as soon as the one adding it returns.
 func (c *Compiler) AddPass(pass *CompilerPass) {
 	pass.seq = c.added
 	c.added++
@@ -211,14 +213,12 @@ func (c *Compiler) AddPass(pass *CompilerPass) {
 	c.passes = append(c.passes, pass)
 }
 
-// Passes yields the passes registered so far, in the order they were added.
-// Sorting into running order happens when the compiler runs, so a pass reading
-// this mid-run sees the queue as it stands, including itself.
+// Passes yields the passes registered so far, in the order they were added. The
+// compiler sorts them into running order when it runs, so a pass reading this
+// mid-run sees the queue as it stands, itself included.
 //
-// It is there to be read. What the built-in passes do is godi's own, and
-// turning behaviour off is expressed where it belongs - per definition, with
-// NotAutowired and Lazy, and per container with SkipCycleValidation - rather
-// than by dismantling the pipeline.
+// There is no way to remove a pass. Turn behaviour off per definition with
+// NotAutowired or Lazy, or per container with SkipCycleValidation.
 func (c *Compiler) Passes() iter.Seq[*CompilerPass] {
 	return func(yield func(*CompilerPass) bool) {
 		for _, pass := range c.passes {
@@ -240,8 +240,8 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	// Whatever is already wired, the user wired: the passes have not run yet.
 	c.creditPendingWiring(builder.container, ArgOriginManual, BindOriginManual, "")
 
-	// By index, and re-reading the length: a pass may add a pass, and ranging
-	// would take the slice header once and never see it.
+	// By index, re-reading the length: a pass may add a pass, and range would
+	// take the slice header once.
 	for i := 0; i < len(c.passes); i++ {
 		pass := c.passes[i]
 
@@ -249,14 +249,14 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		err := pass.Run(builder)
 		c.running = nil
 		if err != nil {
-			// Kept, because the builder is still standing and its graph is the
-			// picture of exactly how far the container got.
+			// Kept: the builder still stands, and its graph shows how far the
+			// container got.
 			c.failed = pass.name
 			return errorsx.Wrapf(err, "compiler pass (%s) returned an error", pass)
 		}
 		c.done = append(c.done, pass.name)
-		// Asked of the pass rather than of its name: what a pass fills is what
-		// it says it fills, and nothing stops a user calling theirs "autowiring".
+		// Asked of the pass, not of its name. Nothing stops a user calling their
+		// own pass "autowiring".
 		c.autowired = c.autowired || pass.argOrigin == ArgOriginAutowiring
 		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 
@@ -269,14 +269,13 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	return nil
 }
 
-// schedulePending puts the passes that pass registered into the queue, keeping
-// what is left of it in order. next is where the part that has not run yet
+// schedulePending puts the passes that pass registered into the queue, and keeps
+// the part of the queue that has not run in order. next is where that part
 // begins.
 //
-// A pass whose place is behind the one that added it is refused: running it now
-// would run the stages out of order, and running it "later" would not be the
-// place it asked for. There is no honest answer to "insert me before the pass
-// that is already running".
+// A pass whose place is behind the one that added it is refused. Running it now
+// would run the stages out of order, and running it later is not the place it
+// asked for.
 func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
 	if len(c.pending) == 0 {
 		return nil
@@ -296,9 +295,11 @@ func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
 	return nil
 }
 
-// CompilerProgress says how far compilation has got. Anything reading a
-// container mid-compilation needs it: wiring a later pass would have added is
-// simply not there yet, and without this it reads as wiring that is missing.
+// CompilerProgress says how far compilation has got.
+//
+// Anything reading a container mid-compilation needs it. Wiring that a later
+// pass would add is not there yet, and without this it reads as wiring that is
+// missing.
 type CompilerProgress struct {
 	// Stage in progress, and Pass within it. Both are empty outside a pass.
 	Stage string
@@ -327,11 +328,11 @@ func (c *Compiler) Progress() CompilerProgress {
 	return p
 }
 
-// creditPendingWiring names whoever is responsible for the wiring changed since
-// the last call, and only that wiring: each pass is credited with its own work
-// and nothing else. Running it before the first pass, and again after each one,
-// is what tells a hand-written argument apart from one godi or an extension
-// supplied.
+// creditPendingWiring names whoever changed the wiring since the last call, and
+// only that wiring. Each pass is credited with its own work.
+//
+// It runs before the first pass and again after each one. That is what tells an
+// argument the user wired from one a pass wired.
 func (c *Compiler) creditPendingWiring(container *Container, args ArgOrigin, binds BindOrigin, pass string) {
 	for slot := range container.slotsSeq() {
 		if slot.dirty {

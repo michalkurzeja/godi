@@ -8,10 +8,9 @@ import (
 	"github.com/michalkurzeja/godi/v2/di"
 )
 
-// Discovering what is registered and then scheduling work over it is a fair
-// thing for a pass to want, and AddPass is reachable from inside one - so it
-// has to do something. It used to do nothing at all, silently: the run had
-// already taken the slice header.
+// Discovering what is registered and then scheduling work over it is a fair thing
+// for a pass to want, and AddPass is reachable from inside one. It used to do
+// nothing at all, silently, because the run had already taken the slice header.
 func TestAPassCanAddAPass(t *testing.T) {
 	t.Parallel()
 
@@ -32,8 +31,8 @@ func TestAPassCanAddAPass(t *testing.T) {
 	require.True(t, ran, "the added pass never ran")
 }
 
-// A pass added at the stage that is already running is still to come, so it
-// runs - after the one that added it, which is where its place is.
+// A pass added at the stage that is already running is still to come, so it runs.
+// Its place is after the one that added it.
 func TestAPassAddedAtTheSameStageRunsAfterTheOneThatAddedIt(t *testing.T) {
 	t.Parallel()
 

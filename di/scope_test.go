@@ -16,10 +16,11 @@ type otherPlugin struct{}
 
 func newOtherPlugin() *otherPlugin { return &otherPlugin{} }
 
-// Two scopes of one name used to leave the container holding only the second.
-// The first went on existing in the parent tree, so nothing said anything, and
-// everything that walks the container - argument validation, eager
-// initialisation, the graph - simply never saw it again.
+// Two scopes of one name used to leave the container holding only the second. The
+// first went on existing in the parent tree, so nothing complained.
+//
+// Everything that walks the container then missed it: argument validation, eager
+// initialisation and the graph alike.
 func TestASecondScopeOfTheSameNameDoesNotReplaceTheFirst(t *testing.T) {
 	t.Parallel()
 

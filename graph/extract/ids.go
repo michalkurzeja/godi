@@ -12,9 +12,8 @@ import (
 
 // assignIDs walks the scope tree top down, naming every scope and definition.
 //
-// The container only keeps parent pointers, and a child scope's own name is the
-// uuid of the definition that declared it, so the tree is rebuilt here and child
-// scopes are named after their owner's node ID instead.
+// The container only keeps parent pointers, so the tree is rebuilt here. A child
+// scope's own name is a uuid, so it is named after its owner's node ID instead.
 func (x *extractor) assignIDs() {
 	owners := x.childScopeOwners()
 
@@ -36,8 +35,8 @@ func (x *extractor) assignIDs() {
 		}
 		x.assignScope(scope, parent+graph.ScopeID("/scope:"+scope.Name()), parent, depth, owners)
 		// Worth saying, because such a scope is drawn without an owner and
-		// there is nothing in the container to explain it. Not a fault: a
-		// compiler pass is entitled to make one.
+		// nothing in the container explains it. It is not a fault: a compiler
+		// pass is entitled to make one.
 		x.note(graph.SeverityInfo, graph.Diagnostic{
 			Scope:   x.scopeIDs[scope],
 			Message: fmt.Sprintf("scope %q belongs to no definition", scope.Name()),
@@ -77,7 +76,7 @@ func (x *extractor) assignScope(scope *di.Scope, id, parent graph.ScopeID, depth
 	}
 	x.out.Scopes = append(x.out.Scopes, entry)
 
-	// Name the definitions before recursing: a child scope is named after the
+	// Name the definitions before recursing. A child scope is named after the
 	// node that declared it.
 	for def := range scope.ServiceDefinitionsSeq() {
 		nodeID := x.mint(id, "svc", util.Signature(def.Type()), def.Labels())
@@ -112,11 +111,12 @@ func (x *extractor) ownerID(owner any) graph.NodeID {
 	return ""
 }
 
-// ownerName is what to call the definition that declared a scope: the same
-// thing a node of it is called, a service by the type it provides and a
-// function by its name. Recorded on the scope because a node ID is built to be
-// unique rather than to be read, and because the owner may itself be filtered
-// out of a graph that still has to name the scope it left behind.
+// ownerName is what to call the definition that declared a scope. It is what a
+// node of it is called: a service by the type it provides, a function by its name.
+//
+// It is recorded on the scope for two reasons. A node ID is built to be unique
+// rather than readable, and the owner may be filtered out of a graph that still
+// has to name the scope it left behind.
 func (x *extractor) ownerName(owner any) string {
 	switch def := owner.(type) {
 	case *di.ServiceDefinition:
@@ -136,8 +136,8 @@ func (x *extractor) depthOf(id graph.ScopeID) int {
 	return 0
 }
 
-// mint builds a readable, build-stable node ID. Definition uuids are regenerated
-// on every build, so they would make the output impossible to diff or compare.
+// mint builds a readable, build-stable node ID. Definition uuids are new on every
+// build, so an ID made from one could not be diffed or compared.
 func (x *extractor) mint(scope graph.ScopeID, kind, name string, labels []di.Label) graph.NodeID {
 	var sb strings.Builder
 	sb.WriteString(string(scope))

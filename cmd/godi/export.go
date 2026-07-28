@@ -203,8 +203,8 @@ func (o *htmlOptions) encoder() (graph.Encoder, error) {
 	opts := []html.Option{html.Title(o.title), html.Theme(theme), html.Layout(layout)}
 	if o.link != "" {
 		// An unknown name is taken as a template of the reader's own, which is
-		// what SourceLink documents. Only a name that looks like neither is a
-		// mistake worth reporting.
+		// what SourceLink documents. Only a name that looks like neither is worth
+		// reporting.
 		template, ok := html.EditorLink(o.link)
 		if !ok {
 			if !strings.Contains(o.link, "{file}") {
@@ -219,9 +219,9 @@ func (o *htmlOptions) encoder() (graph.Encoder, error) {
 	return html.New(opts...), nil
 }
 
-// The values each choice flag takes, written down once: the parser below, the
-// usage line and the shell completion all read these, and a test checks that
-// everything offered is something a parser accepts.
+// The values each choice flag takes, written down once. The parser below, the usage
+// line and the shell completion all read these, and a test checks that everything
+// offered is something a parser accepts.
 var (
 	rankDirs   = []string{"LR", "TB"}
 	dotThemes  = []string{"light", "dark"}
@@ -230,7 +230,7 @@ var (
 	layouts    = []string{"graphviz", "dagre"}
 )
 
-// orList reads them out the way a sentence wants: "LR or TB", "auto, on or off".
+// orList reads them out as a sentence would: "LR or TB", "auto, on or off".
 func orList(values []string) string {
 	if len(values) < 2 {
 		return strings.Join(values, "")

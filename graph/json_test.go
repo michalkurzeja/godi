@@ -164,9 +164,9 @@ func TestMetadataComesBackWithTheGraph(t *testing.T) {
 	require.False(t, md.WrittenAt.IsZero())
 }
 
-// The library and the CLI are installed separately and will drift. The model
-// grows by adding fields, so an unrecognised schema is nearly always still worth
-// reading - and a build that already failed is a bad moment to refuse.
+// The library and the CLI are installed separately and will drift. The model grows
+// by adding fields, so an unrecognised schema is nearly always still worth reading.
+// A build that already failed is a bad moment to refuse.
 func TestAnUnknownSchemaIsAWarningNotAFailure(t *testing.T) {
 	t.Parallel()
 

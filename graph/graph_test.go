@@ -47,7 +47,7 @@ func TestLiteralsTextRunsThemTogether(t *testing.T) {
 }
 
 // A pass can be responsible in either of two ways, and the answer is the same
-// either way - so no encoder has to know which happened.
+// either way, so no encoder has to know which happened.
 func TestPassCreditNamesWhicheverPassWasResponsible(t *testing.T) {
 	t.Parallel()
 
@@ -225,8 +225,8 @@ func TestANodeKnowsWhichPackageItBelongsTo(t *testing.T) {
 			pkg,
 		},
 		{
-			// A service can be of a builtin type; the factory that made it
-			// still lives somewhere.
+			// A service can be of a builtin type. The factory that made it still
+			// lives somewhere.
 			"a service of no package, from its factory",
 			graph.Node{Kind: graph.NodeService, Type: "string", Name: pkg + ".NewGreeting"},
 			pkg,

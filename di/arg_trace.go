@@ -5,8 +5,7 @@ import (
 	"slices"
 )
 
-// ArgKind names what kind of argument something is, for anything reporting on
-// the wiring rather than running it.
+// ArgKind is the kind of an argument. The dependency graph reports it.
 type ArgKind uint8
 
 const (
@@ -29,9 +28,10 @@ const (
 	ResolutionByLabel
 )
 
-// ArgFaultKind says why an argument matched nothing. Whether that is worth
-// reporting is the reader's decision: an argument that may legitimately match
-// nothing is still a fault-free one.
+// ArgFaultKind is why an argument matched nothing.
+//
+// Not every fault is worth reporting. A label that matches nothing inside a
+// compound that did resolve is not a problem, so the caller decides.
 type ArgFaultKind uint8
 
 const (
@@ -41,7 +41,8 @@ const (
 	ArgFaultCircularBinding
 )
 
-// ArgFault is why an argument matched nothing, with whatever names it.
+// ArgFault is why an argument matched nothing, and the type or label it looked
+// for.
 type ArgFault struct {
 	Kind  ArgFaultKind
 	Type  reflect.Type
@@ -51,8 +52,8 @@ type ArgFault struct {
 // BindingHop is one interface binding an argument resolved through.
 type BindingHop struct {
 	Interface reflect.Type
-	// Scope is the scope that declared the binding, which is not necessarily
-	// the one resolving the argument.
+	// Scope is the scope that declared the binding. It is not always the scope
+	// that resolves the argument.
 	Scope      *Scope
 	Origin     BindOrigin
 	OriginPass string
@@ -61,13 +62,11 @@ type BindingHop struct {
 // ArgTrace is how an argument resolved: what it matched, by which mechanism,
 // and through which interface bindings.
 //
-// It is what resolution discards. Resolving produces the value and forgets how
-// it got there; anything describing the wiring - the dependency graph above all
-// - needs the how, and asking the argument is the alternative to walking the
-// kinds a second time somewhere else and drifting.
+// Resolving an argument returns its value. It does not say how the value was
+// found. The dependency graph needs that, so a trace records it.
 //
-// The shape mirrors the resolution: Parts holds the sub-arguments of a compound
-// and the argument a binding led to, in the order they were tried.
+// Parts holds sub-arguments, in the order they were tried: the parts of a
+// compound, or the argument a binding points to.
 type ArgTrace struct {
 	Kind ArgKind
 	// Value is the literal itself, for ArgKindLiteral.
@@ -92,8 +91,10 @@ func TraceArg(scope *Scope, arg Arg) ArgTrace {
 }
 
 // tracePath is where a trace has got to: the bindings followed to reach the
-// current argument, and the interfaces already followed, so that a binding
-// pointing back at itself is reported rather than followed forever.
+// current argument, and the interfaces already followed.
+//
+// The interfaces are kept so that a binding pointing back at itself is reported
+// instead of followed forever.
 type tracePath struct {
 	hops []BindingHop
 	seen []reflect.Type
@@ -103,8 +104,8 @@ func (p tracePath) followed(typ reflect.Type) bool {
 	return slices.Contains(p.seen, typ)
 }
 
-// through extends the path with a binding. Both slices are copied on append, so
-// that sibling sub-arguments of a compound cannot write into each other.
+// through extends the path with a binding. Both slices are copied, so sibling
+// sub-arguments of a compound cannot write into each other's path.
 func (p tracePath) through(typ reflect.Type, bindScope *Scope, binding *InterfaceBinding) tracePath {
 	hop := BindingHop{
 		Interface:  binding.Interface(),
@@ -132,8 +133,8 @@ func (t *ArgTrace) matchType(scope *Scope, typ reflect.Type, path tracePath, by 
 	}
 }
 
-// follow traces the argument a binding points at, unless following it would go
-// round in a circle.
+// follow traces the argument a binding points at. It stops if the binding leads
+// back to an interface already followed.
 func (t *ArgTrace) follow(scope *Scope, typ reflect.Type, bindScope *Scope, binding *InterfaceBinding, path tracePath) {
 	if path.followed(typ) {
 		t.Fault = ArgFault{Kind: ArgFaultCircularBinding, Type: typ}

@@ -90,8 +90,8 @@ func TestTheGraphIsExtractedOnEveryRequest(t *testing.T) {
 	require.Equal(t, 3, src.calls)
 }
 
-// Whatever reads the model - another tool, a future live preview - should not
-// have to scrape it out of the page.
+// Whatever reads the model, such as another tool or a future live preview, should
+// not have to scrape it out of the page.
 func TestTheModelIsServedAsJSON(t *testing.T) {
 	t.Parallel()
 

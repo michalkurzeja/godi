@@ -5,9 +5,9 @@ const $ = (id) => document.getElementById(id);
 const data = JSON.parse($('godi-data').textContent);
 const engine = document.documentElement.dataset.layout;
 
-// Node labels are laid out by hand rather than wrapped, so that the line a
-// given argument sits on is known: that is what lets an edge leave the node at
-// the row it feeds instead of from the middle of the box.
+// Node labels are laid out by hand rather than wrapped, so the line a given
+// argument sits on is known. That is what lets an edge leave the node at the row
+// it feeds instead of from the middle of the box.
 const FONT = 11;
 const LINE_HEIGHT = 1.3;
 const LINE = FONT * LINE_HEIGHT;
@@ -36,15 +36,14 @@ for (const e of data.edges) {
 const scopes = new Map(data.scopes.map((s) => [s.id, s]));
 const roots = data.nodes.filter((n) => n.root).length;
 
-// How many edges a node has before any filtering, which is what tells a node a
-// filter stripped bare from one that never had a connection at all.
+// How many edges a node has before any filtering. It tells a node a filter
+// stripped bare from one that never had a connection.
 const wired = new Map(data.nodes.map((n) =>
 	[n.id, (out.get(n.id) || []).length + (into.get(n.id) || []).length]));
 
-// The path to a scope, a step at a time. Each step is the definition that
-// declared it rather than its full label: "children of" is worth saying once
-// beside a box, but a path of them repeats the phrase at every level and buries
-// the names it is there to show.
+// The path to a scope, a step at a time. Each step is the definition that declared
+// it rather than its full label. "children of" is worth saying once beside a box,
+// but a path of them buries the names it is there to show.
 function scopePath(id) {
 	const parts = [];
 	for (let s = scopes.get(id); s; s = s.parent ? scopes.get(s.parent) : null) {
@@ -53,31 +52,30 @@ function scopePath(id) {
 	return parts.join(' › ') || id;
 }
 
-// Only an extension is worth naming. godi's own automation runs under a pass
-// too, but "autowiring (autowiring)" tells the reader nothing. "none" is the
-// one origin whose name says nothing at all: nobody has wired the argument yet.
+// Only an extension is worth naming. godi's own automation runs under a pass too,
+// and "autowiring (autowiring)" says nothing. "none" needs its own wording: it
+// means nobody has wired the argument yet.
 const named = (origin, pass) => {
 	if (origin === 'none') return 'not wired';
 	return origin === 'compiler-pass' && pass ? origin + ': ' + pass : origin;
 };
 const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 
-// What a node is headed by, and what a box has room to put under it. Both are
-// worked out in the model and arrive ready to print: what to call a node is the
-// same question in every format, and the page used to answer it a second time
-// in here.
+// The model works out what a node is headed by and what goes under it, so every
+// format gives the same answer. Both arrive ready to print.
 //
-// Which nodes get the second line is this page's own business, though. A box is
-// smaller than a drawing, so only a function literal earns one: everything else
-// is named by the line above, and a factory the reader did not ask about is
-// worth less than the room it takes.
+// Which nodes get the second line is this page's own business. A box is smaller
+// than a drawing, so only a function literal earns one. Everything else is named
+// by the line above.
 const displaySub = (n) => n.anonymous ? n.subtitle : '';
 
-// short drops the package path from every qualified name in a signature,
-// keeping the last segment of each. The same rule graph/internal/render applies
-// in Go, and for the same reason: a signature can carry several paths - a
-// generic names its type arguments - and shortening around only the last slash
-// would leave the rest qualified, or cut away the type syntax in front of it.
+// short drops the package path from every qualified name in a signature, keeping
+// the last segment of each. It is the same rule graph/internal/render applies in
+// Go.
+//
+// Every path goes, not just one. A signature can carry several, since a generic
+// names its type arguments, and shortening around only the last slash would leave
+// the rest qualified.
 const PATH_BYTE = /[A-Za-z0-9./\-_~+]/;
 
 function short(sig) {
@@ -105,8 +103,8 @@ const clip = (s, max = MAX_CHARS) => s.length <= max ? s : s.slice(0, max - 1) +
 const state = {
 	query: '',
 	focus: null,
-	// The whole subtree by default: a selection you cannot see the far end of
-	// is the more common disappointment, and the slider is right there.
+	// The whole subtree by default. Not seeing the far end of a selection is the
+	// more common disappointment, and the slider is right there.
 	hops: Infinity,
 	dir: 'both',
 	isolate: false,
@@ -117,8 +115,8 @@ const state = {
 	wheel: 'auto',
 	show: { manual: true, autowiring: true, 'compiler-pass': true, method: true },
 	// What a search looks at. A type and a factory name are what people reach
-	// for; the rest widen the net when they need to, and would only add noise
-	// by default.
+	// for. The rest widen the net when they need to, and would add noise by
+	// default.
 	scopes: {
 		type: true, factory: true, args: false, literals: false,
 		methods: false, scope: false, labels: false,
@@ -128,13 +126,14 @@ const state = {
 const ROUTINGS = ['unbundled-bezier', 'straight', 'segments', 'taxi'];
 const WHEELS = ['auto', 'mouse', 'trackpad'];
 
-// What the reader chose last time, read before anything is derived from it. The
-// text a search looks at and the style the canvas is drawn with are both built
-// from state, and neither is rebuilt on its own: a preference restored after the
-// fact leaves a control saying one thing while the page does another.
+// What the reader chose last time, read before anything is derived from it.
 //
-// The colour scheme is not here because it is not just state - it is classes on
-// the page and a restyle - so installTheme applies it whole.
+// The text a search looks at and the style the canvas is drawn with are both built
+// from state, and neither is rebuilt on its own. A preference restored after the
+// fact would leave a control saying one thing while the page does another.
+//
+// The colour scheme is not here. It is classes on the page as well as state, so
+// installTheme applies it whole.
 function restorePreferences() {
 	const oneOf = (key, allowed, fallback) => {
 		const stored = recall(key);
@@ -151,8 +150,8 @@ function restorePreferences() {
 
 restorePreferences();
 
-// The text of a node, in whichever parts are being searched. Built once per
-// node and kept until the scopes change: it is read on every keystroke.
+// The text of a node, in whichever parts are being searched. It is read on every
+// keystroke, so it is built once per node and kept until the scopes change.
 let haystacks = new Map();
 
 function rebuildHaystacks() {
@@ -182,15 +181,16 @@ function rebuildHaystacks() {
 const isMethod = (p) => p.kind === 'method-arg' || p.kind === 'method-receiver';
 
 // shown reports whether an injection point belongs in the picture at all.
-// Hiding method calls has to drop their rows too, not just their edges: a row
-// nothing can arrive at is worse than no row.
+//
+// Hiding method calls drops their rows as well as their edges. A row nothing can
+// arrive at explains nothing.
 const shownParam = (p) => state.args && (state.show.method || !isMethod(p));
 
 function rows(n) {
 	const lines = [];
-	// A root is the top of a tree, and a function is a function; a root
-	// function wears both. A node missing something it needs wears nothing: the
-	// red border says it, and a second mark in the title only crowds it.
+	// A root is the top of a tree, and a function is a function. A root function
+	// wears both marks. A node missing something it needs wears none: the red
+	// border already says so.
 	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
 	const heading = n.title;
 	const sub = displaySub(n);
@@ -207,8 +207,9 @@ function rows(n) {
 	};
 
 	// A rule between the header, the constructor arguments and the method calls.
-	// It goes in the label because a Cytoscape node has nowhere else to draw -
-	// and the ports follow on their own, since each one is read off the line its
+	// It goes in the label because a Cytoscape node has nowhere else to draw.
+	//
+	// The ports follow on their own, since each one is read off the line its
 	// argument ends up on.
 	const section = (params) => {
 		const shown = params.filter(shownParam);
@@ -226,7 +227,7 @@ function rows(n) {
 	section((n.params || []).filter(isMethod));
 
 	// A filter stopped here rather than the wiring. A box that does not say so
-	// reads as a service with nothing else around it.
+	// reads as a service with nothing around it.
 	if (n.elided) {
 		rules.push(lines.length);
 		lines.push('');
@@ -246,12 +247,12 @@ function rowOffset(layout, paramID) {
 
 const layouts = new Map();
 
-// The rules, drawn rather than typed, so they can take the border's colour
+// The rules are drawn rather than typed, so they can take the border's colour
 // instead of the text's. One image per node, sized to that node's own box.
 //
-// The box is measured rather than assumed: the image is stretched over whatever
-// Cytoscape actually laid out, so a guess that is off by a few pixels does not
-// slide the lines - and slides the lower ones furthest.
+// The box is measured rather than assumed. The image is stretched over whatever
+// Cytoscape laid out, so a guess a few pixels out does not slide the lines, which
+// it would do most to the lower ones.
 function ruleImage(layout, colour, width, height) {
 	if (!layout.rules.length) return 'none';
 
@@ -270,7 +271,7 @@ function ruleImage(layout, colour, width, height) {
 		` height="${height.toFixed(2)}" viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}">` +
 		`<g stroke="${colour}" stroke-width="1">${drawn}</g></svg>`;
 
-	// charset, not ";utf8": the latter is not a valid data URI parameter and the
+	// charset, not ";utf8". The latter is not a valid data URI parameter, and the
 	// browser refuses the image outright.
 	return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
@@ -289,9 +290,9 @@ function paintRules() {
 	});
 }
 
-// Everything about a node's box that depends on its rows, in one place: the
-// three callers are the first build, a change of what is shown, and a change of
-// colour scheme.
+// Everything about a node's box that depends on its rows, in one place. The three
+// callers are the first build, a change of what is shown, and a change of colour
+// scheme.
 function boxOf(n) {
 	const layout = rows(n);
 	layouts.set(n.id, layout);
@@ -326,9 +327,9 @@ function buildElements() {
 				id: e.id, source: e.from, target: e.to,
 				origin: e.origin, decidedBy: e.decidedBy, kind: e.kind,
 				bound: !!e.bindInterface, cycle: !!e.cycle,
-				// A pass is named however it was responsible: it may have wired
+				// A pass is named however it was responsible. It may have wired
 				// the argument, or created the binding the argument resolved
-				// through. The colour says a pass decided; this says which.
+				// through. The colour says a pass decided, and this says which.
 				label: e.pass || '',
 				offset: rowOffset(layouts.get(e.from), e.param),
 			},
@@ -340,9 +341,9 @@ function buildElements() {
 
 // ------------------------------------------------------------------ colours ---
 
-// Cytoscape draws to a canvas, so it cannot read CSS variables. They are
-// resolved here instead and re-read whenever the colour scheme changes, which
-// is what makes switching themes instant.
+// Cytoscape draws to a canvas, so it cannot read CSS variables. They are resolved
+// here instead, and re-read whenever the colour scheme changes. That is what makes
+// switching themes instant.
 function palette() {
 	const css = getComputedStyle(document.documentElement);
 	const v = (name) => css.getPropertyValue(name).trim();
@@ -354,9 +355,10 @@ function palette() {
 	};
 }
 
-// The two channels are independent, as in the DOT output: the arrowhead says
-// how the dependency was matched, the colour says who decided on it. The
-// filters key off the same field, so what is drawn purple is what the compiler
+// The two channels are independent, as in the DOT output. The arrowhead says how
+// the dependency was matched, and the colour says who decided on it.
+//
+// The filters key off the same field, so what is drawn purple is what the compiler
 // pass box hides.
 function edgeColour(p) {
 	const of = { manual: p.manual, autowiring: p.auto, 'compiler-pass': p.pass };
@@ -372,12 +374,12 @@ function stylesheet() {
 			selector: 'node', style: {
 				shape: 'round-rectangle',
 				// Nothing injects a root, so it is the top of a tree. The fill
-				// says so: width and style already mean lazy and shared, and a
-				// root is not a problem, so it gets no warning colour.
+				// says so, because width and style already mean lazy and shared.
+				// A root is not a problem, so it gets no warning colour.
 				'background-color': (n) => n.data('root') ? p.rootNode : p.node,
-				// The warning colour outranks everything: a node missing what it
-				// needs is the one thing worth finding at a glance, and the
-				// border is the only channel loud enough to say so.
+				// The warning colour outranks everything else. A node missing
+				// what it needs is the one thing worth finding at a glance, and
+				// the border is the only channel loud enough to say it.
 				'border-color': (n) => n.data('incomplete') ? p.warn : p.nodeBorder,
 				'border-width': (n) => n.data('incomplete') ? 2.6 : (n.data('lazy') ? 1 : 2.2),
 				'border-style': (n) => n.data('kind') === 'service' && !n.data('shared') ? 'dashed' : 'solid',
@@ -387,8 +389,8 @@ function stylesheet() {
 				'font-size': FONT,
 				'line-height': LINE_HEIGHT,
 				// "wrap" is what honours the newlines in the label. With "none"
-				// the whole box collapses onto one line. Lines are clipped to a
-				// known length already, so the max width never actually bites.
+				// the whole box collapses onto one line. Lines are already
+				// clipped to a known length, so the max width never bites.
 				'text-wrap': 'wrap',
 				'text-max-width': 1000,
 				'text-justification': 'left',
@@ -417,8 +419,8 @@ function stylesheet() {
 		{
 			selector: 'edge', style: {
 				// Curved by default. Boxy routes from the node's centre and then
-				// joins the argument row with a stub, which draws a spike back
-				// up the box; the others leave the row directly.
+				// joins the argument row with a stub, which draws a spike back up
+				// the box. The others leave the row directly.
 				'curve-style': state.routing,
 				// A plain bezier is drawn straight unless the edge is one of
 				// several between the same pair, so a curve has to be asked for
@@ -449,13 +451,13 @@ function stylesheet() {
 		// Cytoscape marks a held background with a grey disc under the pointer,
 		// which reads as something having gone wrong.
 		{ selector: 'core', style: { 'active-bg-opacity': 0, 'active-bg-size': 0 } },
-		// Dimmed is still readable, and still there to be clicked: what is not in
-		// the selection is context, not clutter, and a reader who can see what
-		// else is in the container can pick their next node out of it. Isolate
-		// selection is the switch for wanting them gone.
+		// Dimmed is still readable and still there to be clicked. What is not in
+		// the selection is context rather than clutter, and a reader can pick
+		// their next node out of it. Isolate selection is the switch for wanting
+		// it gone.
 		{ selector: 'node.dim', style: { opacity: 0.3 } },
-		// Edges are the part that reads as noise when it is not about the
-		// selection, so they fade much further, and their labels go entirely.
+		// Edges read as noise when they are not about the selection, so they fade
+		// much further and their labels go entirely.
 		{ selector: 'edge.dim', style: { opacity: 0.13, 'text-opacity': 0 } },
 		{ selector: 'node.match', style: { 'border-color': p.accent, 'border-width': 2.4 } },
 		{ selector: 'node.sel', style: { 'border-color': p.accent, 'border-width': 3.4 } },
@@ -470,8 +472,8 @@ const cy = cytoscape({
 	style: stylesheet(),
 	layout: { name: 'preset' },
 	boxSelectionEnabled: false,
-	// The wheel is handled below: what it should do depends on whether the
-	// hand on it is holding a mouse or resting on a trackpad.
+	// The wheel is handled below. What it should do depends on whether the hand
+	// on it is holding a mouse or resting on a trackpad.
 	userZoomingEnabled: false,
 });
 
@@ -510,9 +512,9 @@ function runLayout(options) {
 
 // graphvizLayout asks Graphviz where the nodes go, then puts them there.
 //
-// The DOT it builds is a request for geometry, not a drawing: sizes, nesting
-// and edges, with no colour or label in it. The sizes have to come from
-// Cytoscape, because Cytoscape is what draws the boxes.
+// The DOT it builds is a request for geometry rather than a drawing: sizes,
+// nesting and edges, with no colour or label in it. The sizes have to come from
+// Cytoscape, because Cytoscape draws the boxes.
 async function graphvizLayout() {
 	const shown = cy.nodes(':childless:visible');
 	if (shown.empty()) return;
@@ -554,9 +556,9 @@ function layoutDot(shown) {
 
 	const children = (scope) => data.scopes.filter((s) => s.parent === scope.id);
 
-	// A scope with nothing on show is left out rather than emitted empty:
-	// Graphviz reserves room for an empty cluster, and the room it reserved was
-	// a hole in the middle of a filtered graph.
+	// A scope with nothing on show is left out rather than emitted empty.
+	// Graphviz reserves room for an empty cluster, and that room came out as a
+	// hole in the middle of a filtered graph.
 	const occupied = (scope) =>
 		(inScope.get('scope:' + scope.id) || []).length > 0 || children(scope).some(occupied);
 
@@ -595,15 +597,17 @@ function found() {
 	return hit;
 }
 
-// neighbourhood walks outwards from the selection, following only the edges
-// still on show: hiding a kind of wiring hides what it reached.
+// neighbourhood walks outwards from the selection, following only the edges still
+// on show. Hiding a kind of wiring hides what it reached.
 //
 // Each direction is walked on its own, and the two results are put together.
-// Following both at once would let a path turn around partway - down to a
-// dependency, then back up to something else that uses it - which reaches the
-// selection's siblings and calls them two hops away. They are not on any path
-// through it, and the reader asked what this service is built from and what
-// uses it, not what its dependencies are shared with.
+// Following both at once would let a path turn around partway: down to a
+// dependency, then back up to something else that uses it. That reaches the
+// selection's siblings and calls them two hops away.
+//
+// They are not on any path through the selection. The reader asked what this
+// service is built from and what uses it, not what its dependencies are shared
+// with.
 function neighbourhood(id, live) {
 	const walk = (adjacent, far) => {
 		const seen = new Set([id]);
@@ -627,13 +631,13 @@ function neighbourhood(id, live) {
 	return seen;
 }
 
-// apply is the single place anything becomes hidden, dimmed or marked. It
-// returns whether the set of visible elements changed, because that is when the
-// graph is worth laying out again.
+// apply is the single place anything becomes hidden, dimmed or marked. It returns
+// whether the set of visible elements changed, which is when the graph is worth
+// laying out again.
 function apply() {
-	// What the wiring filters keep. Which nodes are on show is deliberately not
-	// consulted here: this set is what says whether a node has any wiring left,
-	// and hiding its neighbours is not the same as taking its wiring away.
+	// What the wiring filters keep. Which nodes are on show is not consulted
+	// here. This set says whether a node has any wiring left, and hiding its
+	// neighbours is not the same as taking its wiring away.
 	const passing = new Set();
 	for (const e of data.edges) {
 		if (e.decidedBy !== 'none' && !state.show[e.decidedBy]) continue;
@@ -642,9 +646,8 @@ function apply() {
 	}
 
 	// A node a wiring filter has stripped of every edge is an artefact of the
-	// filter rather than anything about the wiring, so it goes with them. A node
-	// that never had an edge at all is a finding in its own right - an unwired
-	// service - so it stays.
+	// filter, so it goes with them. A node that never had an edge is a finding of
+	// its own, an unwired service, so it stays.
 	const connected = new Set();
 	for (const id of passing) {
 		const e = edges.get(id);
@@ -653,9 +656,9 @@ function apply() {
 	}
 	const stranded = (id) => wired.get(id) > 0 && !connected.has(id);
 
-	// Hiding nodes outright is a different thing: the reader asked to see just
-	// these, so being left without visible neighbours is the point rather than
-	// fallout, and the rule above must not take them away again.
+	// Hiding nodes outright is a different thing. The reader asked to see just
+	// these, so having no visible neighbours is the point, and the rule above
+	// must not take them away again.
 	const hidden = new Set();
 	if (state.rootsOnly) {
 		for (const n of data.nodes) if (!n.root) hidden.add(n.id);
@@ -674,9 +677,8 @@ function apply() {
 	const outside = (id) => near !== null && !near.has(id);
 
 	// Which scopes still hold something, counted here rather than asked of the
-	// canvas: a node inside a scope that is off the canvas reads as hidden
-	// whatever its own state, so a scope taken away on one pass could never come
-	// back on the next.
+	// canvas. A node inside a hidden scope reads as hidden whatever its own state,
+	// so a scope taken away on one pass could never come back on the next.
 	const populated = new Set();
 	const populate = (id) => {
 		for (let s = scopes.get(id); s && !populated.has(s.id); s = s.parent ? scopes.get(s.parent) : null) {
@@ -707,8 +709,8 @@ function apply() {
 
 		// A scope left with nothing on show has to be taken off the canvas by
 		// name. Cytoscape stops drawing it once its children are hidden, so it
-		// looks gone - but it still counts towards the box of the scope holding
-		// it, from wherever the last layout left it. That is what stretched an
+		// looks gone, but it still counts towards the box of the scope holding it,
+		// from wherever the last layout left it. That is what stretched an
 		// isolated selection's root box down over empty space.
 		for (const scope of data.scopes) {
 			const el = cy.getElementById('scope:' + scope.id);
@@ -725,9 +727,9 @@ function apply() {
 		shownEdges + ' of ' + data.edges.length + ' edges',
 		roots + (roots === 1 ? ' root' : ' roots'),
 	];
-	// Every fault the extractor found is on the node it is about: a red border
-	// on the box, the reason on the argument row. A tally in the corner said
-	// how many without saying where, which is the half that is no use.
+	// Every fault the extractor found is on the node it is about: a red border on
+	// the box, the reason on the argument row. A tally in the corner would say how
+	// many without saying where.
 	const incomplete = cy.nodes(':childless:visible').filter((n) => n.data('incomplete')).length;
 	if (incomplete) counts.push(incomplete + ' incomplete');
 	$('counts').textContent = counts.join(' · ');
@@ -737,10 +739,11 @@ function apply() {
 
 // ---------------------------------------------------------------- snapshot ---
 
-// A graph taken while the container was still being built is missing whatever
-// the passes after it would have added. Nothing else on the page gives that
-// away - it looks like a finished container with dependencies lost - so it is
-// said once, across the top, where it applies to everything below.
+// A graph taken while the container was still being built is missing whatever the
+// passes after it would have added. It looks like a finished container with
+// dependencies lost, and nothing else on the page says otherwise.
+//
+// So it is said once, across the top, where it applies to everything below.
 function showSnapshot() {
 	const snap = data.snapshot;
 	if (!snap) return;
@@ -748,8 +751,8 @@ function showSnapshot() {
 	const strip = $('snapshot');
 	$('snapshot-label').textContent = 'Snapshot: ' + snap.label + '.';
 	strip.hidden = false;
-	// Read once and dismissed: it says the same thing all session, and the
-	// canvas is what the reader came for.
+	// Read once and dismissed. It says the same thing all session, and the canvas
+	// is what the reader came for.
 	$('snapshot-close').addEventListener('click', () => {
 		strip.hidden = true;
 		cy.resize();
@@ -758,11 +761,14 @@ function showSnapshot() {
 
 // ------------------------------------------------------------- diagnostics ---
 
-// Every fault in the wiring is marked on the node it is about. Not every notice
-// is a fault: a scope belonging to no definition, or a file written against a
-// schema this build does not know, is about the graph itself and has nowhere
-// else to go. So the strip says how many there are of each, and the panel -
-// which otherwise sits there asking to be given a node - lists them.
+// Every fault in the wiring is marked on the node it is about.
+//
+// Not every notice is a fault. A scope belonging to no definition, or a file
+// written against a schema this build does not know, is about the graph itself and
+// has nowhere else to go.
+//
+// So the strip says how many there are of each, and the panel lists them. With
+// nothing selected the panel has nothing else to show.
 function showDiagnostics() {
 	const diagnostics = data.diagnostics || [];
 	if (!diagnostics.length) return;
@@ -776,10 +782,10 @@ function showDiagnostics() {
 	});
 }
 
-// Counted by severity rather than totalled, because the two kinds of notice are
-// not the same news: a fault in the wiring is something to fix, and a note about
-// the graph - a scope a compiler pass made, a schema this build does not know -
-// is not. A strip saying "3 notices" would put them under one number.
+// Counted by severity rather than totalled, because the two kinds are not the same
+// news. A fault in the wiring is something to fix. A note about the graph, such as
+// a scope a compiler pass made, is not. "3 notices" would put both under one
+// number.
 function severityTally(diagnostics) {
 	const counts = new Map();
 	for (const d of diagnostics) counts.set(d.severity, (counts.get(d.severity) || 0) + 1);
@@ -792,11 +798,11 @@ function severityTally(diagnostics) {
 // ------------------------------------------------------------------ legend ---
 
 // Every way an edge can be drawn, in the three channels it is drawn with. The
-// samples take their colour from the same variables the canvas does, so the
-// legend cannot drift from the graph it explains.
-// Three channels, in columns. A cycle is not an answer to who chose an edge -
-// it overrides the colour outright - so it gets a section of its own rather
-// than sitting among the three that are.
+// samples take their colour from the same variables the canvas does, so the legend
+// cannot drift from the graph it explains.
+//
+// The three channels are columns. A cycle is not an answer to who chose an edge: it
+// overrides the colour outright, so it gets a section of its own.
 const LEGEND = [
 	[
 		{
@@ -930,8 +936,8 @@ function locationCell(loc) {
 }
 
 // copyIDButton takes the node's graph id away with you. The id itself is not
-// shown: it is long enough to wrap over several lines and there is nothing to
-// read in it - what it is for is pasting somewhere else.
+// shown. It wraps over several lines and there is nothing to read in it: it is for
+// pasting somewhere else.
 function copyIDButton(id) {
 	const button = make('button', 'copy');
 	button.type = 'button';
@@ -960,9 +966,8 @@ function icon(name) {
 	return svg;
 }
 
-// A page opened from disk is a secure context, so the clipboard is there - but
-// it is a permission like any other and can be refused, and then the old way
-// still works.
+// A page opened from disk is a secure context, so the clipboard is there. It is
+// still a permission and can be refused, and then the old way works.
 async function copy(text) {
 	try {
 		await navigator.clipboard.writeText(text);
@@ -984,9 +989,9 @@ async function copy(text) {
 	}
 }
 
-// The panel can be sent away for more canvas. It still fills itself while
-// hidden - building it costs nothing - so bringing it back shows the current
-// selection rather than whatever was there when it went.
+// The panel can be sent away for more canvas. It still fills itself while hidden,
+// which costs nothing, so bringing it back shows the current selection rather than
+// whatever was there when it went.
 function setPanel(open) {
 	$('app').classList.toggle('panel-hidden', !open);
 	$('panel-tab').title = open ? 'Hide the detail panel' : 'Show the detail panel';
@@ -995,8 +1000,8 @@ function setPanel(open) {
 
 const panelOpen = () => !$('app').classList.contains('panel-hidden');
 
-// The default width is the one the stylesheet declares, so the two cannot drift:
-// double-clicking the grip puts back whatever the page was built with.
+// The default width is the one the stylesheet declares, so the two cannot drift.
+// Double-clicking the grip puts back whatever the page was built with.
 const DEFAULT_PANEL_WIDTH = getComputedStyle($('app')).getPropertyValue('--panel-w').trim();
 
 // Narrow enough that a signature still wraps somewhere sensible, and never so
@@ -1008,7 +1013,7 @@ const maxPanelWidth = () => Math.max(MIN_PANEL_WIDTH, window.innerWidth * 0.8);
 
 // setPanelWidth takes a CSS length, or a number of pixels to be clamped.
 //
-// Nothing has to be told: the panel, the tab and the grip all follow the one
+// Nothing has to be notified. The panel, the tab and the grip all follow the one
 // property, and Cytoscape watches its own container for size changes.
 function setPanelWidth(width) {
 	if (typeof width === 'number') {
@@ -1056,8 +1061,8 @@ function installPanelResize() {
 		remember('godi.panelWidth', DEFAULT_PANEL_WIDTH);
 	});
 
-	// Reachable without a pointer at all. The arrows read the way the edge
-	// moves, so left widens the panel.
+	// Reachable without a pointer. The arrows read the way the edge moves, so left
+	// widens the panel.
 	grip.addEventListener('keydown', (ev) => {
 		const step = { ArrowLeft: 16, ArrowRight: -16 }[ev.key];
 		if (step === undefined) return;
@@ -1068,9 +1073,9 @@ function installPanelResize() {
 }
 
 
-// A selection made while the panel is away says so on the tab rather than
-// taking the space back: an accidental click must not cost the reader the room
-// they asked for.
+// A selection made while the panel is away says so on the tab rather than taking
+// the space back. An accidental click must not cost the reader the room they asked
+// for.
 function flashTab() {
 	const tab = $('panel-tab');
 	tab.classList.remove('flash');
@@ -1078,9 +1083,9 @@ function flashTab() {
 	tab.classList.add('flash');
 }
 
-// With nothing picked the panel has only ever had one thing to say, and it was
-// an instruction. Anything the extractor could not make sense of goes here
-// instead: the reader is looking at it already, and the strip above sent them.
+// With nothing picked, the panel has only ever had an instruction to show. The
+// notices go here instead. The reader is looking at the panel already, and the
+// strip above sent them.
 function showNotices(panel) {
 	const diagnostics = data.diagnostics || [];
 	const hint = make('p', 'empty', 'Pick a node to see how it is wired.');
@@ -1090,8 +1095,8 @@ function showNotices(panel) {
 		return;
 	}
 
-	// The same word text and DOT print them under, so a reader moving between
-	// the formats is not made to learn a third name for one thing.
+	// The same word text and DOT print them under. A reader moving between the
+	// formats should not have to learn a third name for one thing.
 	const parts = [make('h2', null, 'Notices')];
 	for (const d of diagnostics) {
 		const notice = make('div', 'notice');
@@ -1110,9 +1115,10 @@ function showNotices(panel) {
 	panel.scrollTop = 0;
 }
 
-// Where the notice is about, for the ones that are about anywhere: a schema the
-// reader cannot make sense of is about the file, and names nothing. A filtered
-// graph keeps the notices of the nodes it dropped, so the id is only made a
+// Where the notice is about, for the ones that are about anywhere. A schema the
+// reader cannot make sense of is about the file and names nothing.
+//
+// A filtered graph keeps the notices of the nodes it dropped, so the id is only a
 // link when there is still something to select.
 function noticeWhere(d) {
 	const where = make('div', 'where');
@@ -1151,17 +1157,16 @@ function showPanel(id) {
 	parts.push(badges);
 	parts.push(copyIDButton(n.id));
 
-	// The package rather than the qualified type and factory those rows used to
-	// carry. A generic names its type arguments in full, so the qualified forms
-	// run to several lines and say, at length, what the heading already said
-	// plus where it lives. This is the "where it lives" on its own; the factory
-	// is a click away on the line below.
+	// The package, rather than the qualified type and factory. A generic names its
+	// type arguments in full, so the qualified forms run to several lines and
+	// repeat the heading. This is the part the heading leaves out: where the
+	// service lives.
 	const dl = make('dl');
 	if (n.package) dl.append(make('dt', null, 'Package'), make('dd', 'mono', n.package));
 	dl.append(make('dt', null, 'Scope'), make('dd', null, scopePath(n.scope)));
-	// A label is the reader's own word for a service. The badges above are
-	// godi's vocabulary, and running the two together made a label read as
-	// something the container had decided.
+	// A label is the reader's own word for a service. The badges above are godi's
+	// vocabulary, and running the two together made a label read as something the
+	// container had decided.
 	if (n.labels && n.labels.length) {
 		const cell = make('dd', 'badges');
 		for (const label of n.labels) cell.append(badge(label));
@@ -1171,21 +1176,21 @@ function showPanel(id) {
 	if (n.defined) dl.append(make('dt', null, 'Defined'), locationCell(n.defined));
 	parts.push(dl);
 
-	// The signature says in one line what the argument rows say one at a time,
-	// so it goes above them. For a service it belongs to the factory rather than
-	// to the service itself, and the headings say so.
-	// What implements the service, which for one registered as a value is the
-	// function itself. A named one is already the heading, the same way a
-	// function node is headed by its name, so only a literal - whose name the
-	// runtime made up - has anything to add here.
+	// The signature says in one line what the argument rows say one at a time, so
+	// it goes above them. For a service it belongs to the factory rather than to
+	// the service, and the headings say so.
+	//
+	// For a service registered as a value, what implements it is the value itself.
+	// A named one is already the heading, so only a literal has anything to add
+	// here.
 	if (n.signature) {
 		parts.push(make('h3', null, n.fromValue ? 'Value' : (service ? 'Factory signature' : 'Signature')));
 
 		const sig = make('div', 'mono sig');
 		if (n.fromValue && n.anonymous && n.name) sig.append(make('div', 'sig-name', short(n.name)));
-		// Shortened for the same reason the qualified rows above it went: a
-		// generic names its type arguments in full, and a signature carrying
-		// several of those is unreadable. The whole thing is a hover away.
+		// Shortened for the same reason the qualified rows went. A generic names
+		// its type arguments in full, and a signature carrying several of those is
+		// unreadable. The whole thing is a hover away.
 		sig.append(make('div', null, short(n.signature)));
 		if (short(n.signature) !== n.signature) sig.title = n.signature;
 		parts.push(sig);
@@ -1195,9 +1200,9 @@ function showPanel(id) {
 	const args = (n.params || []).filter((p) => !isMethod(p));
 	const calls = (n.params || []).filter(isMethod);
 
-	// Arguments and method calls are different acts of wiring - one builds the
-	// service, the other reaches into it afterwards - so they are not run
-	// together in one list.
+	// Arguments and method calls are different acts of wiring. One builds the
+	// service, the other reaches into it afterwards, so they are not run together
+	// in one list.
 	if (args.length) {
 		parts.push(make('h3', null, service ? 'Factory arguments' : 'Arguments'));
 		for (const p of args) parts.push(paramBlock(p, outgoing));
@@ -1267,9 +1272,9 @@ function resolutionText(e) {
 
 const paramLabel = (p, e) => p ? (p.method ? p.method + ' ' : '') + '#' + p.index + ' ' + p.short : e.type;
 
-// Keys wear keycaps; gestures do not, because "Drag the canvas" in a keycap
-// reads as something you could press. The modifier is spelled for the platform
-// the reader is on rather than for both.
+// Keys wear keycaps and gestures do not. "Drag the canvas" in a keycap reads as
+// something you could press. The modifier is spelled for the platform the reader is
+// on, not for both.
 const CONTROLS = () => [
 	{
 		title: 'Keyboard', keys: true, rows: [
@@ -1303,8 +1308,8 @@ const CONTROLS = () => [
 	},
 ];
 
-// What search does is the one thing here that cannot be worked out by trying
-// it, so it leads.
+// What search does is the one thing here that trying it does not reveal, so it
+// leads.
 const SEARCHES = [
 	['Type', 'The full path, github.com/acme/app/http.(*Server)'],
 	['Factory', 'The constructor, or the function itself'],
@@ -1353,8 +1358,8 @@ function showHelp() {
 	$('panel').dataset.view = 'help';
 }
 
-// ? put the controls there, so pressing it again takes them away rather than
-// leaving the reader to find the tab.
+// ? put the controls there, so pressing it again takes them away. Otherwise the
+// reader has to find the tab.
 function toggleHelp() {
 	if (panelOpen() && $('panel').dataset.view === 'help') {
 		setPanel(false);
@@ -1390,9 +1395,9 @@ function showAbout() {
 
 // -------------------------------------------------------------- navigation ---
 
-// Command on a Mac, Control everywhere else. Not interchangeable: Control and
-// click is the secondary click on macOS, so Control-dragging would open a menu
-// instead of panning.
+// Command on a Mac, Control everywhere else. They are not interchangeable:
+// Control-click is the secondary click on macOS, so Control-dragging would open a
+// menu instead of panning.
 const APPLE = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
 const MOD = APPLE ? 'metaKey' : 'ctrlKey';
 const MOD_LABEL = APPLE ? '⌘' : 'Ctrl';
@@ -1400,9 +1405,11 @@ const MOD_LABEL = APPLE ? '⌘' : 'Ctrl';
 const canvasEl = () => $('cy');
 
 // While the modifier is down, dragging pans instead of moving what is under the
-// pointer. Cytoscape reads grabbability when the button goes down, so the mode
-// is armed on the key rather than the press - which also lets the cursor say so
-// before anything is dragged.
+// pointer.
+//
+// Cytoscape reads grabbability when the button goes down, so the mode is armed on
+// the key rather than on the press. That also lets the cursor say so before
+// anything is dragged.
 let panArmed = false;
 
 function armPan(on) {
@@ -1420,12 +1427,12 @@ function installPanning() {
 	window.addEventListener('blur', () => armPan(false));
 	document.addEventListener('visibilitychange', () => { if (document.hidden) armPan(false); });
 
-	// The middle button and the modifier start the same gesture. Cytoscape hands
-	// a drag on an ungrabbable scope back as a pan but not one on a node, so the
-	// viewport is driven from here rather than left to it.
+	// The middle button and the modifier start the same gesture. Cytoscape hands a
+	// drag on an ungrabbable scope back as a pan, but not one on a node, so the
+	// viewport is driven from here.
 	//
-	// Captured on the way down and stopped there, so Cytoscape never sees the
-	// press: were it to pan as well, the graph would move twice as far.
+	// The press is captured on the way down and stopped there, so Cytoscape never
+	// sees it. If it panned as well, the graph would move twice as far.
 	let from = null;
 	canvasEl().addEventListener('mousedown', (ev) => {
 		if (ev.button !== 1 && !(ev.button === 0 && ev[MOD])) return;
@@ -1450,10 +1457,11 @@ function installPanning() {
 	canvasEl().addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
 }
 
-// A notched mouse wheel reports whole multiples of 120, and Firefox reports
-// lines rather than pixels for one. A trackpad sends small or fractional steps,
-// usually with a sideways component. It is a good guess rather than a fact,
-// which is why the reader can override it.
+// A notched mouse wheel reports whole multiples of 120, and Firefox reports lines
+// rather than pixels for one. A trackpad sends small or fractional steps, usually
+// with a sideways component.
+//
+// It is a good guess rather than a fact, which is why the reader can override it.
 function fromAMouse(ev) {
 	if (state.wheel !== 'auto') return state.wheel === 'mouse';
 	if (ev.deltaMode !== 0) return true;
@@ -1475,18 +1483,16 @@ function installWheel() {
 	canvasEl().addEventListener('wheel', (ev) => {
 		ev.preventDefault();
 
-		// What the reader asked for outranks what the hardware looks like, so
-		// the modifiers are read first. A trackpad pinch arrives as a wheel with
-		// ctrlKey set, whoever the browser thinks pressed it; the modifier means
-		// the same thing by hand.
+		// What the reader asked for outranks what the hardware looks like, so the
+		// modifiers are read first. A trackpad pinch arrives as a wheel with
+		// ctrlKey set, and the modifier means the same thing by hand.
 		if (ev.ctrlKey || ev.metaKey) {
 			zoomAt(ev, ev.deltaY);
 			return;
 		}
 		// A mouse wheel has only a vertical axis, so shift is how you scroll
-		// sideways with one. A trackpad already has both, and shift must not
-		// take the vertical one away, so it only redirects a purely vertical
-		// gesture.
+		// sideways with one. A trackpad already has both axes, so shift only
+		// redirects a purely vertical gesture.
 		if (ev.shiftKey) {
 			cy.panBy(ev.deltaX === 0
 				? { x: -ev.deltaY, y: 0 }
@@ -1503,8 +1509,8 @@ function installWheel() {
 
 // -------------------------------------------------------------- go to node ---
 
-// A node id is the one thing that names a node exactly, which is what makes it
-// worth pasting into a message. This is the other end of that exchange.
+// A node id names a node exactly, which is what makes it worth pasting into a
+// message. This is the other end of that exchange.
 function installGoto() {
 	const dialog = $('goto');
 	const field = $('goto-id');
@@ -1517,8 +1523,8 @@ function installGoto() {
 	};
 
 	$('goto-form').addEventListener('submit', (ev) => {
-		// The form would close the dialog on its own; a miss should leave it
-		// open with the text still in it, to be corrected rather than retyped.
+		// The form would close the dialog on its own. A miss should leave it open
+		// with the text still in it, to be corrected rather than retyped.
 		ev.preventDefault();
 
 		const id = tidyID(field.value);
@@ -1530,8 +1536,8 @@ function installGoto() {
 			return;
 		}
 
-		// A node a filter has taken away cannot be shown, and going quiet about
-		// it looks like the id was wrong when it was not.
+		// A node a filter has taken away cannot be shown. Saying nothing would
+		// look like the id was wrong.
 		if (!cy.getElementById(id).visible()) {
 			say('That node is filtered out of the picture at the moment.', true);
 			return;
@@ -1558,9 +1564,8 @@ function installGoto() {
 	};
 }
 
-// tidyID takes what was pasted rather than what was meant. An id travels
-// through chat, which wraps it in backticks, and through mail, which wraps it
-// in quotes.
+// tidyID takes what was pasted rather than what was meant. An id travels through
+// chat, which wraps it in backticks, and through mail, which wraps it in quotes.
 function tidyID(text) {
 	const trimmed = text.trim();
 	const first = trimmed[0];
@@ -1572,16 +1577,17 @@ function tidyID(text) {
 
 // ----------------------------------------------------------------- actions ---
 
-// Selecting only ever dims, except while the selection is isolated: there it
-// changes which nodes exist on the canvas, and the ones that just appeared are
-// still where the last layout put them - scattered across a picture of the whole
-// container, with their scope box stretched over the gap to reach them. So the
-// same rule the filters use applies here: the shape changed, lay it out again.
+// Selecting only dims, except while the selection is isolated. Then it changes
+// which nodes are on the canvas, and the ones that just appeared are still where
+// the last layout put them: scattered across a picture of the whole container, with
+// their scope box stretched to reach them.
+//
+// So the filters' rule applies here too. The shape changed, so lay it out again.
 async function select(id, centre) {
 	state.focus = id;
 	showPanel(id);
 	// Laying out again frames what is left, so there is nothing to centre on
-	// afterwards - and two animations arguing over the viewport reads as a jump.
+	// afterwards. Two animations arguing over the viewport reads as a jump.
 	if (apply()) {
 		await relayout();
 		return;
@@ -1608,9 +1614,11 @@ async function reset() {
 }
 
 // refresh reacts to a filter change. It lays out again only when the picture
-// actually changed shape, so ticking a box that hides nothing does not shuffle
-// the graph under the reader. A resize means the boxes themselves changed size,
-// which always needs both a rebuild and a fresh layout.
+// changed shape, so ticking a box that hides nothing does not shuffle the graph
+// under the reader.
+//
+// A resize means the boxes themselves changed size. That always needs both a
+// rebuild and a fresh layout.
 async function refresh({ resize = false } = {}) {
 	if (resize) rebuildLabels();
 	const changed = apply();
@@ -1633,8 +1641,8 @@ function setTheme(theme) {
 	remember('godi.theme', theme);
 
 	// Cytoscape draws to a canvas, which cannot read CSS variables, so the
-	// stylesheet has to be rebuilt from the ones now in force - and the rules
-	// are images with a colour baked in, so they have to be redrawn too.
+	// stylesheet is rebuilt from the ones now in force. The rules are images with
+	// a colour baked in, so they are redrawn too.
 	cy.style(stylesheet());
 	paintRules();
 }
@@ -1654,7 +1662,7 @@ function installTheme() {
 	setTheme(THEMES.includes(stored) ? stored : currentTheme());
 
 	// Following the system setting means restyling when it changes, but only
-	// while that is still what the reader asked for.
+	// while that is what the reader asked for.
 	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 		if (currentTheme() === 'auto') cy.style(stylesheet());
 	});
@@ -1662,19 +1670,22 @@ function installTheme() {
 	$('theme').addEventListener('change', () => setTheme($('theme').value));
 }
 
-// The keyboard still cycles: there is no menu to open from a key.
+// The keyboard still cycles, because there is no menu to open from a key.
 function cycleTheme() {
 	setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]);
 }
 
 // ------------------------------------------------------------------ wiring ---
 
-// Every native control below is read once as it is wired up, not just listened
-// to. A browser puts back what was typed and dragged when a page is reloaded,
-// whether or not the page asked it to, so the markup's value is a starting
-// point rather than a fact: without the read, the slider comes back where it
-// was left while its label and the graph still hold the default. It is the same
-// rule as for a stored preference, applied to the one store that is not ours.
+// Every native control below is read once as it is wired up, not just listened to.
+//
+// A browser puts back what was typed and dragged when a page is reloaded, whether
+// the page asked it to or not. The markup's value is therefore a starting point
+// rather than a fact. Without the read, the slider comes back where it was left
+// while its label and the graph still hold the default.
+//
+// It is the same rule as for a stored preference, applied to the one store that is
+// not ours.
 function installControls() {
 	const search = $('search');
 	const searchClear = $('search-clear');
@@ -1702,8 +1713,8 @@ function installControls() {
 		if (hits && hits.size) select([...hits][0], true);
 	});
 
-	// The last stop on the slider is "everything the selection reaches", which is
-	// what you want as soon as you are chasing a chain rather than a neighbour.
+	// The last stop on the slider is "everything the selection reaches". That is
+	// what you want when chasing a chain rather than a neighbour.
 	const hops = $('hops');
 	const unlimited = Number(hops.max);
 	const readHops = () => {
@@ -1786,9 +1797,9 @@ function installControls() {
 	$('panel-tab').addEventListener('click', () => setPanel(!panelOpen()));
 	$('legend-tab').addEventListener('click', () => setLegend(!legendOpen()));
 
-	// Tapping the selection again drops it. On a large graph the empty canvas
-	// can be a long way off, or off screen entirely, so the node has to be its
-	// own way out. A scope's own area counts as empty space for this.
+	// Tapping the selection again drops it. On a large graph the empty canvas can
+	// be a long way off, or off screen, so the node has to be its own way out. A
+	// scope's own area counts as empty space here.
 	cy.on('tap', 'node', (ev) => {
 		if (panArmed || (ev.originalEvent && ev.originalEvent[MOD])) return;
 		const node = ev.target;
@@ -1829,10 +1840,11 @@ function rebuildLabels() {
 	paintRules();
 }
 
-// A handle on the graph, for anyone who wants to poke at their own wiring from
-// the console: godi.cy is the Cytoscape instance, godi.data the model.
-// godi.mod is which modifier this platform pans with, so that a driver of the
-// page does not have to work the rule out a second time and get it wrong.
+// A handle on the graph, for anyone who wants to poke at their own wiring from the
+// console. godi.cy is the Cytoscape instance and godi.data is the model.
+//
+// godi.mod is the modifier this platform pans with, so a driver of the page does
+// not have to work that rule out again.
 window.godi = { cy, data, state, apply, relayout, mod: MOD };
 
 showSnapshot();

@@ -13,7 +13,7 @@ type Format struct {
 
 // Encoder writes a Graph in a concrete format.
 //
-// Implement it to add a format: the model is plain data, so an encoder needs
+// Implement it to add a format. The model is plain data, so an encoder needs
 // nothing from godi beyond this package.
 type Encoder interface {
 	Format() Format
@@ -21,8 +21,8 @@ type Encoder interface {
 }
 
 // Validator is an optional Encoder capability. When an encoder implements it,
-// Encode checks the graph before writing anything, so a format that cannot
-// represent a given graph fails before producing half a file.
+// Encode checks the graph before writing anything. A format that cannot represent
+// a given graph then fails before producing half a file.
 type Validator interface {
 	Check(g *Graph) error
 }

@@ -120,7 +120,7 @@ func TestPackage(t *testing.T) {
 		{"the standard library", "time.Duration", "time"},
 		{"package main", "main.Config", "main"},
 		{"a slice", "[]github.com/acme/app.T", "github.com/acme/app"},
-		// The first qualified name is the type; the ones after it are its type
+		// The first qualified name is the type. The ones after it are its type
 		// arguments, which may live anywhere.
 		{"a generic", "github.com/acme/app.Handler[github.com/other/x.Req]", "github.com/acme/app"},
 		{"a map, whose key comes first in the text", "map[string]github.com/acme/app.Entry", "github.com/acme/app"},

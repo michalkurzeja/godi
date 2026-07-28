@@ -44,9 +44,8 @@ func printed(t *testing.T, c godi.Container) string {
 	return sb.String()
 }
 
-// Print only ever walked the one scope it was handed, and Container.Print hands
-// it the root - so everything registered with Children(...) was missing from
-// the output entirely.
+// Print only ever walked the one scope it was handed, and Container.Print hands it
+// the root. Everything registered with Children(...) was missing from the output.
 func TestPrintShowsChildScopes(t *testing.T) {
 	t.Parallel()
 
@@ -82,11 +81,12 @@ func TestPrintResolvesASliceSlotThroughItsElementBinding(t *testing.T) {
 	require.Contains(t, out, "di_test.printFile")
 }
 
-// Print read every slot's Arg without asking whether anything had filled it,
-// and an unfilled slot returns a nil Arg. Unreachable from a built container -
-// argument validation rejects those first - but reachable through the exported
-// Print on a builder's scope, which is exactly what a debugging compiler pass
-// does.
+// Print read every slot's Arg without asking whether anything had filled it, and an
+// unfilled slot returns a nil Arg.
+//
+// A built container cannot reach that, because argument validation rejects an
+// unfilled slot first. Calling Print on a builder's scope can, which is what a
+// debugging compiler pass does.
 func TestPrintingABuilderBeforeAutowiringDoesNotPanic(t *testing.T) {
 	t.Parallel()
 

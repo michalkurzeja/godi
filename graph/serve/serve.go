@@ -12,8 +12,8 @@
 // wired needs nothing from this package beyond a page that asks again.
 //
 // It lives apart from graph because it draws the graph to answer a request, and
-// drawing means graph/html - which no godi binary should carry unless it asked
-// for it. Importing this package is how you ask.
+// drawing means graph/html. No godi binary should carry that unless it asked for
+// it, and importing this package is how you ask.
 package serve
 
 import (
@@ -110,8 +110,8 @@ func Listen(addr string, src graph.Source, opts ...Option) (*Server, error) {
 // Addr is the address the server bound to.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 
-// URL is the address to open. A server listening on every interface is reported
-// as the loopback one, because that is the one a browser on this machine wants.
+// URL is the address to open. A server listening on every interface is reported as
+// the loopback one, which is what a browser on this machine wants.
 func (s *Server) URL() string {
 	addr, ok := s.ln.Addr().(*net.TCPAddr)
 	if !ok {

@@ -1,21 +1,21 @@
 // Package html renders a dependency graph as one self-contained web page.
 //
-// The page is a Cytoscape canvas driven by the graph model, both inlined. There
-// is no CDN, no server and no network access: the file opens from disk and
-// works offline, under a content security policy that names the hash of every
-// script it carries.
+// The page is a Cytoscape canvas driven by the graph model, both inlined. There is
+// no CDN, no server and no network access. The file opens from disk and works
+// offline, under a content security policy that names the hash of every script it
+// carries.
 //
-// Layout happens in the browser, which is why nothing has to be installed. By
-// default that is Graphviz itself, compiled to WebAssembly and inlined, so the
-// ranks and the nested scope boxes are the ones Graphviz would draw - but the
-// result is a live graph rather than a picture, so nodes can be dragged, the
-// graph relaid out, and the wiring filtered and searched.
+// Layout happens in the browser, so nothing has to be installed. By default it is
+// Graphviz itself, compiled to WebAssembly and inlined, so the ranks and the
+// nested scope boxes are the ones Graphviz would draw. The result is a live graph
+// rather than a picture: nodes can be dragged, the graph relaid out, and the
+// wiring filtered and searched.
 //
 // The layout DOT is built in the browser rather than by graph/dot, and the two
-// packages are unrelated. It has to be: Graphviz needs the node sizes, and only
-// Cytoscape knows those, because Cytoscape draws the nodes. What it sends is a
-// request for geometry - sizes, nesting, edges - with no colour, label or
-// legend in it, which is the opposite of what graph/dot produces.
+// packages are unrelated. Graphviz needs the node sizes, and only Cytoscape knows
+// those, because Cytoscape draws the nodes. What the page sends is a request for
+// geometry: sizes, nesting and edges, with no colour, label or legend in it. That
+// is the opposite of what graph/dot produces.
 package html
 
 import (
@@ -40,11 +40,11 @@ var (
 	//go:embed assets/viewer.js
 	viewerJS string
 
-	// The page is assembled with text/template rather than html/template
-	// because the content security policy names the hash of each inline block.
-	// That only works if what lands in the file is byte for byte what was
-	// hashed, which contextual escaping does not promise. Everything
-	// interpolated is either escaped here or produced here.
+	// The page is assembled with text/template rather than html/template. The
+	// content security policy names the hash of each inline block, which only
+	// works if what lands in the file is byte for byte what was hashed.
+	// Contextual escaping does not promise that. Everything interpolated is
+	// either escaped here or produced here.
 	pageTmpl = template.Must(template.New("page").Parse(pageSrc))
 )
 
@@ -90,7 +90,7 @@ func (e *Encoder) Encode(g *graph.Graph, w io.Writer) error {
 }
 
 // pageData is what the skeleton is filled with. Every field is already in its
-// final form: the template escapes nothing.
+// final form, because the template escapes nothing.
 type pageData struct {
 	Title   string
 	Theme   string
@@ -106,7 +106,7 @@ type pageData struct {
 func (e *Encoder) policy(page pageData) string {
 	sources := make([]string, 0, len(page.Scripts)+2)
 	if e.cfg.layout == Graphviz {
-		// Graphviz is WebAssembly. Instantiating it needs this, and only this:
+		// Graphviz is WebAssembly. Instantiating it needs this and only this;
 		// unsafe-eval stays out.
 		sources = append(sources, "'wasm-unsafe-eval'")
 	}
@@ -118,12 +118,12 @@ func (e *Encoder) policy(page pageData) string {
 	return strings.Join([]string{
 		"default-src 'none'",
 		// Cytoscape renders to a canvas it sizes with style attributes, which a
-		// hash cannot cover: naming one here would make the browser ignore
-		// unsafe-inline and the page would not draw. Scripts stay hash-locked,
-		// which is where the risk actually is.
+		// hash cannot cover. Naming one here would make the browser ignore
+		// unsafe-inline, and the page would not draw. Scripts stay hash-locked,
+		// which is where the risk is.
 		"style-src 'unsafe-inline'",
-		// The node separators are drawn as inline SVG images. Nothing is
-		// fetched: data: is the only source, so the page stays offline.
+		// The node separators are drawn as inline SVG images. Nothing is fetched,
+		// because data: is the only source allowed.
 		"img-src data:",
 		"script-src " + strings.Join(sources, " "),
 		"base-uri 'none'",

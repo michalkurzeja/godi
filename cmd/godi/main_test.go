@@ -241,8 +241,8 @@ func complete(t *testing.T, args ...string) (values []string, directive string) 
 	return nil, ""
 }
 
-// Without this, the shell offers filenames where a choice belongs - which is
-// both useless and misleading about what the flag takes.
+// Without this, the shell offers filenames where a choice belongs. That is useless,
+// and it misleads about what the flag takes.
 func TestChoiceFlagsCompleteToTheirValues(t *testing.T) {
 	t.Parallel()
 

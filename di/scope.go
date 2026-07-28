@@ -28,14 +28,14 @@ func NewScope(name string, container *Container, parent *Scope) *Scope {
 	return s
 }
 
-// unusedScopeName keeps a second scope of a name from taking the first one's
-// place in the container: the container knows its scopes by name, and the
-// replaced one would go on existing in the parent tree while nothing iterating
-// the container - argument validation, eager initialisation, the graph - ever
-// saw it again. Its definitions would simply never be built.
+// unusedScopeName stops a second scope from taking a name that is already in use.
 //
-// godi's own child scopes are named after the definition that declared them, so
-// they never collide; two calls to NewChild("plugins") from a compiler pass do.
+// The container holds its scopes in a map keyed by name. A scope that lost its
+// place there would still exist in the parent tree, but nothing walking the
+// container would find it again, and its definitions would never be built.
+//
+// godi names its own child scopes after the definition that declared them, so
+// those never collide. Two calls to NewChild("plugins") do.
 func unusedScopeName(container *Container, name string) string {
 	if _, taken := container.scopes.Get(name); !taken {
 		return name
@@ -116,8 +116,8 @@ func bindingInChain(scope *Scope, typ reflect.Type) (*Scope, *InterfaceBinding, 
 	return nil, nil, false
 }
 
-// Instantiated reports whether this scope has already built the service, which
-// for a shared one means the container is holding it.
+// Instantiated reports whether this scope has already built the service. For a
+// shared service, it means the container is holding the instance.
 func (s *Scope) Instantiated(id ID) bool {
 	_, ok := s.instances[id]
 	return ok
@@ -167,8 +167,7 @@ func (s *Scope) GetServicesIDsByType(typ reflect.Type) []ID {
 }
 
 // ServicesIDsByTypeInChainSeq yields the services of the type visible from this
-// scope, nearest scope first. It is what GetServicesIDsByTypeInChain is made
-// of, and the one to reach for when the first match is all that is wanted.
+// scope, nearest scope first. Use it when the first match is all you need.
 func (s *Scope) ServicesIDsByTypeInChainSeq(typ reflect.Type) iter.Seq[ID] {
 	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
 		return slices.Values(scope.GetServicesIDsByType(typ))
@@ -317,8 +316,8 @@ func (s *Scope) GetBoundArg(typ reflect.Type) (Arg, bool) {
 	return binding.boundTo, true
 }
 
-// GetBoundArgInChain is the argument bound to the type in the nearest scope
-// that binds it, which is the one that takes effect.
+// GetBoundArgInChain is the argument bound to the type in the nearest scope that
+// binds it. That is the binding that takes effect.
 func (s *Scope) GetBoundArgInChain(typ reflect.Type) (Arg, bool) {
 	return iterx.First(iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[Arg] {
 		return func(yield func(Arg) bool) {
@@ -542,8 +541,8 @@ func (s *Scope) BindingsSeq() iter.Seq[*InterfaceBinding] {
 	return iterx.Values(s.bindings.Iterator())
 }
 
-// BindingsInChainSeq yields every binding visible from this scope, nearest
-// scope first - which is also the order they take effect in.
+// BindingsInChainSeq yields every binding visible from this scope, nearest scope
+// first. That is the order they take effect in.
 func (s *Scope) BindingsInChainSeq() iter.Seq[*InterfaceBinding] {
 	return iterx.Flatten(s.Chain(), (*Scope).BindingsSeq)
 }

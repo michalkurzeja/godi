@@ -7,9 +7,9 @@
 //	godi view /tmp/godi-graph-4821.json
 //	godi export dot graph.json | dot -Tsvg -o graph.svg
 //
-// The library writes JSON and nothing else, so that no godi binary carries a
-// renderer or the means to start a browser. All of that lives here instead,
-// installed once and used from the terminal.
+// The library writes JSON and nothing else, so no godi binary carries a renderer or
+// the means to start a browser. All of that lives here, installed once and used
+// from the terminal.
 package main
 
 import (

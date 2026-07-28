@@ -14,9 +14,9 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// markCollected flags the edges that feed a slot taking more than one
-// dependency, so that an encoder can draw a collection as such even when only
-// one service happens to match today.
+// markCollected flags the edges that feed a slot taking more than one dependency.
+// An encoder can then draw a collection as such, even when only one service
+// happens to match today.
 func (x *extractor) markCollected() {
 	params := make(map[graph.ParamID]*graph.Param)
 	for _, node := range x.out.Nodes {
@@ -85,10 +85,11 @@ func (x *extractor) markCycles() {
 // markIncomplete flags the nodes something is wrong with, so a reader can find
 // them without reading every argument of every service.
 //
-// Two things count: an argument naming a dependency the container does not
-// have, and one nothing has wired once nothing is going to. Before autowiring
-// runs, the second is simply work outstanding - every argument is unwired then,
-// and marking every node would say nothing at all.
+// Two things count: an argument naming a dependency the container does not have,
+// and one nothing has wired once nothing is going to.
+//
+// Before autowiring runs, the second is work outstanding. Every argument is
+// unwired then, so marking every node would say nothing.
 func (x *extractor) markIncomplete() {
 	wired := x.snapshot == nil || x.snapshot.Autowired
 
@@ -102,17 +103,17 @@ func (x *extractor) markIncomplete() {
 			}
 
 			// An argument naming something that is not there said so where it
-			// failed to resolve. One nothing filled fails no lookup, so this is
-			// where it gets its words - and it needs them, because the note is
-			// what a reader counting faults is counting.
+			// failed to resolve. One that nothing filled fails no lookup, so this
+			// is where it gets its words. It needs them: the note is what a reader
+			// counting faults is counting.
 			p.Note = notSet(p)
 			node.Incomplete = true
 		}
 	}
 }
 
-// notSet words an argument nobody filled the way the compiler does, naming the
-// method when the argument belongs to one: "argument 2" alone means two
+// notSet words an argument nobody filled the way the compiler does. It names the
+// method when the argument belongs to one, because "argument 2" alone means two
 // different slots on a service with a method call.
 func notSet(p *graph.Param) string {
 	if p.Method != "" {
@@ -160,13 +161,14 @@ func (x *extractor) sortAll() {
 		}
 		return strings.Compare(a.Interface, b.Interface)
 	})
-	// The wiring diagnostics need no sorting: they are read off the nodes, which
+	// The wiring diagnostics need no sorting. They are read off the nodes, which
 	// are sorted here.
 }
 
 // trimSourceRoot takes the directory every path shares out of the paths and
 // records it once. Absolute build-machine paths make the output long, unstable
-// between machines, and noisy to diff; the root puts them back together again.
+// between machines and noisy to diff. Joining the root back on returns the
+// original path.
 func (x *extractor) trimSourceRoot() {
 	var paths []string
 	for _, node := range x.out.Nodes {
@@ -189,9 +191,9 @@ func (x *extractor) trimSourceRoot() {
 	}
 }
 
-// commonDir is the longest directory prefix shared by every path, or empty when
-// that is nothing worth trimming. A container wired partly from the standard
-// library shares only the filesystem root, which is no help to anyone.
+// commonDir is the longest directory prefix shared by every path. It is empty when
+// there is nothing worth trimming: a container wired partly from the standard
+// library shares only the filesystem root.
 func commonDir(paths []string) string {
 	if len(paths) == 0 {
 		return ""

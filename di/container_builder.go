@@ -62,9 +62,11 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 	}
 }
 
-// Container is the container being built, and nil once Build has handed it
-// over. A failed Build keeps it, which is deliberate: the container of where
-// the compiler stopped is the one worth looking at.
+// Container is the container being built. It is nil once Build has handed it
+// over.
+//
+// A failed Build keeps it, on purpose. That container shows how far compilation
+// got.
 func (b *ContainerBuilder) Container() *Container {
 	return b.container
 }

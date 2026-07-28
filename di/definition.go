@@ -67,8 +67,8 @@ type ServiceDefinition struct {
 	methodCalls map[string]*Method
 
 	// val is the value the definition was built from, for the ones built from
-	// one. The factory holding it is godi's own, so it is this that anything
-	// reporting on the definition should report.
+	// one. The factory that holds it is godi's own, so reports name the value
+	// instead.
 	val     reflect.Value
 	fromVal bool
 
@@ -133,8 +133,8 @@ func (d *ServiceDefinition) SetShared(shared bool) *ServiceDefinition {
 }
 
 // SetVal records that this definition serves a value it was handed, rather than
-// one it builds. The factory is then a wrapper godi wrote to hold it, which is
-// nobody's idea of the implementation.
+// one it builds. The factory is then only a wrapper godi wrote to hold the
+// value.
 func (d *ServiceDefinition) SetVal(val reflect.Value) *ServiceDefinition {
 	d.val, d.fromVal = val, true
 	return d
@@ -151,13 +151,12 @@ func (d *ServiceDefinition) FactoryName() string {
 }
 
 // Implementation is whatever actually provides the service: the factory that
-// builds it, or - when the service was registered as a value - the value
-// itself. A function is a value like any other, and one registered that way is
-// the whole of the service, so it is what deserves to be named and pointed at.
+// builds it, or the value it was registered with when that value is a function.
+// A function registered as a value is the whole of the service, so it is what
+// gets named and pointed at.
 //
-// A value that is not a function has none of this to give. There is no name for
-// a struct someone handed over and nowhere to point at for it, and the factory
-// holding it is godi's own.
+// A value that is not a function has neither a name nor a place to point at. The
+// factory holding it is godi's own.
 func (d *ServiceDefinition) Implementation() (name string, typ reflect.Type, at Location) {
 	impl := d.factory.value()
 	if d.fromVal {

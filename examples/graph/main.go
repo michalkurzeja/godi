@@ -60,7 +60,7 @@ type ConsoleLogger struct{}
 
 func (ConsoleLogger) Log(string) {}
 
-// An interface with two implementations: godi cannot choose, so the container
+// An interface with two implementations. godi cannot choose, so the container
 // declares a binding. Those edges get a hollow arrowhead, and the losing
 // implementation ends up a root, because nothing injects it.
 
@@ -90,20 +90,19 @@ type AdminHandler struct{}
 
 func (AdminHandler) Handle() {}
 
-// An interface nothing implements. The variadic slot below asks for it and
-// godi autowires an empty collection, so the argument shows up with no edges
-// leaving it - which is what an optional dependency looks like when nobody
-// supplies one.
+// An interface nothing implements. The variadic slot below asks for it and godi
+// autowires an empty collection, so the argument shows up with no edges leaving it.
+// That is what an optional dependency looks like when nobody supplies one.
 //
-// Leaving a variadic slot unfilled only works while the definition is
-// autowired: argument validation rejects an empty slot on a NotAutowired one,
-// variadic or not, and the container fails to build.
+// Leaving a variadic slot unfilled only works while the definition is autowired.
+// Argument validation rejects an empty slot on a NotAutowired one, variadic or not,
+// and the container fails to build.
 
 type Plugin interface{ Plug() }
 
 // An interface bound by a compiler pass rather than by godi or by the container.
-// Unusual - most containers never do this - but the graph distinguishes it, so
-// the example covers it.
+// Most containers never do this, but the graph tells it apart, so the example
+// covers it.
 
 type Reporter interface{ Report() }
 
@@ -115,9 +114,9 @@ type TextReporter struct{}
 
 func (TextReporter) Report() {}
 
-// Not everything in a container is built by a factory. SvcVal registers a value
-// as it stands, and a function is a value like any other - so these two are
-// services whose whole implementation is the function registered as them.
+// Not everything in a container is built by a factory. SvcVal registers a value as
+// it stands, and a function is a value like any other. These two are services whose
+// whole implementation is the function registered as them.
 //
 // godi wraps the value in a factory of its own to hold it, which is why neither
 // has a definition site in the graph: there is no source of yours to point at,
@@ -234,10 +233,12 @@ func run(format, theme, layout, link string, show, snapshot bool, w io.Writer) e
 	return g.Encode(w, enc)
 }
 
-// extractGraph is the finished container's graph, or - with -snapshot - the
-// wiring partway through compilation, taken by a pass of the example's own
-// before godi has worked anything out. That is the picture to look at when the
-// container will not build, the point at which there is no container to graph.
+// extractGraph is the finished container's graph. With -snapshot it is the wiring
+// partway through compilation, taken by a pass of the example's own before godi has
+// worked anything out.
+//
+// That is the picture to look at when the container will not build, which is when
+// there is no container to graph.
 func extractGraph(snapshot bool, opts []graph.Option) (*graph.Graph, error) {
 	if snapshot {
 		var declared *graph.Graph
@@ -283,7 +284,7 @@ func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 			opts = append(opts, html.Layout(html.LayoutEngine(layout)))
 		}
 		// Locations are plain text unless the reader says how to open them.
-		// An editor name is a shorthand for its template; anything else is
+		// An editor name is a shorthand for its template. Anything else is
 		// taken as a template already.
 		if link != "" {
 			template, ok := html.EditorLink(link)
@@ -302,10 +303,10 @@ func encoder(format, theme, layout, link string) (graph.Encoder, error) {
 
 // bindReporter is a compiler pass that declares an interface binding itself.
 // godi cannot choose between the two reporters, and the container does not say,
-// so this pass does - and the graph credits it by name, drawing those edges with
-// a dot arrowhead.
+// so this pass does it instead. The graph credits the pass by name and draws those
+// edges with a dot arrowhead.
 //
-// Reaching for the engine package like this is unusual; most containers only
+// Reaching for the engine package like this is unusual. Most containers only
 // ever need the bindings the facade offers.
 func bindReporter() *dicore.CompilerPass {
 	return dicore.NewCompilerPass("bind reporter", dicore.PreAutomation, dicore.CompilerOpFunc(

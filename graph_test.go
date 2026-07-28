@@ -52,8 +52,7 @@ type Collector struct{ greeters []Greeter }
 func NewCollector(greeters ...Greeter) *Collector { return &Collector{greeters: greeters} }
 
 // graphOf extracts the graph of a built container. Build returns the Container
-// interface, so the concrete container - which is what extraction reads - comes
-// back out of it here.
+// interface, and extraction reads the concrete container, so it is asserted here.
 func graphOf(t *testing.T, c godi.Container, opts ...graph.Option) *graph.Graph {
 	t.Helper()
 
@@ -81,9 +80,9 @@ func graphOfFailedBuild(t *testing.T, b *godi.Builder) *graph.Graph {
 	return snapshotIn(t, dir)
 }
 
-// graphAtPreAutomation is the wiring as declared, taken by a pass of the test's
-// own before godi has worked anything out. The build itself may fail - that is
-// what half the callers here are about - and the graph is taken either way.
+// graphAtPreAutomation is the wiring as declared, taken by a pass of the test's own
+// before godi has worked anything out. The build itself may fail, which is what
+// half the callers here are about, and the graph is taken either way.
 func graphAtPreAutomation(t *testing.T, b *godi.Builder) *graph.Graph {
 	t.Helper()
 
@@ -814,8 +813,8 @@ func TestABuiltContainerHasNothingIncompleteInIt(t *testing.T) {
 	}
 }
 
-// The wiring as declared is a graph too, and the one to read when the container
-// will not build - the point at which there is no container to read.
+// The wiring as declared is a graph too. It is the one to read when the container
+// will not build, which is when there is no container to read.
 func TestTheWiringIsAGraphBeforeGodiHasWorkedAnythingOut(t *testing.T) {
 	b := godi.New().Services(
 		godi.Svc(NewServer, "localhost:8080"),
@@ -830,7 +829,7 @@ func TestTheWiringIsAGraphBeforeGodiHasWorkedAnythingOut(t *testing.T) {
 	require.ElementsMatch(t,
 		[]string{"v2_test.(*Server)", "v2_test.EnGreeter", "v2_test.(*Store)"}, nodeTypes(g))
 
-	// What the user wrote is there; what godi would have supplied is not.
+	// What the user wrote is there. What godi would have supplied is not.
 	require.Equal(t, graph.ArgOriginManual, paramOf(t, g, "v2_test.(*Server)", 2).Origin)
 	require.Equal(t, graph.ArgOriginNone, paramOf(t, g, "v2_test.(*Server)", 1).Origin)
 	require.Empty(t, g.Edges)

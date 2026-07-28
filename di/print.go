@@ -23,16 +23,15 @@ func Print(s *Scope, w io.Writer) {
 		return
 	}
 
-	// The signature has nowhere to report a failure, and the only one there can
-	// be is the writer's own.
+	// Print returns nothing, so a failure has nowhere to go. The only one
+	// possible is the writer's own.
 	p := &printer{w: bufio.NewWriter(w), names: s.container.definitionNames()}
 	p.scope(s, 0)
 	_ = p.w.Flush()
 }
 
-// printer writes the outline. It is deliberately plain and self-contained: the
-// encoders in graph/ are where output work happens now, and nothing that would
-// put one of them on every godi binary's import path belongs here.
+// printer writes the outline. It stays plain and self-contained: nothing here may
+// pull a graph encoder onto every godi binary's import path.
 type printer struct {
 	w     *bufio.Writer
 	names map[ID]string
@@ -50,7 +49,7 @@ func (p *printer) scope(s *Scope, depth int) {
 	p.functions(s, depth+1)
 
 	// Nested, because a child scope is only reachable through the definition
-	// that declared it, and the indentation is what says so.
+	// that declared it. The indentation says so.
 	for child := range s.container.Scopes() {
 		if child.Parent() == s {
 			_, _ = p.w.WriteString("\n")
@@ -59,9 +58,9 @@ func (p *printer) scope(s *Scope, depth int) {
 	}
 }
 
-// scopeName is what to call a scope. A child scope's own name is the uuid of
-// the definition that declared it, which says nothing, so it is named after
-// that definition instead.
+// scopeName is what to call a scope. A child scope's own name is a uuid, which
+// says nothing to a reader, so it is named after the definition that declared
+// it.
 func (p *printer) scopeName(s *Scope) string {
 	for _, def := range s.container.ServiceDefinitionsSeq() {
 		if def.ChildScope() == s {
@@ -148,8 +147,8 @@ func (p *printer) args(scope *Scope, args *ArgList, depth int) {
 		origin, pass := slot.Origin()
 		trace := TraceArg(scope, slot.Arg())
 
-		// The value itself is left out on purpose: a literal is routinely a
-		// connection string or a token, and this writes to whatever it is given.
+		// The value is left out on purpose. A literal is often a connection
+		// string or a token, and this writes to whatever it is given.
 		if trace.Kind == ArgKindLiteral {
 			p.linef(depth+1, "%s = %s  [%s]", head, util.Signature(reflect.TypeOf(trace.Value)), argOriginName(origin, pass))
 			continue
@@ -187,9 +186,9 @@ func (c *Container) definitionNames() map[ID]string {
 	return names
 }
 
-// flags are the properties worth naming. Only the surprising half of each pair
-// is printed - a lazy shared service is the default and says nothing - so what
-// is left is what someone chose.
+// flags are the properties worth naming. Only the unusual half of each pair is
+// printed: a lazy shared service is the default and says nothing. What is left is
+// what someone chose.
 func flags(lazy, shared, autowired, instantiated bool, labels []Label) string {
 	var out []string
 	if !lazy {
@@ -214,8 +213,8 @@ func flags(lazy, shared, autowired, instantiated bool, labels []Label) string {
 	return "  [" + strings.Join(out, ", ") + "]"
 }
 
-// Only an extension is worth naming: godi's own automation runs under a
-// compiler pass too, but "autowiring (autowiring)" tells nobody anything.
+// Only an extension is worth naming. godi's own automation runs under a compiler
+// pass too, and "autowiring (autowiring)" says nothing.
 func argOriginName(origin ArgOrigin, pass string) string {
 	switch origin {
 	case ArgOriginNone:

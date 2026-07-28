@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The source root is only worth recording when it actually shortens the paths.
-// Trimming is done a component at a time, so two sibling directories that share
-// a prefix - app and apple - must not be mistaken for one.
+// The source root is only worth recording when it shortens the paths. Trimming is
+// done a component at a time, so two sibling directories that share a prefix, such
+// as app and apple, must not be mistaken for one.
 func TestTheSourceRootIsTheDirectoryEveryPathShares(t *testing.T) {
 	t.Parallel()
 

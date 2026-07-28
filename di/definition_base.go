@@ -6,13 +6,12 @@ import (
 	"github.com/samber/lo"
 )
 
-// definition is what a service definition and a function definition are the
-// same: an identity, labels, where it lives, where it was registered, and the
-// two properties that decide when it runs.
+// definition holds what a service definition and a function definition have in
+// common: an identity, labels, the scopes it lives in, where it was registered,
+// and the two properties that decide when it runs.
 //
-// self is the concrete definition embedding this one, so that a setter returns
-// the type the caller started from and the fluent chains keep working. Nothing
-// else needs it.
+// self is the concrete definition embedding this one. Setters return it, so a
+// fluent chain keeps the type the caller started from.
 type definition[T any] struct {
 	self   T
 	id     ID
@@ -27,9 +26,9 @@ type definition[T any] struct {
 	autowired bool
 }
 
-// init fills in what every definition starts with. The source is captured by
-// the constructor rather than here, so that the stack it records is the
-// caller's own and not one frame of godi's.
+// init fills in what every definition starts with. The constructor captures the
+// source, not this function: one more frame of godi's would show up in the stack
+// it records.
 func (d *definition[T]) init(self T, src source) {
 	d.self = self
 	d.id = NewID()
@@ -60,12 +59,12 @@ func (d *definition[T]) SetChildScope(scope *Scope) T {
 	return d.self
 }
 
-// NewChildScope creates a scope of this definition's own inside parent: named
-// after the definition, and back-linked to it.
+// NewChildScope creates a scope of this definition's own inside parent. It names
+// the scope after the definition and links the definition back to it.
 //
-// Both halves matter, and doing them by hand means knowing a convention nobody
-// wrote down. A scope made with Scope.NewChild belongs to no definition, and
-// everything that reports on a container can only describe it as such.
+// Doing that by hand means knowing an unwritten convention. A scope made with
+// Scope.NewChild belongs to no definition, and reports can only describe it as
+// such.
 func (d *definition[T]) NewChildScope(parent *Scope) *Scope {
 	d.childScope = parent.NewChild(d.id.String())
 	return d.childScope

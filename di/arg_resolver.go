@@ -23,8 +23,8 @@ func ResolveArg(scope *Scope, arg Arg) (any, error) {
 	return arg.resolve(scope)
 }
 
-// ResolveArgIDs lists the definitions the argument resolves to. It is empty for
-// an argument that names no service, a literal above all.
+// ResolveArgIDs lists the definitions the argument resolves to. A literal names
+// no service, so its list is empty.
 func ResolveArgIDs(scope *Scope, arg Arg) []ID {
 	if arg == nil {
 		return nil
@@ -32,8 +32,8 @@ func ResolveArgIDs(scope *Scope, arg Arg) []ID {
 	return arg.resolveIDs(scope)
 }
 
-// ArgResolver resolves arguments. Every kind of argument now does its own
-// resolving, so this is the same three functions above under an older name.
+// ArgResolver resolves arguments. Each kind of argument does its own resolving,
+// so this is the three functions above under an older name.
 type ArgResolver struct{}
 
 func NewArgResolver() *ArgResolver {

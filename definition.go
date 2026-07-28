@@ -70,8 +70,8 @@ type ServiceDefinitionBuilder struct {
 	methods  []*funcBuilder
 	children []*ServiceDefinitionBuilder
 
-	// chose records the properties the caller decided for themselves, so that
-	// the container's defaults fill in the rest and nothing else.
+	// chose records the properties the caller set. The container's defaults fill
+	// in the rest.
 	chose         propertiesChosen
 	factoryParsed bool
 }
@@ -89,10 +89,11 @@ func Svc(factory any, args ...any) *ServiceDefinitionBuilder {
 	return b
 }
 
-// SvcVal registers a value as a service, as it stands. The value is wrapped in
-// a factory of godi's own to hold it; the definition remembers the value itself,
-// because that wrapper is not something anyone wrote and reporting it as the
-// implementation would point readers into godi.
+// SvcVal registers a value as a service, as it stands. godi wraps the value in a
+// factory of its own to hold it.
+//
+// The definition remembers the value. Nobody wrote that wrapper, so reporting it
+// as the implementation would point readers into godi.
 func SvcVal[T any](svc T) *ServiceDefinitionBuilder {
 	b := Svc(func() T { return svc })
 	b.def.SetVal(reflect.ValueOf(svc))
@@ -155,9 +156,10 @@ func (b *ServiceDefinitionBuilder) Children(services ...*ServiceDefinitionBuilde
 	return b
 }
 
-// applyDefaults fills in the properties the caller did not choose. It runs when
-// the definition is registered rather than when it is created, which is what
-// lets the defaults belong to a container instead of to the process.
+// applyDefaults fills in the properties the caller did not choose.
+//
+// It runs when the definition is registered, not when it is created. That is what
+// lets the defaults belong to a container rather than to the process.
 func (b *ServiceDefinitionBuilder) applyDefaults(defaults di.Defaults) {
 	if !b.chose.lazy {
 		b.def.SetLazy(defaults.Lazy)

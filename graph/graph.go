@@ -34,11 +34,11 @@ func NewEdgeID(param ParamID, ordinal int) EdgeID {
 // Graph is the dependency graph of a container: what depends on what, how each
 // dependency was wired, and what was passed where.
 //
-// It is plain data. Nothing here refers to the container it came from, which is
-// what lets encoders live outside godi entirely.
+// It is plain data. Nothing here refers to the container it came from, so an
+// encoder can live outside godi.
 type Graph struct {
 	// Schema is not written here. Serialising a graph wraps it in an envelope
-	// whose metadata carries the schema, so the file says it once - see
+	// whose metadata carries the schema, so the file says it once. See
 	// WriteJSON.
 	Schema   string     `json:"-"`
 	Scopes   []*Scope   `json:"scopes"`   // Depth first from the root.
@@ -46,21 +46,21 @@ type Graph struct {
 	Edges    []*Edge    `json:"edges"`    // Sorted by (From, Param, Ordinal).
 	Bindings []*Binding `json:"bindings"` // Sorted by (Scope, Interface).
 
-	// GraphDiagnostics are about this graph, or the file it was read from,
-	// rather than about the container: a scope no definition owns, a schema
-	// this build does not know. Nothing is wrong with the wiring, so nothing is
-	// marked - see WiringDiagnostics for the other half.
+	// GraphDiagnostics are about this graph, or the file it was read from, rather
+	// than about the container: a scope no definition owns, a schema this build
+	// does not know. Nothing is wrong with the wiring, so nothing is marked. See
+	// WiringDiagnostics for the other half.
 	GraphDiagnostics []*Diagnostic `json:"graphDiagnostics,omitzero"`
 
 	// Snapshot is set when the graph was taken from a container that was not
-	// finished being built. It is nil for a built container, which is the only
-	// graph describing wiring nobody is going to change again.
+	// finished being built. It is nil for a built container. That is the only
+	// graph whose wiring nobody will change again.
 	Snapshot *Snapshot `json:"snapshot,omitzero"`
 
 	// SourceRoot is the directory every file path is relative to, when they
 	// share one. It is empty when they do not, and then the paths are as the
 	// runtime gave them. Trimming it keeps output readable and stable across
-	// machines; joining it back onto a path returns the original.
+	// machines. Joining it back onto a path returns the original.
 	SourceRoot string `json:"sourceRoot,omitzero"`
 
 	// Lookup indexes, built on first use.
@@ -81,16 +81,15 @@ type Scope struct {
 	Depth  int     `json:"depth"`
 	Name   string  `json:"name"`           // The container's own name for it; a uuid for child scopes.
 	Owner  NodeID  `json:"owner,omitzero"` // The node that declared this scope.
-	// OwnerName is what that node is called, fully qualified. Recorded rather
-	// than read back out of Owner, which is a path built for uniqueness and
-	// full of the punctuation and import paths that makes it unreadable.
+	// OwnerName is what that node is called, fully qualified. Owner is a path
+	// built for uniqueness, so it is too cluttered to derive this from.
 	OwnerName string `json:"ownerName,omitzero"`
 }
 
-// Label names a scope for a reader. A child scope's own name is the uuid of the
-// definition that declared it, which says nothing, so it is named after that
-// definition instead. Every encoder owes the reader the same answer, which is
-// why this is on the model rather than in each of them.
+// Label names a scope for a reader. A child scope's own name is a uuid, which
+// says nothing, so it is named after the definition that declared it.
+//
+// It is on the model so that every format gives the same answer.
 func (s *Scope) Label() string {
 	if s.OwnerName == "" {
 		return string(s.ID)
@@ -126,8 +125,8 @@ type Node struct {
 	Autowired bool `json:"autowired"`
 	// FromValue reports that the service was handed to the container as a value
 	// rather than built by a factory. Name, Signature and Defined then describe
-	// that value, when it is a function, and are empty when it is not: there is
-	// nothing to name in a struct someone passed in.
+	// that value, if it is a function. They are empty if it is not: a struct
+	// someone passed in has nothing to name.
 	FromValue bool `json:"fromValue,omitzero"`
 
 	ChildScope ScopeID  `json:"childScope,omitzero"` // The scope this node declared, if any.
@@ -143,32 +142,30 @@ type Node struct {
 
 	InDegree  int `json:"inDegree"`
 	OutDegree int `json:"outDegree"`
-	// Root reports that nothing in the container injects this node: it is the
-	// top of a dependency tree. That is either an entry point, or wiring
-	// nothing uses, and the container cannot tell the two apart - which is the
-	// point of showing them.
+	// Root reports that nothing in the container injects this node: it is the top
+	// of a dependency tree. That is either an entry point or wiring nothing uses.
+	// The container cannot tell the two apart, which is why it shows both.
 	//
-	// It is a fact about the wiring rather than a guess about intent, unlike
-	// asking what is reachable, which needs a set of entry points the container
-	// does not have. A cycle has no member of in-degree zero, so a cyclic
+	// It is a fact about the wiring, not a guess about intent. Asking what is
+	// reachable instead would need a set of entry points the container does not
+	// have. Note that a cycle has no member of in-degree zero, so a cyclic
 	// component has no root.
 	Root bool `json:"root"`
 	// Instantiated reports whether the container had built this service by the
 	// time the graph was taken.
 	Instantiated bool `json:"instantiated"`
-	// Elided is how many of this node's neighbours a filter cut off. It is only
-	// ever set by a limit - a focus that ran out of hops, a node cap - never by
-	// an exclusion the caller named, because the point of it is to say that the
-	// graph carries on where the picture stops.
+	// Elided is how many of this node's neighbours a filter cut off. Only a limit
+	// sets it: a focus that ran out of hops, or a node cap. An exclusion the
+	// caller named does not, because the point is to say that the graph carries
+	// on where the picture stops.
 	Elided int `json:"elided,omitzero"`
 	// Incomplete reports that this node is missing something it needs: an
 	// argument naming a dependency the container does not have, or one nothing
-	// has wired and nothing is going to. It is what a build that failed looks
-	// like from here, and the reason is on the argument itself.
+	// has wired and nothing is going to. The reason is on the argument itself.
 	//
-	// An argument not wired *yet* does not count: before autowiring has run,
-	// that is work outstanding rather than anything wrong. A built container
-	// never has either, since validation would have rejected it.
+	// An argument not wired *yet* does not count. Before autowiring has run, that
+	// is work outstanding rather than a fault. A built container has neither,
+	// since validation would have rejected it.
 	Incomplete bool `json:"incomplete,omitzero"`
 }
 
@@ -181,17 +178,15 @@ func (n *Node) NameShort() string { return render.Short(n.Name) }
 // KnownByName reports whether a reader knows this node by its name rather than
 // by the type it provides.
 //
-// A service is known by its type, and a function by its name, since a function's
-// type is only its signature. A service registered as a function value is the
-// second sort: its type *is* that function's signature, so the type says nothing
-// the signature says already, and a wrapped two-line signature makes a poor
-// heading. The exception is a literal, whose name the runtime made up - that
-// identifies the function without describing it, so the signature is the better
-// of the two.
+// A service is known by its type. A function is known by its name, because a
+// function's type is only its signature.
 //
-// Every encoder owes the reader the same answer, which is why this is here
-// rather than in each of them. The viewer keeps its own copy in JavaScript, for
-// want of a way to call this from a browser.
+// A service registered as a function value is known by its name too: its type is
+// that function's signature, so the type adds nothing. The exception is a
+// literal, whose name the runtime made up. That name identifies the function
+// without describing it, so the signature is the better heading.
+//
+// It is on the model so that every format gives the same answer.
 func (n *Node) KnownByName() bool {
 	return n.Kind == NodeFunction || (n.FromValue && n.Name != "" && !n.Anonymous())
 }
@@ -208,12 +203,11 @@ func (n *Node) Title() string {
 // Subtitle is the line under the heading: whichever of the name and the
 // signature the title did not take.
 //
-// Where the name is the heading - a function, or a service registered as a
-// named function value - what is left to say is what it takes and returns. So
-// it is for a function literal, whose name the runtime made up: that identifies
-// it without describing it, and the signature is the only thing that does.
+// Where the name is the heading, what is left to say is what the function takes
+// and returns. That covers a function, a service registered as a named function
+// value, and a function literal, whose made-up name describes nothing.
 //
-// Empty when there is nothing to add, and the caller drops the line when it
+// It is empty when there is nothing to add. The caller drops the line when it
 // repeats the title.
 func (n *Node) Subtitle() string {
 	if !n.KnownByName() && !n.Anonymous() {
@@ -229,21 +223,19 @@ func (n *Node) Subtitle() string {
 // the function itself for a function node, and for a service either the factory
 // that builds it or the value it was registered as.
 //
-// A literal has no name of its own, so what the graph carries is what the
-// runtime calls it: the function that encloses it and a counter, as in
-// "main.build.func1", with a further counter for each level of nesting. Worth
-// knowing because a name like that identifies a function without describing it,
-// and its signature is the only thing that does.
-// "func1" on its own is a name someone can perfectly well choose, so the marker
-// alone is not enough to go on. What settles it is that a literal is named
-// after whatever encloses it: inside its own package there is always a
-// qualifier in front of the counter, and a function of one's own has nothing in
-// front of it at all.
+// A literal has no name of its own. What the graph carries is what the runtime
+// calls it: the enclosing function and a counter, as in "main.build.func1", with
+// a further counter per level of nesting. Such a name identifies a function
+// without describing it, so the signature is the only thing that does.
 //
-// The one case this cannot separate is a method someone called "func1", which
-// is spelled exactly as a literal inside a method called anything else. Nothing
-// in the name distinguishes them, and the cost of being wrong is a line of
-// signature shown or not shown.
+// "func1" alone is a name someone can choose, so the counter is not enough to go
+// on. What settles it is that a literal is named after whatever encloses it.
+// Inside its own package there is always a qualifier in front of the counter, and
+// a function of one's own has nothing in front of it.
+//
+// One case cannot be told apart: a method called "func1" is spelled exactly like
+// a literal inside a method called anything else. The cost of being wrong is one
+// line of signature shown or not shown.
 func (n *Node) Anonymous() bool {
 	// What the name says within its own package: "build.func1" for a literal
 	// declared inside build, "migrate" for a function of its own.
@@ -259,8 +251,8 @@ func (n *Node) Anonymous() bool {
 		if counter, ok := strings.CutPrefix(part, "func"); ok && digits(counter) {
 			return true
 		}
-		// A nested literal adds a bare counter of its own; walk back past those
-		// to reach the marker.
+		// A nested literal adds a bare counter of its own. Walk back past those to
+		// reach the marker.
 		if !digits(part) {
 			return false
 		}
@@ -282,14 +274,12 @@ func digits(s string) bool {
 
 // Package is the import path this node belongs to.
 //
-// It is worth having on its own because the qualified type is not: a generic
-// names its type arguments in full, so the one line that would tell you where a
-// service lives is the one line nobody can read. The package answers that
-// question and nothing else.
+// The qualified type cannot answer that. A generic names its type arguments in
+// full, so the line that would say where a service lives is unreadable. This
+// answers it and nothing else.
 //
-// A function's type is only a signature, and a service can be of a builtin
-// type; either way the factory that made it has a package when the type does
-// not.
+// A function's type is only a signature, and a service can be of a builtin type.
+// Either way, the factory that made it has a package when the type does not.
 func (n *Node) Package() string {
 	if n.Kind == NodeService {
 		if pkg := render.Package(n.Type); pkg != "" {
@@ -302,7 +292,7 @@ func (n *Node) Package() string {
 // Location is a place in the source. Paths are relative to the graph's
 // SourceRoot when it has one.
 //
-// What the paths look like depends on how the binary was built: a release built
+// What the paths look like depends on how the binary was built. A release built
 // with -trimpath reports module-relative paths that no editor can open, so a
 // location is worth showing but not worth promising to resolve.
 type Location struct {
@@ -311,8 +301,8 @@ type Location struct {
 	Func string `json:"func,omitzero"` // The function that registered it, where that is known.
 }
 
-// IsZero reports whether nothing was recorded. It is what lets a Location be
-// left out of the encoded graph entirely.
+// IsZero reports whether nothing was recorded. An empty Location is left out of
+// the encoded graph.
 func (l Location) IsZero() bool { return l.File == "" && l.Line == 0 }
 
 func (l Location) String() string {
@@ -398,10 +388,10 @@ type Literal struct {
 	Redacted  bool   `json:"redacted,omitzero"`
 }
 
-// String renders one constant for display. The type is deliberately not
-// repeated: every encoder already shows it on the argument row this sits
-// beside. It lives on the model because three encoders rendering the same
-// constant three ways is three chances to disagree.
+// String renders one constant for display. The type is left out: every encoder
+// already shows it on the argument row this sits beside.
+//
+// It is on the model so that every format renders a constant the same way.
 func (l Literal) String() string {
 	switch {
 	case l.Value != "" && l.Truncated:
@@ -458,22 +448,24 @@ type Edge struct {
 	Cycle     bool   `json:"cycle,omitzero"`
 }
 
-// PassCredit names the compiler pass responsible for this edge, and is empty
-// when none is. godi's own automation is deliberately not named: it is the
-// default the reader already knows.
+// PassCredit names the compiler pass responsible for this edge, and is empty when
+// none is. godi's own automation is not named: it is the default the reader
+// already knows.
 //
-// A pass can be responsible in either of two ways - by wiring the argument, or
-// by creating the binding the argument resolved through - and the answer is the
-// same either way, so callers need not know which happened. Only when two
-// different passes each had a hand in the same edge does it say which did what.
+// A pass can be responsible in two ways: by wiring the argument, or by creating
+// the binding the argument resolved through. The answer reads the same either
+// way. Only when two different passes each had a hand in one edge does it say
+// which did what.
 //
-// It lives on the model because every encoder owes the reader the same answer.
+// It is on the model so that every format gives the same answer.
 // DecidedBy is who chose this particular dependency: whoever created the
 // binding it resolved through, and otherwise whoever wired the argument.
 //
 // godi creating a binding for you and godi autowiring an argument are the same
-// answer to "who decided": godi did. Every format asks the same question - the
-// colour of an edge, the filters in the viewer - so it is answered here.
+// answer to "who decided": godi did.
+//
+// The colour of an edge and the viewer's filters both ask this, so it is answered
+// here.
 func (e *Edge) DecidedBy() ArgOrigin {
 	hop, ok := e.Binding()
 	if !ok {
@@ -553,8 +545,8 @@ type Binding struct {
 // Snapshot says when a graph was taken from a container that was still being
 // built: before compilation started, or between two compiler passes.
 //
-// Wiring a later pass would have added is simply not there yet, so a snapshot
-// describes the work so far rather than the container the application runs.
+// Wiring that a later pass would add is not there yet. A snapshot describes the
+// work so far, not the container the application runs.
 type Snapshot struct {
 	// Stage is the compiler stage in progress. Empty before compilation starts.
 	Stage string `json:"stage,omitzero"`
@@ -564,11 +556,11 @@ type Snapshot struct {
 	// there. The graph is then as far as the container ever got, which is where
 	// whatever went wrong is still visible.
 	Failed string `json:"failed,omitzero"`
-	// Done names the passes that had already finished, in the order they ran.
-	// It is the honest measure of how much of the wiring is here.
+	// Done names the passes that had already finished, in the order they ran. It
+	// says how much of the wiring is here.
 	Done []string `json:"done,omitzero"`
 	// Autowired says godi's autowiring has run. After it, an argument still
-	// unwired is one nothing is going to wire; before it, it is only work not
+	// unwired is one nothing is going to wire. Before it, that is only work not
 	// done yet.
 	Autowired bool `json:"autowired,omitzero"`
 }
@@ -604,8 +596,8 @@ const (
 
 // Diagnostic reports something worth saying about a graph: an argument that
 // resolves to nothing, a scope no definition owns, a file written by a version
-// that knew a different schema. Extraction never fails on odd input; it records
-// it here instead.
+// that knew a different schema. Extraction never fails on odd input. It records it
+// here instead.
 type Diagnostic struct {
 	Severity Severity `json:"severity"`
 	Scope    ScopeID  `json:"scope,omitzero"`
@@ -619,9 +611,9 @@ type Diagnostic struct {
 // to. Both can only occur in a graph of a build that failed or has not
 // finished, since the argument validation pass rejects either.
 //
-// Derived from the parameters rather than stored beside them, so that the count
-// a reader is shown and the nodes drawn as faulty cannot drift apart: they are
-// the same fact, read twice.
+// They are derived from the parameters rather than stored beside them. The count
+// a reader is shown and the nodes drawn as faulty then come from the same place,
+// so they cannot disagree.
 func (g *Graph) WiringDiagnostics() []*Diagnostic {
 	if g.wired {
 		return g.wiring
@@ -629,8 +621,8 @@ func (g *Graph) WiringDiagnostics() []*Diagnostic {
 	g.wired = true
 
 	// Before autowiring runs every argument is unwired, so an unfilled one is
-	// work outstanding rather than a fault. Whether it has run is the snapshot's
-	// to say, and a finished container has no snapshot.
+	// work outstanding rather than a fault. The snapshot says whether it has run.
+	// A finished container has no snapshot.
 	autowired := g.Snapshot == nil || g.Snapshot.Autowired
 
 	for _, node := range g.Nodes {
@@ -650,9 +642,8 @@ func (g *Graph) WiringDiagnostics() []*Diagnostic {
 	return g.wiring
 }
 
-// AllDiagnostics is everything worth reporting about a graph, wiring first:
-// what is wrong with the container matters more than what is odd about the
-// picture of it.
+// AllDiagnostics is everything worth reporting about a graph, wiring first. What
+// is wrong with the container matters more than what is odd about the picture.
 func (g *Graph) AllDiagnostics() []*Diagnostic {
 	wiring := g.WiringDiagnostics()
 	if len(g.GraphDiagnostics) == 0 {

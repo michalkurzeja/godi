@@ -17,8 +17,8 @@ func WithEncoder(enc graph.Encoder) Option {
 }
 
 // WithExtractOptions applies these to every extraction. They matter when the
-// source is a live container, which is asked again on each request; a graph read
-// from a file was extracted once, already, by whoever wrote it.
+// source is a live container, which is asked again on each request. A graph read
+// from a file was extracted once already, by whoever wrote it.
 func WithExtractOptions(opts ...graph.Option) Option {
 	return func(cfg *config) { cfg.extract = opts }
 }

@@ -145,7 +145,7 @@ func TestProvenanceIsDrawnWithoutRelyingOnColour(t *testing.T) {
 	}
 }
 
-// The head says how the dependency was matched; the colour says who chose it.
+// The head says how the dependency was matched. The colour says who chose it.
 // Keeping them independent is what lets a reader tell "godi picked the
 // implementation" from "you did" at a glance.
 func TestHeadSaysHowAndColourSaysWho(t *testing.T) {
@@ -438,8 +438,8 @@ func TestThemesDifferAndBothSetABackground(t *testing.T) {
 	require.NotEqual(t, light, dark)
 }
 
-// Cluster labels - the scope names and the key's own caption - take the graph
-// font colour, not the node one. Leaving it unset renders them black, which is
+// Cluster labels take the graph font colour, not the node one. That covers the scope
+// names and the key's own caption. Leaving it unset renders them black, which is
 // unreadable on a dark background.
 func TestClusterLabelsFollowTheTheme(t *testing.T) {
 	t.Parallel()
@@ -474,8 +474,8 @@ func TestClusterLabelsFollowTheTheme(t *testing.T) {
 	}
 }
 
-// The key exists to show the arrowheads. Describing them in prose - which an
-// earlier version did - leaves the reader guessing what a diamond means.
+// The key exists to show the arrowheads. An earlier version described them in
+// prose, which leaves the reader guessing what a diamond means.
 func TestLegendDrawsRealSampleEdges(t *testing.T) {
 	t.Parallel()
 
@@ -624,8 +624,8 @@ func TestAnUnknownLocationIsLeftOut(t *testing.T) {
 	require.NotContains(t, out, "defined:")
 }
 
-// Extraction never fails on odd input; it records it. A drawing that leaves the
-// record out is the one place a reader would never think to look for it.
+// Extraction never fails on odd input. It records it, and a drawing that leaves that
+// out is the last place a reader would think to look.
 func TestNoticesAreDrawn(t *testing.T) {
 	t.Parallel()
 

@@ -2,8 +2,8 @@ package di
 
 type Config struct {
 	CompilerConfig
-	// Defaults are the properties a definition takes when whoever registered it
-	// did not choose. Per container, so two in one process can differ.
+	// Defaults are the properties a definition takes when its registration does
+	// not set them. Each container has its own.
 	Defaults Defaults
 }
 
@@ -14,7 +14,8 @@ func NewConfig() Config {
 	}
 }
 
-// Defaults are the properties a definition takes when nothing else says.
+// Defaults are the properties a definition takes when its registration does not
+// set them.
 type Defaults struct {
 	Lazy      bool
 	Shared    bool

@@ -12,7 +12,7 @@ import (
 // Both ways out of run() extract the graph, and they have to extract the same
 // one. -open once did it without the options the stdout path used, so the fake
 // DSN and the address a compiler pass substitutes were in the DOT and missing
-// from the page - two different graphs from one command, each looking fine.
+// from the page. Two different graphs from one command, each looking fine.
 func TestOpenDrawsTheSameGraphAsStdout(t *testing.T) {
 	var opened *graph.Graph
 

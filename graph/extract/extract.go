@@ -1,9 +1,8 @@
 // Package extract reads a godi container and produces the graph model.
 //
-// It is the one place that knows both sides: the engine it reads and the model
-// it writes. That is why it is a package of its own - the model stays free of
-// the container engine, so anything that only reads a graph, the godi CLI
-// included, links none of it.
+// It is the one place that knows both sides: the engine it reads and the model it
+// writes. That is why it is a package of its own. The model stays free of the
+// container engine, so anything that only reads a graph links none of it.
 //
 //	c, err := di.New().Services(...).Build()
 //
@@ -20,8 +19,8 @@ import (
 
 // From builds the dependency graph of a built container.
 //
-// It returns the whole graph. Narrow it with Graph.Select, which is a separate
-// call because one extraction can answer several questions.
+// It returns the whole graph. Narrow it afterwards with Graph.Select, so that one
+// extraction can answer several questions.
 func From(c *di.Container, opts ...graph.Option) (*graph.Graph, error) {
 	if c == nil {
 		return nil, errors.New("extract: no container")
@@ -30,12 +29,10 @@ func From(c *di.Container, opts ...graph.Option) (*graph.Graph, error) {
 }
 
 // FromBuilder builds the graph of a container that is still being built: from
-// inside a compiler pass, or after a build that failed, which is where whatever
-// stopped it is still visible.
+// inside a compiler pass, or after a build that failed.
 //
-// The graph carries a graph.Snapshot saying how far compilation had got, so
-// that missing wiring reads as work still to do rather than as a broken
-// container.
+// The graph carries a graph.Snapshot saying how far compilation had got. Missing
+// wiring then reads as work still to do, not as a broken container.
 func FromBuilder(b *di.ContainerBuilder, opts ...graph.Option) (*graph.Graph, error) {
 	if b == nil {
 		return nil, errors.New("extract: no builder")
@@ -47,7 +44,8 @@ func FromBuilder(b *di.ContainerBuilder, opts ...graph.Option) (*graph.Graph, er
 }
 
 // Live presents a container as a graph.Source, extracting again on every call.
-// It is what serves a graph over HTTP: the wiring can change under it, and each
+//
+// It is what serves a graph over HTTP. The wiring can change under it, and each
 // request should see what is there now.
 func Live(c *di.Container) graph.Source {
 	return func(cfg graph.Config) (*graph.Graph, error) {
@@ -82,10 +80,11 @@ func snapshotOf(p di.CompilerProgress) *graph.Snapshot {
 type extractor struct {
 	container *di.Container
 	cfg       graph.Config
-	// snapshot says how far compilation had got, and is nil for a container
-	// that finished building. It decides what counts as missing: before
-	// autowiring runs, an unwired argument is work outstanding rather than a
-	// fault.
+	// snapshot says how far compilation had got. It is nil for a container that
+	// finished building.
+	//
+	// It decides what counts as missing. Before autowiring runs, an unwired
+	// argument is work outstanding rather than a fault.
 	snapshot *graph.Snapshot
 	out      *graph.Graph
 

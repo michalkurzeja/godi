@@ -12,15 +12,15 @@ import (
 )
 
 // methodParams emits the arguments of a method call. Slot 0 holds the receiver,
-// which godi injects itself; it is only worth an edge if it somehow points
-// somewhere other than the owning definition.
+// which godi injects itself. It is only worth an edge if it points somewhere
+// other than the owning definition.
 func (x *extractor) methodParams(node *graph.Node, scope *di.Scope, def *di.ServiceDefinition, method *di.Method) {
 	slots := method.Args().Slots()
 	if len(slots) == 0 {
 		return
 	}
 
-	// The method's own name is enough: qualifying it would just repeat the type
+	// The method's own name is enough. Qualifying it would repeat the type
 	// already on the node.
 	name := shortMethodName(method.Name())
 
@@ -35,7 +35,7 @@ func (x *extractor) methodParams(node *graph.Node, scope *di.Scope, def *di.Serv
 
 // refersTo reports whether the slot holds the plain reference to the definition
 // itself, which is what godi puts in a method's receiver slot. An edge from a
-// service to itself says nothing; anything else there is worth showing.
+// service to itself says nothing. Anything else in that slot is worth showing.
 func refersTo(scope *di.Scope, slot *di.Slot, def *di.ServiceDefinition) bool {
 	t := di.TraceArg(scope, slot.Arg())
 	return t.Kind == di.ArgKindRef && len(t.Matches) == 1 && t.Matches[0] == def.ID()
@@ -65,9 +65,9 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 	node.Params = append(node.Params, p)
 
 	if !slot.IsFilled() {
-		// Only reachable before autowiring runs: the argument validation pass
-		// rejects an unfilled slot, so a built container never has one. The
-		// origin is the whole story, and each encoder has its own words for it.
+		// Only reachable before autowiring runs. The argument validation pass
+		// rejects an unfilled slot, so a built container never has one. The origin
+		// is the whole story, and each encoder has its own words for it.
 		p.Origin, p.Arg = graph.ArgOriginNone, graph.ArgKindNone
 		return
 	}
@@ -81,8 +81,8 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 	x.walk(p, trace)
 }
 
-// walk turns one argument's trace into edges. The resolution itself belongs to
-// the argument - this only says what each part of it looks like in a graph.
+// walk turns one argument's trace into edges. The argument decided how it resolved.
+// This only says what each part of that looks like in a graph.
 func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
 	switch t.Kind {
 	case di.ArgKindLiteral:
@@ -106,9 +106,8 @@ func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
 
 // fault reports what an argument failed to find, in the words the reader needs.
 //
-// An argument matching nothing by label is only a fault when the whole argument
-// matched nothing: a label that adds nothing to a compound that resolved is
-// worth no complaint.
+// A label that matched nothing is only a fault when the whole argument matched
+// nothing. Inside a compound that did resolve, it is not a problem.
 func (x *extractor) fault(p *graph.Param, f di.ArgFault) {
 	switch f.Kind {
 	case di.ArgFaultNone:
@@ -123,9 +122,9 @@ func (x *extractor) fault(p *graph.Param, f di.ArgFault) {
 	}
 }
 
-// hops is the bindings an argument resolved through, as the model records them.
-// Nil for an argument that went through none, so that a graph of a container
-// without bindings carries no empty lists.
+// hops is the bindings an argument resolved through, as the model records them. It
+// is nil for an argument that went through none, so a graph of a container without
+// bindings carries no empty lists.
 func (x *extractor) hops(hops []di.BindingHop) []graph.BindingHop {
 	if len(hops) == 0 {
 		return nil
@@ -169,15 +168,15 @@ func (x *extractor) literal(p *graph.Param, v any) {
 // hasReadableValue reports whether formatting the value says anything the type
 // does not already say.
 //
-// A func, a channel or a plain pointer formats as a machine address: it tells
-// the reader nothing and differs on every run, which would make graphs of the
-// same wiring fail to compare.
+// A func, a channel or a plain pointer formats as a machine address. That tells
+// the reader nothing and differs on every run, so two graphs of the same wiring
+// would not compare equal.
 func hasReadableValue(typ reflect.Type) bool {
 	if typ == nil {
 		return true // A nil literal formats as <nil>, which is worth showing.
 	}
 
-	// A type that formats itself is worth asking, whatever its kind.
+	// A type that formats itself is worth asking, whatever its kind is.
 	if typ.Implements(stringerType) || typ.Implements(errorType) {
 		return true
 	}
@@ -226,15 +225,15 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 }
 
 // unresolved records what an argument failed to find. The note is the whole
-// record: what is wrong with the wiring is read back off the parameters, so
-// writing it down twice would be two accounts that can disagree.
+// record. Wiring faults are read back off the parameters, so writing one down
+// twice would be two records that can disagree.
 func (x *extractor) unresolved(p *graph.Param, msg string) {
 	p.Unresolved = true
 	p.Note = msg
 }
 
-// note is something about this graph rather than about the container it
-// describes: nothing is wrong with the wiring, so nothing is marked.
+// note is something about this graph rather than about the container it describes.
+// Nothing is wrong with the wiring, so nothing is marked.
 func (x *extractor) note(severity graph.Severity, d graph.Diagnostic) {
 	d.Severity = severity
 	x.out.GraphDiagnostics = append(x.out.GraphDiagnostics, &d)
@@ -312,8 +311,8 @@ func resolutionOf(res di.Resolution) graph.Resolution {
 	return graph.ResolutionByType
 }
 
-// render formats a literal value for display. A value is arbitrary user data, so
-// a broken Stringer must not take the whole graph down with it.
+// render formats a literal value for display. A value is arbitrary user data, so a
+// broken Stringer must not take the whole graph down with it.
 func render(v any, maxRunes int) (s string, truncated bool) {
 	defer func() {
 		if r := recover(); r != nil {

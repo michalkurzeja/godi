@@ -361,7 +361,7 @@ func TestPayloadCannotBreakOutOfItsScriptBlock(t *testing.T) {
 	page := encode(t, g)
 
 	// The closing tag never appears literally, so the block cannot be ended
-	// early - but the value still arrives intact once parsed.
+	// early. The value still arrives intact once parsed.
 	require.NotContains(t, page, "alert(1)</script>")
 	require.Equal(t, 1, strings.Count(page, "</script>\n</body>"))
 
@@ -482,9 +482,10 @@ func TestElisionReachesThePayload(t *testing.T) {
 }
 
 // Text and DOT print a notice and nothing else about it. The page links to what
-// it is about, so the ids have to travel with the message - and the notices that
-// name nothing at all are the whole reason the page carries them: a scope
-// belonging to no definition has no node to be marked on.
+// it is about, so the ids travel with the message.
+//
+// The notices that name nothing are the reason the page carries them at all: a
+// scope belonging to no definition has no node to be marked on.
 func TestDiagnosticsReachThePayload(t *testing.T) {
 	g := model()
 	// A fault in the wiring is not written down twice: the parameter carries it,
