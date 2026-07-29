@@ -257,7 +257,7 @@ func (s *Scope) ExecuteFunction(id ID) ([]any, error) {
 // See ExecuteFunction.
 func (s *Scope) ExecuteFunctionInChain(id ID) ([]any, error) {
 	for scope := range s.Chain() {
-		def, ok := s.funs.Get(id)
+		def, ok := scope.funs.Get(id)
 		if ok {
 			return withInstantiationContext(func(ic *instantiationContext) ([]any, error) {
 				return scope.executeFunction(ic, def)

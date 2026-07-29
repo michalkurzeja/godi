@@ -1,6 +1,7 @@
 package di_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -69,4 +70,38 @@ func TestASecondScopeOfTheSameNameDoesNotReplaceTheFirst(t *testing.T) {
 	second, ok := c.Scope("plugins#2")
 	require.True(t, ok)
 	require.Len(t, second.GetServiceDefinitions(), 1, "the definitions of the second scope are still there")
+}
+
+// ExecuteFunctionInChain used to look the function up in the scope it was called
+// on rather than in the one the walk had reached, so it never saw past that
+// scope. HasFunctionInChain said the function was there and executing it failed.
+func TestAChildScopeCanExecuteAFunctionOfItsParent(t *testing.T) {
+	t.Parallel()
+
+	var called bool
+
+	fn, err := di.NewFunc(reflect.ValueOf(func() { called = true }))
+	require.NoError(t, err)
+
+	c := di.NewContainer()
+	root := c.Root()
+	def := di.NewFunctionDefinition(fn).SetScope(root)
+	root.AddFunctionDefinitions(def)
+
+	child := root.NewChild("child")
+	require.True(t, child.HasFunctionInChain(def.ID()))
+
+	_, err = child.ExecuteFunctionInChain(def.ID())
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
+func TestExecutingAFunctionNoScopeInTheChainHasFails(t *testing.T) {
+	t.Parallel()
+
+	c := di.NewContainer()
+	child := c.Root().NewChild("child")
+
+	_, err := child.ExecuteFunctionInChain(di.NewID())
+	require.ErrorContains(t, err, "not found")
 }
