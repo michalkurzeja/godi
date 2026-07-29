@@ -26,7 +26,8 @@ and resolves values on demand.
 - **Interface resolution.** For an interface parameter, godi finds the implementations and either
   wires the single one or assembles a slice.
 - **Child scopes.** A service can declare private services, invisible to the rest of the container.
-- **Method calls.** Post-construction calls, dependency-injected like anything else.
+- **Method calls.** Post-construction calls, dependency-injected like anything else. They run once
+  every factory the request needed has returned.
 - **Functions.** Injected callables not tied to a service.
 - **Compiler passes.** A staged, priority-ordered extension mechanism that inspects and mutates
   the configuration before it is finalised.
@@ -191,6 +192,9 @@ cast is an ordinary type assertion.
 
 Child services are private. A reference to one does not resolve through the root container.
 
+One call runs every factory it needs before any method call. What you are handed back is fully
+configured; what a factory was handed on the way is not. See [4.2](#42-scopes).
+
 ### 3.5 Defaults
 
 Three settings, each per definition or per container:
@@ -264,6 +268,33 @@ Chain-wide lookups come in two forms: a sequence (`ServicesIDsByTypeInChainSeq`,
 one that belongs to the definition: named after it and back-linked, which is what everything
 reporting on the container reads. A second scope registered under a name already taken is renamed
 (`plugins`, `plugins#2`) rather than replacing the first.
+
+**One call into the container is one `instantiationContext`.** Every public
+`GetService*`/`ExecuteFunction*` starts one, and so does the eager-init pass for a whole build.
+Within it, every factory runs before any method call: a service is built, published if it is
+shared, and its method calls go to the back of a queue that is drained once the factory chain is
+done. A queued call may build services of its own, and their calls join the back of the queue in
+turn.
+
+That rule is what makes wiring through a method call work from either end. `A`'s factory takes `B`,
+`B` is configured with `MethodCall((*B).SetA)`: `B.SetA` cannot run while `A`'s factory is still
+running, so it finds the published `A` rather than building a second one. It costs the other
+guarantee — **a factory does not see the method calls of its dependencies**, because they have not
+run yet.
+
+A factory whose argument resolves to a definition already being built is a genuine cycle, and the
+context reports it as one instead of overflowing the stack. Compile-time cycle validation normally
+catches this first; `SkipCycleValidation` is what leaves it to runtime.
+
+`Scope.instances` is guarded by a mutex, so extracting a graph from a live container does not race
+one building a lazy service. The lock covers the map alone — no factory or method call runs under
+it.
+
+**Construction is not otherwise synchronised.** Two goroutines that both miss the map both build:
+`shared` means one instance per container, not one construction under concurrency. And a service is
+published before its method calls run, so a second goroutine can be handed one that is built but
+not yet configured. Build your container, then share it; do not race the first request for a
+service against another.
 
 ### 4.3 Definitions
 
@@ -483,7 +514,12 @@ godi export dot graph.json | dot -Tsvg -o graph.svg
 fills the slot, and resolution follows the binding. With autowiring off, nothing fills it.
 
 **Cycle detection covers factory arguments only.** Method calls are the documented way out of a
-circular dependency, so they are not checked.
+circular dependency, so they are not checked. A factory cycle that reaches runtime — with
+`SkipCycleValidation`, or through a factory that resolves via the container itself — is reported
+as an error naming the chain.
+
+**Method calls run after every factory the call needed.** So a factory is handed dependencies whose
+method calls have not run. Store them; do not use them while constructing. See [4.2](#42-scopes).
 
 **A method call's receiver is slot 0.** `MethodCall((*Service).Method, args...)` passes a method
 expression, whose first parameter is the receiver; godi fills it. Your arguments start at slot 1.

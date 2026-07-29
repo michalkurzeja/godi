@@ -541,8 +541,12 @@ func main() {
 
 ### Method calls
 
-Method calls are a way to register a method of a service to be called right after the service is instantiated.
+Method calls are a way to register a method of a service to be called once the service is instantiated.
 Just like factories and functions, the dependencies (arguments) of the method are resolved by the container and can benefit from autowiring.
+
+Method calls run after every factory the request needed. Ask the container for a service, and godi builds
+the whole chain first, then calls the methods it owes, oldest service first. A method call that pulls in a
+service of its own builds it there and then, and its methods join the back of the queue.
 
 > 💡 Method calls are useful when you need to configure a service after it's been instantiated.
 >
@@ -550,6 +554,11 @@ Just like factories and functions, the dependencies (arguments) of the method ar
 > if service A depends on service B, and service B depends on service A,
 > godi won't allow you to inject A to B and B to A via factories, as this would lead to an infinite loop.
 > Instead, you can inject A to B via a factory, and B to A via a method call.
+> Either service can be asked for first — both get the same pair of instances.
+
+> ⚠️ A factory does not see the method calls of the services it is handed: they have not run yet.
+> A dependency you only store is fine; one you *use* while constructing sees it unconfigured.
+> Do that work in a method call of your own instead.
 
 > ⚠️ Registering the same method twice on one service silently **replaces** the first registration.
 > Only the last `MethodCall` for a given method name takes effect.

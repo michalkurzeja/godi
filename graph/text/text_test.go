@@ -73,7 +73,7 @@ func model() *graph.Graph {
 				Type: pkg + ".(*Server)", Name: pkg + ".NewServer",
 				Lazy: false, Shared: true, Autowired: true, Root: true, InDegree: 0, OutDegree: 2,
 				Registered: graph.Location{File: "wiring.go", Line: 42},
-				Declared:    graph.Location{File: "http/server.go", Line: 118},
+				Declared:   graph.Location{File: "http/server.go", Line: 118},
 				Params:     []*graph.Param{serverRouter, serverAddr, setLogger},
 			},
 			{

@@ -1,7 +1,7 @@
 {
   "name": "godi",
   "description": "Teaches Claude to correctly write and understand Go code that uses the godi v2 dependency-injection container (github.com/michalkurzeja/godi/v2).",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": {
     "name": "Michał Kurzeja",
     "email": "mike.kurzeja@gmail.com"

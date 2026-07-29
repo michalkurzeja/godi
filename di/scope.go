@@ -6,6 +6,7 @@ import (
 	"iter"
 	"reflect"
 	"slices"
+	"sync"
 
 	"github.com/elliotchance/orderedmap/v2"
 	"github.com/samber/lo"
@@ -34,9 +35,13 @@ type Scope struct {
 	container *Container
 	parent    *Scope
 
-	svcs      *DefinitionRegistry[*ServiceDefinition]
-	funs      *DefinitionRegistry[*FunctionDefinition]
-	bindings  *orderedmap.OrderedMap[reflect.Type, *InterfaceBinding]
+	svcs     *DefinitionRegistry[*ServiceDefinition]
+	funs     *DefinitionRegistry[*FunctionDefinition]
+	bindings *orderedmap.OrderedMap[reflect.Type, *InterfaceBinding]
+
+	// instances are the shared services this scope has built. mu guards the map
+	// and nothing else: a factory or a method call must never run under it.
+	mu        sync.Mutex
 	instances map[ID]any
 }
 
@@ -99,7 +104,7 @@ func (s *Scope) bindingInChain(typ reflect.Type) (*Scope, *InterfaceBinding, boo
 // Instantiated reports whether this scope has already built the service. For a
 // shared service, it means the container is holding the instance.
 func (s *Scope) Instantiated(id ID) bool {
-	_, ok := s.instances[id]
+	_, ok := s.instance(id)
 	return ok
 }
 
@@ -113,16 +118,28 @@ func (s *Scope) HasServiceInChain(id ID) bool {
 }
 
 func (s *Scope) GetService(id ID) (any, error) {
+	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+		return s.getService(ic, id)
+	})
+}
+
+func (s *Scope) getService(ic *instantiationContext, id ID) (any, error) {
 	def, ok := s.svcs.Get(id)
 	if !ok {
 		return nil, nil
 	}
-	return s.getServiceInstance(def)
+	return s.getServiceInstance(ic, def)
 }
 
 func (s *Scope) GetServiceInChain(id ID) (any, error) {
+	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+		return s.getServiceInChain(ic, id)
+	})
+}
+
+func (s *Scope) getServiceInChain(ic *instantiationContext, id ID) (any, error) {
 	for scope := range s.Chain() {
-		svc, err := scope.GetService(id)
+		svc, err := scope.getService(ic, id)
 		if svc != nil || err != nil {
 			return svc, err
 		}
@@ -131,15 +148,27 @@ func (s *Scope) GetServiceInChain(id ID) (any, error) {
 }
 
 func (s *Scope) GetServices(ids ...ID) ([]any, error) {
-	return s.getServicesInstances(s.svcs.GetByIDs(ids))
+	return withInstantiationContext(func(ic *instantiationContext) ([]any, error) {
+		return s.getServices(ic, ids...)
+	})
+}
+
+func (s *Scope) getServices(ic *instantiationContext, ids ...ID) ([]any, error) {
+	return s.getServicesInstances(ic, s.svcs.GetByIDs(ids))
 }
 
 func (s *Scope) GetServicesInChain(ids ...ID) ([]any, error) {
+	return withInstantiationContext(func(ic *instantiationContext) ([]any, error) {
+		return s.getServicesInChain(ic, ids...)
+	})
+}
+
+func (s *Scope) getServicesInChain(ic *instantiationContext, ids ...ID) ([]any, error) {
 	var defs []*ServiceDefinition
 	for scope := range s.Chain() {
 		defs = append(defs, scope.svcs.GetByIDs(ids)...)
 	}
-	return s.getServicesInstances(defs)
+	return s.getServicesInstances(ic, defs)
 }
 
 func (s *Scope) GetServicesIDsByType(typ reflect.Type) []ID {
@@ -166,6 +195,10 @@ func (s *Scope) GetServicesByTypeInChain(typ reflect.Type) ([]any, error) {
 	return s.GetServicesInChain(s.GetServicesIDsByTypeInChain(typ)...)
 }
 
+func (s *Scope) getServicesByTypeInChain(ic *instantiationContext, typ reflect.Type) ([]any, error) {
+	return s.getServicesInChain(ic, s.GetServicesIDsByTypeInChain(typ)...)
+}
+
 func (s *Scope) GetServicesIDsByLabel(label Label) []ID {
 	return s.svcs.GetIDsByLabel(label)
 }
@@ -190,6 +223,10 @@ func (s *Scope) GetServicesByLabelInChain(label Label) ([]any, error) {
 	return s.GetServicesInChain(s.GetServicesIDsByLabelInChain(label)...)
 }
 
+func (s *Scope) getServicesByLabelInChain(ic *instantiationContext, label Label) ([]any, error) {
+	return s.getServicesInChain(ic, s.GetServicesIDsByLabelInChain(label)...)
+}
+
 func (s *Scope) HasFunction(id ID) bool {
 	return s.funs.Contains(id)
 }
@@ -203,32 +240,48 @@ func (s *Scope) HasFunctionInChain(id ID) bool {
 	return false
 }
 
+// ExecuteFunction calls the function, building whatever it needs. The services
+// it is handed are fully configured by the time it runs, as against a factory's
+// dependencies, whose method calls have not run yet.
 func (s *Scope) ExecuteFunction(id ID) ([]any, error) {
 	def, ok := s.funs.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("function %s not found", id)
 	}
-	return s.executeFunction(def)
+	return withInstantiationContext(func(ic *instantiationContext) ([]any, error) {
+		return s.executeFunction(ic, def)
+	})
 }
 
+// ExecuteFunctionInChain calls the function from the nearest scope that has it.
+// See ExecuteFunction.
 func (s *Scope) ExecuteFunctionInChain(id ID) ([]any, error) {
 	for scope := range s.Chain() {
 		def, ok := s.funs.Get(id)
 		if ok {
-			return scope.executeFunction(def)
+			return withInstantiationContext(func(ic *instantiationContext) ([]any, error) {
+				return scope.executeFunction(ic, def)
+			})
 		}
 	}
 	return nil, fmt.Errorf("function %s not found", id)
 }
 
+// ExecuteFunctions calls each of the functions, in the order the IDs are given.
+// One failing does not stop the rest; their errors are joined. See
+// ExecuteFunction.
 func (s *Scope) ExecuteFunctions(ids ...ID) (results [][]any, joinedErrs error) {
 	defs := s.funs.GetByIDs(ids)
 	if len(defs) == 0 {
 		return nil, errors.New("found no functions for given IDs")
 	}
-	return s.executeFunctions(defs)
+	return withInstantiationContext(func(ic *instantiationContext) ([][]any, error) {
+		return s.executeFunctions(ic, defs)
+	})
 }
 
+// ExecuteFunctionsInChain calls every function found under the IDs, nearest
+// scope first. See ExecuteFunctions.
 func (s *Scope) ExecuteFunctionsInChain(ids ...ID) (results [][]any, joinedErrs error) {
 	var defs []*FunctionDefinition
 	for scope := range s.Chain() {
@@ -237,7 +290,9 @@ func (s *Scope) ExecuteFunctionsInChain(ids ...ID) (results [][]any, joinedErrs 
 	if len(defs) == 0 {
 		return nil, errors.New("found no functions for given IDs")
 	}
-	return s.executeFunctions(defs)
+	return withInstantiationContext(func(ic *instantiationContext) ([][]any, error) {
+		return s.executeFunctions(ic, defs)
+	})
 }
 
 func (s *Scope) GetFunctionsIDsByType(typ reflect.Type) []ID {
@@ -308,13 +363,28 @@ func (s *Scope) GetBoundArgInChain(typ reflect.Type) (Arg, bool) {
 	}))
 }
 
-func (s *Scope) getServiceInstance(def *ServiceDefinition) (any, error) {
-	svc, ok := s.instances[def.ID()]
+func (s *Scope) instance(id ID) (any, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	svc, ok := s.instances[id]
+	return svc, ok
+}
+
+func (s *Scope) setInstance(id ID, svc any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.instances[id] = svc
+}
+
+func (s *Scope) getServiceInstance(ic *instantiationContext, def *ServiceDefinition) (any, error) {
+	svc, ok := s.instance(def.ID())
 	if ok {
 		return svc, nil
 	}
 
-	svc, err := s.instantiate(def)
+	svc, err := s.instantiate(ic, def)
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to instantiate service %s", def)
 	}
@@ -322,48 +392,57 @@ func (s *Scope) getServiceInstance(def *ServiceDefinition) (any, error) {
 	return svc, nil
 }
 
-func (s *Scope) getServicesInstances(defs []*ServiceDefinition) (svcs []any, joinedErrs error) {
+func (s *Scope) getServicesInstances(ic *instantiationContext, defs []*ServiceDefinition) (svcs []any, joinedErrs error) {
 	svcs = make([]any, len(defs))
 	for i, def := range defs {
-		svc, err := s.getServiceInstance(def)
+		svc, err := s.getServiceInstance(ic, def)
 		svcs[i] = svc
 		joinedErrs = errors.Join(joinedErrs, err)
 	}
 	return svcs, joinedErrs
 }
 
-func (s *Scope) instantiate(def *ServiceDefinition) (any, error) {
-	svc, err := def.factory.Execute(def.EffectiveScope())
+// instantiate runs the factory and hands the method calls to the context. They
+// run once the whole factory chain is done, so that nothing configures a
+// service another factory is still building.
+func (s *Scope) instantiate(ic *instantiationContext, def *ServiceDefinition) (any, error) {
+	err := ic.pushDefinition(def)
+	if err != nil {
+		return nil, err
+	}
+	defer ic.popDefinition()
+
+	svc, err := def.factory.execute(ic, def.EffectiveScope())
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute factory for service %s", def)
 	}
 
 	if def.shared {
-		s.instances[def.id] = svc
+		s.setInstance(def.id, svc)
 	}
-
-	for _, method := range def.MethodCalls() {
-		err = method.Execute(def.EffectiveScope())
-		if err != nil {
-			return nil, errorsx.Wrapf(err, "failed to execute method %s of service %s", method, def)
-		}
-	}
+	ic.enqueueMethodCalls(def, svc, def.EffectiveScope())
 
 	return svc, nil
 }
 
-func (s *Scope) executeFunction(def *FunctionDefinition) ([]any, error) {
-	res, err := def.function.Execute(def.EffectiveScope())
+func (s *Scope) executeFunction(ic *instantiationContext, def *FunctionDefinition) ([]any, error) {
+	fn := def.function
+
+	args, err := fn.resolveArgs(ic, def.EffectiveScope(), nil)
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute function %s", def)
 	}
-	return lo.Map(res, func(v reflect.Value, _ int) any { return v.Interface() }), nil
+	if err := ic.executeAllMethodCalls(); err != nil {
+		return nil, errorsx.Wrapf(err, "failed to execute function %s", def)
+	}
+
+	return lo.Map(fn.call(args), func(v reflect.Value, _ int) any { return v.Interface() }), nil
 }
 
-func (s *Scope) executeFunctions(defs []*FunctionDefinition) (results [][]any, joinedErrs error) {
+func (s *Scope) executeFunctions(ic *instantiationContext, defs []*FunctionDefinition) (results [][]any, joinedErrs error) {
 	results = make([][]any, len(defs))
 	for i, def := range defs {
-		res, err := s.executeFunction(def)
+		res, err := s.executeFunction(ic, def)
 		results[i] = res
 		joinedErrs = errors.Join(joinedErrs, err)
 	}

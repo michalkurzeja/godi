@@ -205,7 +205,7 @@ via the retrieval API (see below). Eagerly-executed functions can't return value
 
 ## Method calls
 
-Register a method to run right after the service is constructed. Its args are injected too.
+Register a method to run once the service is constructed. Its args are injected too.
 Pass the method as a **method expression** (`(*Service).Method`) — godi injects the receiver
 as slot 0 automatically, so you only supply args for the parameters *after* the receiver.
 
@@ -213,9 +213,17 @@ as slot 0 automatically, so you only supply args for the parameters *after* the 
 di.Svc(NewMySvc).MethodCall((*MySvc).SetStr, "hello")
 ```
 
+One call into the container runs **every factory it needs before any method call**. Method calls
+are then run oldest service first; one that pulls in a new service builds it there and then, and
+that service's own calls join the back of the queue.
+
 Method calls are the standard workaround for **circular dependencies**: if A needs B and B
-needs A, wire one direction through a factory and the other through a method call. (Cycle
-validation only inspects factory args, not method-call args.)
+needs A, wire one direction through a factory and the other through a method call. Either can
+be asked for first — both get the same pair of instances. (Cycle validation only inspects
+factory args, not method-call args.)
+
+⚠️ A factory does **not** see the method calls of the services it is handed — they have not run
+yet. Store a dependency; don't use it while constructing.
 
 ⚠️ Registering the same method twice on one service **silently replaces** the first — only
 the last `MethodCall` for a given method name takes effect.
@@ -434,6 +442,7 @@ with `graph/text` in new code.
 - **Child services aren't retrievable.** If you need to `SvcByType` it, it can't be a child.
 - **Changing global defaults after defining services** has no effect on those definitions.
 - **Circular factory deps** are rejected. Break the cycle with a method call.
+- **Using a dependency inside a factory** sees it before its method calls have run.
 - **`di.Type[T](l1, l2)` only uses the last label** — passing multiple is silently ignored.
 
 ## Deep reference

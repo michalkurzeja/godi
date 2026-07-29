@@ -113,6 +113,38 @@ Encoders implement `graph.Encoder` (`Format()` + `Encode(g, w)`) and each expose
 the payload hands it; what it decides for itself is only which of its boxes have room for a
 second line.
 
+### One call, one instantiation context
+
+`di/instantiation_context.go` is the rule that instantiation obeys: within one call into the
+container, every factory runs before any method call. A public `Scope.GetService*`/
+`ExecuteFunction*` opens an `instantiationContext`, `Scope.instantiate` hands it the built
+service's method calls, and the entry point drains the queue afterwards. `NewEagerInitPass` opens
+one context for a whole build, so a build wires the same way a later request would.
+
+Two things rest on it, and both break if a method call is ever run inline again:
+
+- Wiring that loops back through a method call gives one instance whichever end is asked for first.
+  Running the call inline meant the loop re-entered a factory that had not published yet, and built
+  a second instance with no error.
+- `instantiationContext.svcDefStack` names the factories running now, so a factory cycle that
+  reaches runtime is an error rather than a stack overflow.
+
+The price is stated in the docs and pinned by a test: **a factory does not see the method calls of
+its dependencies.** Do not add a special case to win it back — deciding per-service when to defer
+would make construction depend on which service was asked for first, which is what this replaced.
+
+`Arg.resolve` carries the context. That is only possible because `Arg` is sealed; the exported
+`Factory/Method/Func.Execute` and `ResolveArg` keep their signatures and open a context of their
+own.
+
+`Scope.instances` is guarded by `Scope.mu`, which covers the map and nothing else — no factory or
+method call runs under it. That is what makes `extract.Live` safe against a container building a
+lazy service, and it is the whole of the concurrency story: two goroutines that both miss the map
+still both build, and a service is published before its method calls run, so one goroutine can be
+handed what another built but has not configured yet. Do not write a test that asserts more than
+the map is safe — closing that gap needs per-definition in-flight entries with `built`/`ready`
+signals, which nobody has built.
+
 ### Provenance: who wired what
 
 The whole point of the graph is telling apart an argument you wrote, one godi autowired, and one

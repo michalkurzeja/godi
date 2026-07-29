@@ -45,12 +45,21 @@ func NewFactory(fn any, args ...Arg) (*Factory, error) {
 	return &Factory{fn: f, returnedType: fnType.Out(0), returnsErr: returnsErr}, nil
 }
 
+// Execute builds the service. As during a build, the dependencies it is handed
+// have not had their method calls run yet.
 func (f *Factory) Execute(scope *Scope) (any, error) {
-	out, err := f.fn.Execute(scope)
+	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+		return f.execute(ic, scope)
+	})
+}
+
+func (f *Factory) execute(ic *instantiationContext, scope *Scope) (any, error) {
+	args, err := f.fn.resolveArgs(ic, scope, nil)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to execute factory")
 	}
 
+	out := f.fn.call(args)
 	if f.returnsErr && !out[1].IsNil() {
 		return out[0].Interface(), out[1].Interface().(error)
 	}
@@ -118,12 +127,30 @@ func NewMethod(fn any, receiver Arg, args ...Arg) (*Method, error) {
 	return &Method{fn: f, returnsErr: returnsErr}, nil
 }
 
+// Execute resolves the receiver along with the rest of the arguments and calls
+// the method on it.
 func (m *Method) Execute(scope *Scope) error {
-	out, err := m.fn.Execute(scope)
+	ic := newInstantiationContext()
+
+	err := m.execute(ic, scope, nil)
+	if err != nil {
+		return err
+	}
+	return ic.executeAllMethodCalls()
+}
+
+// execute calls the method. A non-nil recv is the receiver to call it on; nil
+// means resolve the receiver like any other argument.
+//
+// A queued call passes the instance godi built. A service that is not shared is
+// never published, so resolving its receiver again would build a second one.
+func (m *Method) execute(ic *instantiationContext, scope *Scope, recv any) error {
+	args, err := m.fn.resolveArgs(ic, scope, recv)
 	if err != nil {
 		return errorsx.Wrap(err, "failed to execute method")
 	}
 
+	out := m.fn.call(args)
 	if m.returnsErr && !out[0].IsNil() {
 		return out[0].Interface().(error)
 	}
@@ -176,7 +203,24 @@ func NewFunc(fn reflect.Value, args ...Arg) (*Func, error) {
 	return f, nil
 }
 
+// Execute resolves the arguments and calls the function. The services it is
+// handed are fully configured by the time it runs.
 func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
+	return withInstantiationContext(func(ic *instantiationContext) ([]reflect.Value, error) {
+		args, err := f.resolveArgs(ic, scope, nil)
+		if err != nil {
+			return nil, err
+		}
+		if err := ic.executeAllMethodCalls(); err != nil {
+			return nil, err
+		}
+		return f.call(args), nil
+	})
+}
+
+// resolveArgs produces the values to pass. A non-nil recv fills argument 0
+// instead of being resolved.
+func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]reflect.Value, error) {
 	args, err := f.args.ValidateAndCollect()
 	if err != nil {
 		// This should never happen under normal circumstances - the built-in compiler passes verify args.
@@ -185,17 +229,26 @@ func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 
 	resolvedArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		val, err := ResolveArg(scope, arg)
+		if i == 0 && recv != nil {
+			resolvedArgs[i] = reflect.ValueOf(recv)
+			continue
+		}
+
+		val, err := resolveArg(ic, scope, arg)
 		if err != nil {
 			return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
 		}
 		resolvedArgs[i] = reflect.ValueOf(val)
 	}
 
+	return resolvedArgs, nil
+}
+
+func (f *Func) call(args []reflect.Value) []reflect.Value {
 	if f.args.IsVariadic() {
-		return f.fn.CallSlice(resolvedArgs), nil
+		return f.fn.CallSlice(args)
 	}
-	return f.fn.Call(resolvedArgs), nil
+	return f.fn.Call(args)
 }
 
 func (f *Func) Args() *ArgList {

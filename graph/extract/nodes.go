@@ -55,7 +55,7 @@ func (x *extractor) buildNodes() {
 			Lazy:       def.IsLazy(),
 			Autowired:  def.IsAutowired(),
 			Registered: x.registered(def.RegisteredAt()),
-			Declared:    x.registered(def.DeclaredAt()),
+			Declared:   x.registered(def.DeclaredAt()),
 		}
 		if cs := def.ChildScope(); cs != nil {
 			node.ChildScope = x.scopeIDs[cs]

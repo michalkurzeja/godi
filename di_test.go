@@ -1188,9 +1188,9 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			name:        "doesn't detect cycle when cycle detection is disabled",
 			builderOpts: []di.BuilderOption{di.SkipCycleValidation()},
 			build: func(b *di.Builder, refs *Refs) {
-				// This is a cycle, like in the test case above.
-				// The build will succeed, but we don't want to try
-				// and retrieve either of those services - it will cause stack overflow fatal error.
+				// This is a cycle, like in the test case above. The build
+				// succeeds; asking for one of the services then fails, which
+				// TestAFactoryCycleIsReportedWhenTheServiceIsAskedFor covers.
 				var aRef, bRef, cRef di.SvcReference
 				b.Services(
 					di.Svc(Echo[string], di.Ref(&bRef)).

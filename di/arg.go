@@ -23,8 +23,9 @@ type Arg interface {
 
 	// validate reports whether this argument can be resolved in the scope.
 	validate(scope *Scope) error
-	// resolve produces the value to pass.
-	resolve(scope *Scope) (any, error)
+	// resolve produces the value to pass, as part of the given call into the
+	// container.
+	resolve(ic *instantiationContext, scope *Scope) (any, error)
 	// resolveIDs lists the definitions this argument resolves to. A literal
 	// names no service, so its list is empty.
 	resolveIDs(scope *Scope) []ID
@@ -41,12 +42,19 @@ func ValidateArg(scope *Scope, arg Arg) error {
 	return arg.validate(scope)
 }
 
-// ResolveArg produces the value the argument stands for.
+// ResolveArg produces the value the argument stands for. The services it builds
+// are fully configured by the time it returns.
 func ResolveArg(scope *Scope, arg Arg) (any, error) {
+	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+		return resolveArg(ic, scope, arg)
+	})
+}
+
+func resolveArg(ic *instantiationContext, scope *Scope, arg Arg) (any, error) {
 	if arg == nil {
 		return reflect.Value{}, fmt.Errorf("unsupported arg type %T", arg)
 	}
-	return arg.resolve(scope)
+	return arg.resolve(ic, scope)
 }
 
 // ResolveArgIDs lists the definitions the argument resolves to. A literal names
@@ -90,7 +98,7 @@ func (a *literalArg) validate(_ *Scope) error {
 	return nil
 }
 
-func (a *literalArg) resolve(_ *Scope) (any, error) {
+func (a *literalArg) resolve(_ *instantiationContext, _ *Scope) (any, error) {
 	return a.v, nil
 }
 
@@ -128,8 +136,8 @@ func (a *refArg) validate(scope *Scope) error {
 	return nil
 }
 
-func (a *refArg) resolve(scope *Scope) (any, error) {
-	v, err := scope.GetServiceInChain(a.def.ID())
+func (a *refArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	v, err := scope.getServiceInChain(ic, a.def.ID())
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve ID arg")
 	}
@@ -186,11 +194,11 @@ func (a *typeArg) validate(scope *Scope) error {
 	return nil
 }
 
-func (a *typeArg) resolve(scope *Scope) (any, error) {
+func (a *typeArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
 	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
-		return boundTo.resolve(scope)
+		return boundTo.resolve(ic, scope)
 	}
-	vals, err := scope.GetServicesByTypeInChain(a.typ)
+	vals, err := scope.getServicesByTypeInChain(ic, a.typ)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve type arg")
 	}
@@ -254,8 +262,8 @@ func (a *labelArg) validate(scope *Scope) error {
 	return nil
 }
 
-func (a *labelArg) resolve(scope *Scope) (any, error) {
-	vals, err := scope.GetServicesByLabelInChain(a.label)
+func (a *labelArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	vals, err := scope.getServicesByLabelInChain(ic, a.label)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve type arg")
 	}
@@ -342,12 +350,12 @@ func (a *flexibleSliceArg) validate(scope *Scope) error {
 	return fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
 }
 
-func (a *flexibleSliceArg) resolve(scope *Scope) (any, error) {
+func (a *flexibleSliceArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
 	// First try to match by the slice type.
 	if boundTo, ok := scope.GetBoundArgInChain(a.Type()); ok {
-		return boundTo.resolve(scope)
+		return boundTo.resolve(ic, scope)
 	}
-	vals, err := scope.GetServicesByTypeInChain(a.Type())
+	vals, err := scope.getServicesByTypeInChain(ic, a.Type())
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg")
 	}
@@ -361,9 +369,9 @@ func (a *flexibleSliceArg) resolve(scope *Scope) (any, error) {
 
 	// Now let's try to match by the element type.
 	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
-		return boundTo.resolve(scope)
+		return boundTo.resolve(ic, scope)
 	}
-	vals, err = scope.GetServicesByTypeInChain(a.elemType)
+	vals, err = scope.getServicesByTypeInChain(ic, a.elemType)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg element")
 	}
@@ -461,10 +469,10 @@ func (c *compoundArg) validate(scope *Scope) error {
 	return joinedErr
 }
 
-func (c *compoundArg) resolve(scope *Scope) (any, error) {
+func (c *compoundArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
 	vals := make([]any, len(c.args))
 	for i, arg := range c.args {
-		v, err := arg.resolve(scope)
+		v, err := arg.resolve(ic, scope)
 		if err != nil {
 			return nil, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i)
 		}

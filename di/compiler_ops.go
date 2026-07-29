@@ -257,13 +257,18 @@ func NewCycleValidationPass() CompilerOp {
 
 // NewEagerInitPass returns a compiler pass that builds the services and runs the
 // functions that asked not to wait.
+//
+// The whole pass is one call into the container, so a build wires services the
+// same way a later request for one would.
 func NewEagerInitPass() CompilerOp {
 	return CompilerOpFunc(func(builder *ContainerBuilder) error {
+		ic := newInstantiationContext()
+
 		for scope, def := range builder.ServiceDefinitionsSeq() {
 			if def.IsLazy() {
 				continue
 			}
-			_, err := scope.GetService(def.ID())
+			_, err := scope.getService(ic, def.ID())
 			if err != nil {
 				return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
 			}
@@ -272,11 +277,12 @@ func NewEagerInitPass() CompilerOp {
 			if def.IsLazy() {
 				continue
 			}
-			_, err := scope.ExecuteFunction(def.ID())
+			_, err := scope.executeFunction(ic, def)
 			if err != nil {
 				return errorsx.Wrapf(err, "failed to execute eager function %s", def)
 			}
 		}
-		return nil
+
+		return ic.executeAllMethodCalls()
 	})
 }
