@@ -374,6 +374,10 @@ src := graph.Static(g)                    // a graph read from a file, as a grap
 A schema `ReadJSON` does not recognise is a warning on the graph, not an error — the graph is
 decoded anyway.
 
+An edge feeding an argument that will not resolve is drawn as wrong, and so is one that
+closes a cycle. The HTML page glows it red behind the line, keeping the line's own colour for
+who chose it; Graphviz has no second layer, so there the edge turns red outright.
+
 **A diagnostic is stored on the element it is about.** `Graph`, `Scope`, `Node` and `Param`
 each carry their own `Diagnostics`, and the graph itself takes what fits nothing narrower.
 `AllDiagnostics()` walks them and is what the encoders print; `Node.Faulty()` and

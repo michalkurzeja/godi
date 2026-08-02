@@ -488,7 +488,7 @@ func TestLegendDrawsRealSampleEdges(t *testing.T) {
 			samples = append(samples, line)
 		}
 	}
-	require.Len(t, samples, 5, "two rows for the head, three for the colour")
+	require.Len(t, samples, 6, "two rows for the head, three for the colour, one for a fault")
 
 	joined := strings.Join(samples, "\n")
 	for _, head := range []string{"normal", "odiamond"} {
@@ -497,6 +497,9 @@ func TestLegendDrawsRealSampleEdges(t *testing.T) {
 	for _, colour := range []string{"#1f2328", "#0f766e", "#8250df"} {
 		require.Contains(t, joined, `color="`+colour+`"`)
 	}
+	// A fault takes the colour off whoever chose the edge, so the legend has to
+	// say that red is a fourth answer and not a fourth decider.
+	require.Contains(t, joined, `color="#cf222e"`)
 
 	// The samples must be level and the same length, or the key reads as though
 	// the differences between rows were meaningful.
@@ -665,4 +668,36 @@ func TestASnapshotIsDrawnAmongTheNotices(t *testing.T) {
 	require.Contains(t, out, "cluster_notices")
 	require.Contains(t, out, "snapshot: taken during the graph snapshot pass")
 	require.Contains(t, out, "passes run: interface binding, autowiring")
+}
+
+// Graphviz gives an edge one colour and no layer to draw a fault on, so a fault
+// takes the colour. In a picture of a container that will not build, what is
+// broken is the question, and who chose it is answerable from the argument row.
+func TestAnEdgeFeedingABrokenArgumentIsDrawnAsWrong(t *testing.T) {
+	t.Parallel()
+
+	p := param(graph.ArgOriginManual, "")
+	g := modelWith(edge(graph.ArgOriginManual, ""), p)
+	require.NotContains(t, encode(t, g), `color="#cf222e", penwidth=1.2, weight=1]`,
+		"nothing is wrong with this wiring yet")
+
+	// Two services of the type, so the argument resolves to neither. Both edges
+	// are drawn as wrong: the argument as a whole will not resolve.
+	p.Diagnostics = []graph.Diagnostic{
+		{Severity: graph.SeverityError, Message: "multiple services found for type app.(*Dep)"},
+	}
+
+	require.Contains(t, encode(t, g), `color="#cf222e"`,
+		"the edge into a broken argument reads as fine")
+}
+
+// A cycle is wiring that will not work too, and it is drawn the same way. Two
+// reds would be two answers to one question.
+func TestAnEdgeClosingACycleIsDrawnAsWrong(t *testing.T) {
+	t.Parallel()
+
+	e := edge(graph.ArgOriginManual, "")
+	e.Cycle = true
+
+	require.Contains(t, encode(t, modelWith(e, param(graph.ArgOriginManual, ""))), `color="#cf222e"`)
 }

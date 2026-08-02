@@ -340,6 +340,17 @@ func snapshotModel() *graph.Graph {
 	// The red border and the notice the page lists are both read back off the
 	// argument above, which is what keeps the count and the borders in step.
 
+	// An argument that found two of what it wanted, so it resolves to neither. Its
+	// edge is drawn as wrong and keeps its own colour: the fault is a layer behind
+	// the line rather than a third claimant on it.
+	router, ok := g.Node("root/svc:app.(*Router)")
+	if !ok {
+		panic("the fixture no longer has the node this snapshot draws as faulty")
+	}
+	router.Params[0].Diagnostics = []graph.Diagnostic{
+		{Severity: graph.SeverityError, Message: "multiple services found for type app.(*Config)", Pass: "argument validation"},
+	}
+
 	// A registration that never became a definition. It names nothing on the page,
 	// so the file and the line are the only way back to it.
 	g.Diagnostics = []graph.Diagnostic{{

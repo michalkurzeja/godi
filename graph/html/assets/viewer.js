@@ -331,7 +331,7 @@ function buildElements() {
 			data: {
 				id: e.id, source: e.from, target: e.to,
 				origin: e.origin, decidedBy: e.decidedBy, kind: e.kind,
-				bound: !!e.bindInterface, cycle: !!e.cycle,
+				bound: !!e.bindInterface, cycle: !!e.cycle, faulty: !!e.faulty,
 				// A pass is named however it was responsible. It may have wired
 				// the argument, or created the binding the argument resolved
 				// through. The colour says a pass decided, and this says which.
@@ -363,11 +363,16 @@ function palette() {
 // The two channels are independent, as in the DOT output. The arrowhead says how
 // the dependency was matched, and the colour says who decided on it.
 //
+// The colour says only that. Wiring that will not work is drawn behind the line
+// instead, so a broken edge still says who chose it — which is the first thing
+// worth knowing about a broken edge. DOT has no second layer and spends the
+// colour there.
+//
 // The filters key off the same field, so what is drawn purple is what the compiler
 // pass box hides.
 function edgeColour(p) {
 	const of = { manual: p.manual, autowiring: p.auto, 'compiler-pass': p.pass };
-	return (e) => e.data('cycle') ? p.warn : (of[e.data('decidedBy')] || p.muted);
+	return (e) => of[e.data('decidedBy')] || p.muted;
 }
 
 function stylesheet() {
@@ -451,6 +456,12 @@ function stylesheet() {
 				'text-background-color': p.node,
 				'text-background-opacity': 0.85,
 				'text-background-padding': 1,
+				// Wiring that will not work, drawn behind the line rather than on
+				// it. The line goes on saying who chose it, which is what a reader
+				// looking at a broken edge wants next.
+				'underlay-color': p.warn,
+				'underlay-opacity': (e) => e.data('faulty') ? 0.45 : 0,
+				'underlay-padding': 4,
 			},
 		},
 		// Cytoscape marks a held background with a grey disc under the pointer,
@@ -810,8 +821,10 @@ function severityTally(diagnostics) {
 // samples take their colour from the same variables the canvas does, so the legend
 // cannot drift from the graph it explains.
 //
-// The three channels are columns. A cycle is not an answer to who chose an edge: it
-// overrides the colour outright, so it gets a section of its own.
+// The three channels are columns. A fault is not an answer to any of them, so it
+// gets a section of its own: it is drawn behind the line, which goes on saying who
+// chose it. The DOT output has no second layer and spends the colour instead, so
+// its legend has this as a fourth colour rather than as a section.
 const LEGEND = [
 	[
 		{
@@ -821,8 +834,8 @@ const LEGEND = [
 			],
 		},
 		{
-			title: 'Cycle', hint: 'overrides the colour', rows: [
-				{ tint: 'warn', text: 'Loops back' },
+			title: 'Fault', hint: 'drawn behind the line', rows: [
+				{ glow: true, text: 'Will not work' },
 			],
 		},
 	],
@@ -848,10 +861,19 @@ const LEGEND = [
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-function edgeSample({ tint = 'muted', head = 'none', dash = '', width = 1.4 }) {
+function edgeSample({ tint = 'muted', head = 'none', dash = '', width = 1.4, glow = false }) {
 	const svg = document.createElementNS(SVG_NS, 'svg');
 	svg.setAttribute('viewBox', '0 0 46 12');
 	svg.setAttribute('class', 'sample ' + tint);
+
+	// Behind the line, and thicker, exactly as the canvas draws it.
+	if (glow) {
+		const under = document.createElementNS(SVG_NS, 'path');
+		under.setAttribute('class', 'glow');
+		under.setAttribute('d', head === 'none' ? 'M1 6h44' : 'M1 6h32');
+		under.setAttribute('stroke-width', String(width + 5));
+		svg.append(under);
+	}
 
 	const line = document.createElementNS(SVG_NS, 'path');
 	line.setAttribute('class', 'line');

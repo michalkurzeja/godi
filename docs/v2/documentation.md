@@ -561,6 +561,11 @@ encoder prints it, because a half-wired graph otherwise reads as a finished one 
 missing. Saying that an argument is unwired is gated on `Snapshot.Autowired`: before autowiring,
 every slot is empty and marking them says nothing.
 
+Every format draws an edge feeding an argument that will not resolve, and one that closes a
+cycle, as wrong. How it says so differs, because only one of them has room for both facts: the
+HTML page puts a red glow behind the line, so the line still says who chose the dependency,
+while Graphviz gives an edge one colour and no second layer, so there it turns red outright.
+
 ### 5.6 Formats and the CLI
 
 | Package | Output |

@@ -170,6 +170,10 @@ type viewEdge struct {
 	Ordinal int    `json:"ordinal"`
 	OfMany  bool   `json:"ofMany,omitzero"`
 	Cycle   bool   `json:"cycle,omitzero"`
+	// Faulty is what the red glow behind the line is drawn from: the argument
+	// this feeds will not resolve. The line keeps its own colour, so a broken
+	// edge still says who chose it.
+	Faulty bool `json:"faulty,omitzero"`
 }
 
 func newPayload(g *graph.Graph, cfg config) payload {
@@ -201,7 +205,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 		p.Nodes = append(p.Nodes, newViewNode(node))
 	}
 	for _, edge := range g.Edges {
-		p.Edges = append(p.Edges, newViewEdge(edge))
+		p.Edges = append(p.Edges, newViewEdge(g, edge))
 	}
 	if g.Partial() {
 		p.Snapshot = &viewSnapshot{Label: g.Snapshot.Label(), Done: g.Snapshot.Done}
@@ -296,7 +300,7 @@ func paramNote(param *graph.Param) string {
 	return strings.Join(messages, "; ")
 }
 
-func newViewEdge(edge *graph.Edge) viewEdge {
+func newViewEdge(g *graph.Graph, edge *graph.Edge) viewEdge {
 	out := viewEdge{
 		ID:         edge.ID,
 		From:       edge.From,
@@ -310,6 +314,7 @@ func newViewEdge(edge *graph.Edge) viewEdge {
 		Ordinal:    edge.Ordinal,
 		OfMany:     edge.OfMany,
 		Cycle:      edge.Cycle,
+		Faulty:     g.EdgeFaulty(edge),
 		Pass:       edge.PassCredit(),
 	}
 	out.DecidedBy = edge.DecidedBy()

@@ -549,6 +549,24 @@ func (e *Edge) PassCredit() string {
 	}
 }
 
+// EdgeFaulty reports that this edge is part of wiring that will not work: the
+// argument it feeds carries an error, or it closes a cycle.
+//
+// It is derived from the argument rather than stored on the edge, so what is
+// drawn as wrong and what is reported as wrong come from one record. Every edge
+// of a faulty argument counts, including one that on its own found a real
+// service: an argument that cannot choose between two of them resolves to
+// neither, and the reader has both to look at.
+//
+// It is on the model so that every format draws the same edges as faulty.
+func (g *Graph) EdgeFaulty(e *Edge) bool {
+	if e.Cycle {
+		return true
+	}
+	p, ok := g.Param(e.Param)
+	return ok && p.Faulty()
+}
+
 // Binding returns the first interface binding this edge resolved through, which
 // is the one applied to the declared parameter type.
 func (e *Edge) Binding() (BindingHop, bool) {

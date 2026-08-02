@@ -676,11 +676,11 @@ await test('the tab opens it and it stays', async () => {
 
 await test('it covers all three channels an edge is drawn with', async () =>
 	eq(await ev(`[...document.querySelectorAll('#legend .legend-head')].map(h => h.firstChild.textContent)`),
-		['Head', 'Cycle', 'Colour', 'Line'], 'the legend sections'));
+		['Head', 'Fault', 'Colour', 'Line'], 'the legend sections'));
 
 await test('and every variation within them', async () =>
 	eq(await ev(`[...document.querySelectorAll('#legend .legend-row')].map(r => r.textContent)`), [
-		'Exact type', 'Interface binding', 'Loops back',
+		'Exact type', 'Interface binding', 'Will not work',
 		'You', 'godi', 'A compiler pass',
 		'You', 'godi', 'A compiler pass',
 	], 'the legend rows'));
@@ -711,7 +711,7 @@ await test('the samples are the colours the graph actually uses', async () => {
 await test('only the head section draws arrowheads', async () =>
 	eq(await ev(`[...document.querySelectorAll('#legend .legend-group')].map(g =>
 		[g.querySelector('.legend-head').firstChild.textContent, g.querySelectorAll('.sample .head').length])`),
-		[['Head', 2], ['Cycle', 0], ['Colour', 0], ['Line', 0]], 'arrowheads per section'));
+		[['Head', 2], ['Fault', 0], ['Colour', 0], ['Line', 0]], 'arrowheads per section'));
 
 await test('the tab travels with the panel', async () => {
 	const openAt = await ev(`document.getElementById('legend-tab').getBoundingClientRect().left`);
@@ -1971,7 +1971,35 @@ await test('a graph that is both unfinished and faulty says both, one under the 
 	if (strips.some((s) => s.hidden)) return 'one of the two strips stayed hidden';
 	// A fault in the wiring and a note about the graph are not the same thing,
 	// and the strip says which is which: one of each, not "2 notices".
-	return strips[1].text.includes('2 errors · 1 info') || strips[1].text;
+	return strips[1].text.includes('3 errors · 1 info') || strips[1].text;
+});
+
+// The colour says who chose an edge and nothing else. A fault is drawn behind the
+// line, so a broken edge still answers the question a reader asks next.
+await test('a broken edge keeps its colour and is glowed instead', async () => {
+	const edges = await ev(`godi.cy.edges().map((e) => ({
+		id: e.id(), faulty: !!e.data('faulty'), decidedBy: e.data('decidedBy'),
+		line: e.style('line-color').replace(/\s/g, ''),
+		under: e.style('underlay-opacity'),
+	}))`);
+
+	const broken = edges.filter((e) => e.faulty);
+	const sound = edges.filter((e) => !e.faulty);
+	if (!broken.length) return 'the fixture has no broken edge to draw';
+	if (!sound.length) return 'the fixture has no sound edge to compare against';
+
+	for (const e of broken) {
+		if (Number(e.under) === 0) return 'a broken edge has no glow: ' + JSON.stringify(e);
+	}
+	for (const e of sound) {
+		if (Number(e.under) !== 0) return 'a sound edge is glowing: ' + JSON.stringify(e);
+	}
+
+	// The point of the glow: the line is still the provenance colour.
+	const sameDecider = sound.find((s) => s.decidedBy === broken[0].decidedBy);
+	if (!sameDecider) return true;
+	return sameDecider.line === broken[0].line ||
+		`a broken edge changed colour: ${broken[0].line} against ${sameDecider.line}`;
 });
 
 // A notice about a scope has no node to be marked on, so the page is the only
@@ -2041,10 +2069,16 @@ await test('a notice about code the graph does not hold links to that code', asy
 });
 
 await test('and a notice about a node is a way to it', async () => {
-	await ev(`(() => {
-		[...document.querySelectorAll('#panel .notice button.link')][0].click();
+	// By what it says rather than by its position: the notices are in graph order,
+	// which moves whenever the fixture grows something else to say.
+	const clicked = await ev(`(() => {
+		const btn = [...document.querySelectorAll('#panel .notice button.link')]
+			.find((b) => b.textContent.includes('(*Metrics)'));
+		if (!btn) return false;
+		btn.click();
 		return true;
 	})()`);
+	if (!clicked) return 'no notice offers a way to the node it names';
 	await settle();
 
 	const landed = await ev(`godi.state.focus`) === 'root/svc:app.(*Metrics)' ||
@@ -2089,7 +2123,7 @@ await test('a node missing something it needs is drawn in the warning colour', a
 });
 
 await test('the footer counts what is incomplete', async () =>
-    (await ev(`document.getElementById('counts').textContent`)).includes('1 incomplete') ||
+    (await ev(`document.getElementById('counts').textContent`)).includes('2 incomplete') ||
         await ev(`document.getElementById('counts').textContent`));
 
 await test('an argument nothing has wired yet says so, rather than saying none', async () => {
@@ -2106,7 +2140,7 @@ await test('an empty variadic argument is not called unwired', async () => {
 	const text = await panelText();
 
 	if (!text.includes('No arguments')) return text;
-	return (await ev(`document.getElementById('counts').textContent`)).includes('1 incomplete') ||
+	return (await ev(`document.getElementById('counts').textContent`)).includes('2 incomplete') ||
 		'a variadic slot nobody filled was counted as a fault';
 });
 

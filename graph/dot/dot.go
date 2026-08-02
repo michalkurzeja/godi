@@ -11,6 +11,11 @@
 // The colour says who decided on it: you, godi, or a compiler pass. For a binding
 // that means whoever created the binding. The line style repeats who wired the
 // argument itself.
+//
+// Wiring that will not work takes the colour off whoever decided. Graphviz gives
+// an edge one colour and no layer to draw a fault behind it, and in a picture of a
+// container that does not build, what is broken is the question. The HTML viewer
+// has a layer and keeps both.
 package dot
 
 import (
@@ -386,7 +391,11 @@ func (p *printer) arrowHead(edge *graph.Edge) string {
 // Arrowheads are small, so the colour repeats that distinction rather than the
 // one the line style already shows.
 func (p *printer) edgeColour(edge *graph.Edge) string {
-	if edge.Cycle {
+	// Wiring that will not work takes the colour off whoever chose it. Graphviz
+	// gives an edge one colour and no second layer to draw a fault on, and in a
+	// picture of a container that does not build, what is broken is the question.
+	// The panel formats keep both: the argument row says who decided as well.
+	if p.graph.EdgeFaulty(edge) {
 		return p.palette.warn
 	}
 
@@ -526,6 +535,7 @@ func (p *printer) legend() {
 		{"solid", "normal", p.palette.manual, "1.2", "you decided"},
 		{"dashed", "normal", p.palette.autowired, "1.2", "godi decided"},
 		{"dashed", "normal", p.palette.pass, "2", "a compiler pass decided"},
+		{"solid", "normal", p.palette.warn, "1.2", "will not work, whoever decided"},
 	}
 
 	p.printf("\tsubgraph cluster_legend {\n")

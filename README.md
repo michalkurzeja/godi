@@ -1016,6 +1016,11 @@ Every edge carries two independent facts, and both formats draw them on separate
 So `extras.OverrideSvcArg` shows up as the pass that did it rather than as something you typed, and a binding
 godi invented for you is distinguishable from one you wrote.
 
+An edge feeding an argument that will not resolve is drawn as wrong, and so is one that closes a cycle. The two
+formats say it differently, because one of them has room to: the HTML page draws the fault as a red glow behind
+the line, so the line goes on saying who chose it, while Graphviz gives an edge a single colour and no second
+layer, so there the edge turns red outright. Either way the argument row and the notices say the rest.
+
 #### Roots
 
 A **root** is a node nothing injects: the top of a dependency tree. Those are your entry points, together with

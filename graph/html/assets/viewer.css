@@ -382,6 +382,8 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 .sample .line { fill: none; stroke: currentColor; }
 .sample .head.filled { fill: currentColor; stroke: none; }
 .sample .head.hollow { fill: var(--chrome); stroke: currentColor; stroke-width: 1.3; }
+/* Behind the line and translucent, the same as the canvas draws a faulty edge. */
+.sample .glow { fill: none; stroke: var(--warn); opacity: .45; stroke-linecap: round; }
 .sample.manual { color: var(--manual); }
 .sample.auto { color: var(--auto); }
 .sample.pass { color: var(--pass); }
