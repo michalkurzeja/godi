@@ -19,13 +19,11 @@ type InterfaceBindingPass struct{}
 func NewInterfaceBindingPass() CompilerOp { return new(InterfaceBindingPass) }
 
 func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
-	var joinedErr error
-
 	for _, def := range builder.ServiceDefinitionsSeq() {
 		for i, slot := range def.Factory().Args().Slots() {
 			err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 			if err != nil {
-				joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "could not bind argument %d of service %s", i, def))
+				builder.ReportError(AtServiceArg(def, slot), err, "could not bind argument %d of service %s", i, def)
 			}
 		}
 
@@ -33,7 +31,7 @@ func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
 			for i, slot := range method.Args().Slots() {
 				err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 				if err != nil {
-					joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "could not bind argument %d of method %s", i, method))
+					builder.ReportError(AtServiceArg(def, slot), err, "could not bind argument %d of method %s", i, method)
 				}
 			}
 		}
@@ -42,12 +40,12 @@ func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
 		for i, slot := range def.Func().Args().Slots() {
 			err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 			if err != nil {
-				joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "could not bind argument %d of function %s", i, def))
+				builder.ReportError(AtFunctionArg(def, slot), err, "could not bind argument %d of function %s", i, def)
 			}
 		}
 	}
 
-	return joinedErr
+	return nil
 }
 
 func (p *InterfaceBindingPass) checkAndBind(scope *Scope, parentID ID, slot *Slot) error {
@@ -115,20 +113,22 @@ type AutowiringPass struct{}
 // of factories, method calls and functions based on their types.
 func NewAutowiringPass() CompilerOp { return new(AutowiringPass) }
 
+// Run stops at the first slot it cannot fill. Wiring the rest would be guesswork
+// on top of a container that is already wrong.
 func (p *AutowiringPass) Run(builder *ContainerBuilder) error {
 	for _, def := range builder.ServiceDefinitionsSeq() {
 		if !def.IsAutowired() {
 			continue
 		}
 
-		err := p.autowire(def.Factory().Args())
-		if err != nil {
-			return errorsx.Wrapf(err, "failed to autowire service %s", def)
+		if slot, err := p.autowire(def.Factory().Args()); err != nil {
+			builder.ReportError(AtServiceArg(def, slot), err, "failed to autowire service %s", def)
+			return nil
 		}
 		for _, method := range def.MethodCalls() {
-			err := p.autowire(method.Args())
-			if err != nil {
-				return errorsx.Wrapf(err, "failed to autowire method %s", method)
+			if slot, err := p.autowire(method.Args()); err != nil {
+				builder.ReportError(AtServiceArg(def, slot), err, "failed to autowire method %s", method)
+				return nil
 			}
 		}
 	}
@@ -138,15 +138,16 @@ func (p *AutowiringPass) Run(builder *ContainerBuilder) error {
 			continue
 		}
 
-		err := p.autowire(def.Func().Args())
-		if err != nil {
-			return errorsx.Wrapf(err, "failed to autowire function %s", def)
+		if slot, err := p.autowire(def.Func().Args()); err != nil {
+			builder.ReportError(AtFunctionArg(def, slot), err, "failed to autowire function %s", def)
+			return nil
 		}
 	}
 	return nil
 }
 
-func (p *AutowiringPass) autowire(args *ArgList) error {
+// autowire fills every empty slot by type, and names the one it could not fill.
+func (p *AutowiringPass) autowire(args *ArgList) (*Slot, error) {
 	for _, slot := range args.Slots() {
 		if slot.IsFilled() {
 			continue
@@ -154,16 +155,16 @@ func (p *AutowiringPass) autowire(args *ArgList) error {
 
 		if slot.IsSlice() {
 			if err := slot.Fill(NewFlexibleSliceArg(slot.ElemType(), slot.IsVariadicSlice())); err != nil {
-				return err
+				return slot, err
 			}
 			continue
 		}
 
 		if err := slot.Fill(NewTypeArg(slot.Type(), false)); err != nil {
-			return err
+			return slot, err
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // stage: Validation
@@ -180,57 +181,52 @@ func NewArgValidationPass() CompilerOp {
 }
 
 func (p *ArgValidationPass) Run(builder *ContainerBuilder) error {
-	var joinedErr error
-
 	for _, def := range builder.ServiceDefinitionsSeq() {
-		err := p.validateArgs(def.EffectiveScope(), def.Factory().Args())
-		if err != nil {
-			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "invalid service %s: invalid factory %s", def, def.Factory()))
-		}
+		serviceArg := func(slot *Slot) Site { return AtServiceArg(def, slot) }
+
+		p.reportFaults(builder, def.EffectiveScope(), def.Factory().Args(), serviceArg,
+			fmt.Sprintf("invalid service %s: invalid factory %s", def, def.Factory()))
 
 		for _, method := range def.MethodCalls() {
-			err := p.validateArgs(def.EffectiveScope(), method.Args())
-			if err != nil {
-				joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "invalid service %s: invalid method %s", def, method))
-			}
+			p.reportFaults(builder, def.EffectiveScope(), method.Args(), serviceArg,
+				fmt.Sprintf("invalid service %s: invalid method %s", def, method))
 		}
 	}
 
 	for _, def := range builder.FunctionDefinitionsSeq() {
-		err := p.validateArgs(def.EffectiveScope(), def.Func().Args())
-		if err != nil {
-			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "invalid function %s", def))
-		}
+		p.reportFaults(builder, def.EffectiveScope(), def.Func().Args(),
+			func(slot *Slot) Site { return AtFunctionArg(def, slot) },
+			fmt.Sprintf("invalid function %s", def))
 	}
 
-	return joinedErr
+	return nil
 }
 
-func (p *ArgValidationPass) validateArgs(scope *Scope, args *ArgList) error {
-	var joinedErr error
-	for i, slot := range args.Slots() {
+// reportFaults reports every argument that will not resolve, one diagnostic per
+// argument, so that the dependency graph can show each against the argument it
+// is about. owner is what the call is called, for the error the build fails with.
+func (p *ArgValidationPass) reportFaults(builder *ContainerBuilder, scope *Scope, args *ArgList, site func(*Slot) Site, owner string) {
+	for _, slot := range args.Slots() {
 		if !slot.IsFilled() {
 			// A variadic slot nobody filled is an optional dependency nothing
 			// provides. The call gets an empty slice, the same as an autowired one
 			// that finds no services.
 			if !slot.IsVariadicSlice() {
-				joinedErr = errors.Join(joinedErr, fmt.Errorf("argument %d is not set", i))
+				builder.ReportError(site(slot), fmt.Errorf("argument %d is not set", slot.Index()), "%s", owner)
 			}
 			continue
 		}
 		err := ValidateArg(scope, slot.Arg())
 		if err != nil {
-			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "invalid argument %d", i))
+			builder.ReportError(site(slot), err, "%s: invalid argument %d", owner, slot.Index())
 		}
 	}
-	return joinedErr
 }
 
 // NewCycleValidationPass returns a compiler pass that rejects a container whose
 // services depend on each other in a circle.
 func NewCycleValidationPass() CompilerOp {
 	return CompilerOpFunc(func(builder *ContainerBuilder) error {
-		var joinedErr error
 		g := graph.New((*ServiceDefinition).ID, graph.PreventCycles(), graph.Directed())
 
 		for _, def := range builder.ServiceDefinitionsSeq() {
@@ -249,13 +245,14 @@ func NewCycleValidationPass() CompilerOp {
 					}
 					if errors.Is(err, graph.ErrEdgeCreatesCycle) {
 						argDef, _ := def.EffectiveScope().GetServiceDefinitionInChain(id) // Definition must exist, it's been validated by the resolver.
-						joinedErr = errors.Join(joinedErr, fmt.Errorf("service %s has a circular dependency on %s", def, argDef))
+						builder.ReportError(AtServiceArg(def, slot),
+							fmt.Errorf("service %s has a circular dependency on %s", def, argDef), "")
 					}
 				}
 			}
 		}
 
-		return joinedErr
+		return nil
 	})
 }
 
@@ -268,6 +265,10 @@ func NewCycleValidationPass() CompilerOp {
 // same way a later request for one would.
 func NewEagerInitPass() CompilerOp {
 	return CompilerOpFunc(func(builder *ContainerBuilder) error {
+		// The definition that failed, for the graph. A factory error says what went
+		// wrong and not what was being built, so the message says both.
+		var failed Site
+
 		_, err := withInstantiationContext(builder.Container(), func(ic *instantiationContext) (any, error) {
 			for scope, def := range builder.ServiceDefinitionsSeq() {
 				if def.IsLazy() {
@@ -275,6 +276,7 @@ func NewEagerInitPass() CompilerOp {
 				}
 				_, err := scope.getService(ic, def.ID())
 				if err != nil {
+					failed = AtService(def)
 					return nil, errorsx.Wrapf(err, "failed to initialise eager service %s", def)
 				}
 			}
@@ -284,11 +286,15 @@ func NewEagerInitPass() CompilerOp {
 				}
 				_, err := scope.executeFunction(ic, def)
 				if err != nil {
+					failed = AtFunction(def)
 					return nil, errorsx.Wrapf(err, "failed to execute eager function %s", def)
 				}
 			}
 			return nil, nil
 		})
-		return err
+		if err != nil {
+			builder.Report(Diagnostic{Severity: SeverityError, Site: failed, Message: err.Error(), Err: err})
+		}
+		return nil
 	})
 }

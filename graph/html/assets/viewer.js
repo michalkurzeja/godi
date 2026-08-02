@@ -795,8 +795,12 @@ function severityTally(diagnostics) {
 	const counts = new Map();
 	for (const d of diagnostics) counts.set(d.severity, (counts.get(d.severity) || 0) + 1);
 
-	return [...counts]
-		.map(([severity, n]) => n + ' ' + severity + (n === 1 ? '' : 's'))
+	// Worst first. The list itself is in graph order, which says nothing about
+	// which of them somebody has to act on.
+	const order = ['error', 'warning', 'info'];
+	return order
+		.filter((severity) => counts.has(severity))
+		.map((severity) => counts.get(severity) + ' ' + severity + (counts.get(severity) === 1 ? '' : 's'))
 		.join(' · ');
 }
 

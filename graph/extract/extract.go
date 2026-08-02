@@ -93,6 +93,12 @@ type extractor struct {
 	funIDs       map[*di.FunctionDefinition]graph.NodeID
 	byUUID       map[di.ID]graph.NodeID // Every definition, for resolving edge targets.
 	nodeIDClaims map[string]int         // How many nodes have claimed each base ID.
+	// scopeEntries and nodeEntries are what a diagnostic gets attached to, and
+	// slotParams is the same for one argument. A site names engine objects, and
+	// these are what they came out as.
+	scopeEntries map[*di.Scope]*graph.Scope
+	nodeEntries  map[graph.NodeID]*graph.Node
+	slotParams   map[*di.Slot]*graph.Param
 }
 
 func newExtractor(c *di.Container, cfg graph.Config, snapshot *graph.Snapshot) *extractor {
@@ -106,6 +112,9 @@ func newExtractor(c *di.Container, cfg graph.Config, snapshot *graph.Snapshot) *
 		funIDs:       make(map[*di.FunctionDefinition]graph.NodeID),
 		byUUID:       make(map[di.ID]graph.NodeID),
 		nodeIDClaims: make(map[string]int),
+		scopeEntries: make(map[*di.Scope]*graph.Scope),
+		nodeEntries:  make(map[graph.NodeID]*graph.Node),
+		slotParams:   make(map[*di.Slot]*graph.Param),
 	}
 }
 
@@ -115,7 +124,8 @@ func (x *extractor) extract() *graph.Graph {
 	x.markCollected()
 	x.buildBindings()
 	x.markCycles()
-	x.markIncomplete()
+	x.markUnwired()
+	x.reportedDiagnostics()
 	x.countDegrees()
 	x.sortAll()
 	x.trimSourceRoot()

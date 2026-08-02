@@ -1068,6 +1068,25 @@ for a debugging aid it will almost never use. [The CLI](#the-godi-cli) turns the
 at. Whatever happens, the error `Build` returns is untouched: a snapshot that cannot be written says so on
 stderr and is otherwise forgotten.
 
+**What the compiler objected to is in the graph, on the thing it objected to.** The snapshot names the pass
+that failed, and the argument or service that stopped it carries the fault in the words the build failed
+with, so a reader can find it without already knowing what it was:
+
+```
+      args:
+        0 <- main.Iface  [autowiring]
+          -> main.(*Impl)  [by-type, binding on main.Iface (manual)]
+          ! error: binding on main.Iface resolves to []main.Iface, which cannot fill an argument of type main.Iface
+
+notices:
+  error: main.(*User) argument 0: binding on main.Iface resolves to []main.Iface, which cannot fill an argument of type main.Iface
+```
+
+A message carries whatever the code that failed put in its error — a factory that could not reach its
+database puts its connection string in yours — and the graph goes into a file and over HTTP. Hold it back
+with `graph.WithDiagnosticMarks()`, `graph.WithoutDiagnostics()` or `graph.WithDiagnosticRedactor(fn)` where
+that matters.
+
 A failed `Build` leaves the builder standing, which is what the snapshot is written from — and what a compiler
 pass driving `di.NewContainerBuilder` itself can read with `extract.FromBuilder`.
 

@@ -63,6 +63,9 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 		p.ElemType = util.Signature(slot.ElemType())
 	}
 	node.Params = append(node.Params, p)
+	// Kept so that a diagnostic a pass reported against this slot can be put on
+	// the argument it is about.
+	x.slotParams[slot] = p
 
 	if !slot.IsFilled() {
 		// Before autowiring runs, or a variadic slot nobody supplied: the argument
@@ -224,19 +227,40 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 	p.EdgeCount++
 }
 
-// unresolved records what an argument failed to find. The note is the whole
-// record. Wiring faults are read back off the parameters, so writing one down
-// twice would be two records that can disagree.
+// unresolved records what an argument failed to find. It is extraction's own
+// account, and a compiler pass that objected to the same argument replaces it:
+// the pass saw more, and said it in the words the build failed with.
 func (x *extractor) unresolved(p *graph.Param, msg string) {
-	p.Unresolved = true
-	p.Note = msg
+	x.record(&p.Diagnostics, graph.SeverityError, msg, "")
 }
 
-// note is something about this graph rather than about the container it describes.
-// Nothing is wrong with the wiring, so nothing is marked.
-func (x *extractor) note(severity graph.Severity, d graph.Diagnostic) {
-	d.Severity = severity
-	x.out.GraphDiagnostics = append(x.out.GraphDiagnostics, &d)
+// record adds one diagnostic to what an element carries, as much of it as the
+// caller asked a graph to carry. A message is written by whoever wrote the code
+// that failed, so it can hold anything that code put in an error.
+func (x *extractor) record(dst *[]graph.Diagnostic, severity graph.Severity, msg, pass string) {
+	if x.cfg.Diagnostics == graph.DiagnosticNone {
+		return
+	}
+
+	// DiagnosticMarks leaves the message out: what is broken still shows as
+	// broken, and why is left out.
+	d := graph.Diagnostic{Severity: severity, Pass: pass}
+	if x.cfg.Diagnostics == graph.DiagnosticMessages {
+		d.Message = x.message(msg)
+	}
+
+	*dst = append(*dst, d)
+}
+
+// message is what a diagnostic says, once the redactor has had its say.
+func (x *extractor) message(msg string) string {
+	if x.cfg.DiagnosticRedactor == nil {
+		return msg
+	}
+	if replacement, redact := x.cfg.DiagnosticRedactor(msg); redact {
+		return replacement
+	}
+	return msg
 }
 
 func (x *extractor) paramID(node graph.NodeID, kind graph.InjectionKind, method string, index int) graph.ParamID {

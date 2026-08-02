@@ -1,6 +1,9 @@
 package html
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/internal/render"
 )
@@ -45,9 +48,13 @@ type viewSnapshot struct {
 type viewDiagnostic struct {
 	Severity graph.Severity `json:"severity"`
 	Message  string         `json:"message"`
-	Node     graph.NodeID   `json:"node,omitzero"`
-	Param    graph.ParamID  `json:"param,omitzero"`
-	Scope    graph.ScopeID  `json:"scope,omitzero"`
+	// Where names what the diagnostic is about, worded by the model so that the
+	// panel and the other formats say the same thing.
+	Where string        `json:"where,omitzero"`
+	Pass  string        `json:"pass,omitzero"`
+	Node  graph.NodeID  `json:"node,omitzero"`
+	Param graph.ParamID `json:"param,omitzero"`
+	Scope graph.ScopeID `json:"scope,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -199,9 +206,19 @@ func newPayload(g *graph.Graph, cfg config) payload {
 		p.Diagnostics = append(p.Diagnostics, viewDiagnostic{
 			Severity: d.Severity,
 			Message:  d.Message,
+			Where:    d.Where(g),
+			Pass:     d.Pass,
 			Node:     d.Node,
 			Param:    d.Param,
 			Scope:    d.Scope,
+		})
+	}
+	// A filter takes a diagnostic away with the thing it was about, and the panel
+	// would otherwise read as a container with nothing wrong with it.
+	if n := g.ElidedDiagnostics; n > 0 {
+		p.Diagnostics = append(p.Diagnostics, viewDiagnostic{
+			Severity: graph.SeverityInfo,
+			Message:  fmt.Sprintf("%d more about what this view leaves out", n),
 		})
 	}
 
@@ -228,7 +245,7 @@ func newViewNode(node *graph.Node) viewNode {
 		Autowired:    node.Autowired,
 		Instantiated: node.Instantiated,
 		Root:         node.Root,
-		Incomplete:   node.Incomplete,
+		Incomplete:   node.Faulty(),
 		Elided:       node.Elided,
 		Registered:   newViewLocation(node.Registered),
 		Declared:     newViewLocation(node.Declared),
@@ -253,13 +270,25 @@ func newViewParam(param *graph.Param) viewParam {
 		OriginPass: param.OriginPass,
 		Label:      param.Label,
 		Unwired:    param.Unwired(),
-		Unresolved: param.Unresolved,
-		Note:       param.Note,
+		Unresolved: param.Faulty(),
+		Note:       paramNote(param),
 	}
 	for _, lit := range param.Literals {
 		out.Literals = append(out.Literals, lit.String())
 	}
 	return out
+}
+
+// paramNote is what the page shows against an argument. The panel lists each
+// diagnostic on its own; the row beside the argument has space for one line.
+func paramNote(param *graph.Param) string {
+	messages := make([]string, 0, len(param.Diagnostics))
+	for _, d := range param.Diagnostics {
+		if d.Message != "" {
+			messages = append(messages, strings.ReplaceAll(d.Message, "\n", "; "))
+		}
+	}
+	return strings.Join(messages, "; ")
 }
 
 func newViewEdge(edge *graph.Edge) viewEdge {

@@ -269,7 +269,7 @@ func (p *printer) paramText(param *graph.Param) string {
 		sb.WriteString(param.LiteralsText())
 	case param.Unwired():
 		sb.WriteString(" (not wired)")
-	case param.Unresolved:
+	case param.Faulty():
 		sb.WriteString(" (unresolved)")
 	}
 
@@ -277,6 +277,15 @@ func (p *printer) paramText(param *graph.Param) string {
 	// can show. Without it, an argument a pass substituted looks hand-written.
 	if param.EdgeCount == 0 && param.Origin == graph.ArgOriginCompilerPass {
 		sb.WriteString(" ← " + param.OriginPass)
+	}
+
+	// An argument can resolve to something and still be wrong, so what the
+	// compiler objected to goes on the row rather than only in the notices.
+	for _, d := range param.Diagnostics {
+		if d.Message == "" {
+			continue
+		}
+		sb.WriteString(" ⚠ " + p.clip(strings.ReplaceAll(d.Message, "\n", "; ")))
 	}
 
 	return sb.String()
@@ -458,7 +467,12 @@ func (p *printer) notices() {
 	}
 
 	for _, d := range notices {
-		lines = append(lines, esc(string(d.Severity)+": "+d.Message))
+		lines = append(lines, esc(string(d.Severity)+": "+p.notice(d)))
+	}
+	// A filter takes a diagnostic away with the thing it was about. Saying so
+	// stops a narrowed picture reading as a container with nothing wrong with it.
+	if n := p.graph.ElidedDiagnostics; n > 0 {
+		lines = append(lines, esc(fmt.Sprintf("info: %d more about what this view leaves out", n)))
 	}
 
 	if len(lines) == 0 {
@@ -471,6 +485,21 @@ func (p *printer) notices() {
 	p.printf("\t\tnotices [shape=plaintext, style=\"\", label=<%s>];\n",
 		small(9, p.palette.warn, strings.Join(lines, `<BR ALIGN="LEFT"/>`)))
 	p.printf("\t}\n")
+}
+
+// notice is one line of the list: what the diagnostic is about, and what it says.
+// A message can run to several lines, and this list has one line per notice.
+func (p *printer) notice(d graph.LocatedDiagnostic) string {
+	message := strings.ReplaceAll(d.Message, "\n", "; ")
+	where := d.Where(p.graph)
+	switch {
+	case where == "":
+		return message
+	case message == "":
+		return where
+	default:
+		return where + ": " + message
+	}
 }
 
 // legend draws one real edge per channel rather than describing them. The point of

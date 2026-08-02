@@ -46,11 +46,15 @@ type Graph struct {
 	Edges    []*Edge    `json:"edges"`    // Sorted by (From, Param, Ordinal).
 	Bindings []*Binding `json:"bindings"` // Sorted by (Scope, Interface).
 
-	// GraphDiagnostics are about this graph, or the file it was read from, rather
-	// than about the container: a scope no definition owns, a schema this build
-	// does not know. Nothing is wrong with the wiring, so nothing is marked. See
-	// WiringDiagnostics for the other half.
-	GraphDiagnostics []*Diagnostic `json:"graphDiagnostics,omitzero"`
+	// Diagnostics are what belongs to no scope, node or argument: a compiler pass
+	// that could not be scheduled, a definition that never made it into the
+	// container, a file written against a schema this build does not know. It is
+	// where a diagnostic goes when there is nothing narrower to put it on.
+	Diagnostics []Diagnostic `json:"diagnostics,omitzero"`
+	// ElidedDiagnostics is how many a filter cut off with the elements they were
+	// about. Without it, narrowing a graph would quietly answer "nothing is wrong"
+	// about a container that is broken elsewhere.
+	ElidedDiagnostics int `json:"elidedDiagnostics,omitzero"`
 
 	// Snapshot is set when the graph was taken from a container that was not
 	// finished being built. It is nil for a built container. That is the only
@@ -69,8 +73,6 @@ type Graph struct {
 	scopes map[ScopeID]*Scope
 	out    map[NodeID][]*Edge
 	in     map[NodeID][]*Edge
-	wiring []*Diagnostic
-	wired  bool
 }
 
 // Scope is a group of definitions. Child scopes hold services private to the
@@ -84,6 +86,10 @@ type Scope struct {
 	// OwnerName is what that node is called, fully qualified. Owner is a path
 	// built for uniqueness, so it is too cluttered to derive this from.
 	OwnerName string `json:"ownerName,omitzero"`
+
+	// Diagnostics are what is worth saying about this scope: that no definition
+	// owns it, or whatever a compiler pass reported here.
+	Diagnostics []Diagnostic `json:"diagnostics,omitzero"`
 }
 
 // Label names a scope for a reader. A child scope's own name is a uuid, which
@@ -159,14 +165,26 @@ type Node struct {
 	// caller named does not, because the point is to say that the graph carries
 	// on where the picture stops.
 	Elided int `json:"elided,omitzero"`
-	// Incomplete reports that this node is missing something it needs: an
-	// argument naming a dependency the container does not have, or one nothing
-	// has wired and nothing is going to. The reason is on the argument itself.
-	//
-	// An argument not wired *yet* does not count. Before autowiring has run, that
-	// is work outstanding rather than a fault. A built container has neither,
-	// since validation would have rejected it.
-	Incomplete bool `json:"incomplete,omitzero"`
+
+	// Diagnostics are what is wrong with this definition rather than with one of
+	// its arguments: a factory that returned an error, a service the compiler
+	// could not build. What is wrong with an argument is on the argument.
+	Diagnostics []Diagnostic `json:"diagnostics,omitzero"`
+}
+
+// Faulty reports that this node is broken: either it carries an error of its own,
+// or one of its arguments does. It is a question rather than a stored flag, so
+// what a reader is told and what is drawn as broken cannot disagree.
+func (n *Node) Faulty() bool {
+	if hasError(n.Diagnostics) {
+		return true
+	}
+	for _, p := range n.Params {
+		if p.Faulty() {
+			return true
+		}
+	}
+	return false
 }
 
 // TypeShort is Type without the package path, for labels.
@@ -371,13 +389,32 @@ type Param struct {
 	Label      string    `json:"label,omitzero"`
 	Literals   []Literal `json:"literals,omitzero"`
 
-	EdgeCount  int    `json:"edgeCount"`
-	Unresolved bool   `json:"unresolved,omitzero"`
-	Note       string `json:"note,omitzero"`
+	EdgeCount int `json:"edgeCount"`
+
+	// Diagnostics are what is wrong with this argument: what the compiler
+	// objected to, or what extraction could not resolve when no pass had objected
+	// yet.
+	Diagnostics []Diagnostic `json:"diagnostics,omitzero"`
 }
+
+// Faulty reports that this argument will not resolve as it stands.
+func (p *Param) Faulty() bool { return hasError(p.Diagnostics) }
 
 // TypeShort is Type without the package path, for labels.
 func (p *Param) TypeShort() string { return render.Short(p.Type) }
+
+// Position is what to call this argument in a sentence. It names the method the
+// argument belongs to when it belongs to one, because "argument 2" alone means
+// two different slots on a service with a method call.
+//
+// It is on the model so that every format, and every diagnostic, words an
+// argument the same way.
+func (p *Param) Position() string {
+	if p.Method != "" {
+		return fmt.Sprintf("argument %d of %s", p.Index, p.Method)
+	}
+	return fmt.Sprintf("argument %d", p.Index)
+}
 
 // Unwired reports that nothing filled this argument and something had to. A
 // variadic slot is exempt: no arguments is a valid call, so an empty one is an
@@ -604,65 +641,95 @@ const (
 	SeverityError   Severity = "error"   // Something is broken.
 )
 
-// Diagnostic reports something worth saying about a graph: an argument that
-// resolves to nothing, a scope no definition owns, a file written by a version
-// that knew a different schema. Extraction never fails on odd input. It records it
-// here instead.
+// Diagnostic reports something worth saying about a container: an argument that
+// resolves to nothing, a service whose factory failed, a scope no definition
+// owns, a file written by a version that knew a different schema.
+//
+// It says nothing about where it belongs, because it is stored on what it is
+// about — a Param, a Node, a Scope, or the Graph itself when nothing narrower
+// fits. Ask for it with AllDiagnostics, which pairs each with the element it came
+// from.
 type Diagnostic struct {
 	Severity Severity `json:"severity"`
-	Scope    ScopeID  `json:"scope,omitzero"`
-	Node     NodeID   `json:"node,omitzero"`
-	Param    ParamID  `json:"param,omitzero"`
 	Message  string   `json:"message"`
+	// Pass names the compiler pass that reported it, where one did. Extraction
+	// and the reader of a file report their own findings and name no pass.
+	Pass string `json:"pass,omitzero"`
 }
 
-// WiringDiagnostics are the faults in the container itself: an argument naming
-// a dependency that is not there, and one nothing wired once nothing is going
-// to. Both can only occur in a graph of a build that failed or has not
-// finished, since the argument validation pass rejects either.
-//
-// They are derived from the parameters rather than stored beside them. The count
-// a reader is shown and the nodes drawn as faulty then come from the same place,
-// so they cannot disagree.
-func (g *Graph) WiringDiagnostics() []*Diagnostic {
-	if g.wired {
-		return g.wiring
-	}
-	g.wired = true
-
-	// Before autowiring runs every argument is unwired, so an unfilled one is
-	// work outstanding rather than a fault. The snapshot says whether it has run.
-	// A finished container has no snapshot.
-	autowired := g.Snapshot == nil || g.Snapshot.Autowired
-
-	for _, node := range g.Nodes {
-		for _, p := range node.Params {
-			unfilled := autowired && p.Unwired()
-			if !p.Unresolved && !unfilled {
-				continue
-			}
-			g.wiring = append(g.wiring, &Diagnostic{
-				Severity: SeverityWarning,
-				Node:     p.Node,
-				Param:    p.ID,
-				Message:  p.Note,
-			})
+func hasError(diags []Diagnostic) bool {
+	for _, d := range diags {
+		if d.Severity == SeverityError {
+			return true
 		}
 	}
-	return g.wiring
+	return false
 }
 
-// AllDiagnostics is everything worth reporting about a graph, wiring first. What
-// is wrong with the container matters more than what is odd about the picture.
-func (g *Graph) AllDiagnostics() []*Diagnostic {
-	wiring := g.WiringDiagnostics()
-	if len(g.GraphDiagnostics) == 0 {
-		return wiring
+// LocatedDiagnostic is a diagnostic and what it is about. The ids are read off
+// the element it was stored on, so a reader that wants to point at it does not
+// have to walk the graph again.
+type LocatedDiagnostic struct {
+	Diagnostic
+	Scope ScopeID
+	Node  NodeID
+	Param ParamID
+}
+
+// Where names what a diagnostic is about, for a reader looking at a list of them
+// rather than at the thing itself. It is empty for one about the container.
+//
+// It is on the model so that every format names a place the same way.
+func (d LocatedDiagnostic) Where(g *Graph) string {
+	if d.Node == "" {
+		if d.Scope == "" {
+			return ""
+		}
+		if s, ok := g.Scope(d.Scope); ok {
+			return s.Label()
+		}
+		return string(d.Scope)
 	}
 
-	out := make([]*Diagnostic, 0, len(wiring)+len(g.GraphDiagnostics))
-	out = append(out, wiring...)
-	return append(out, g.GraphDiagnostics...)
+	where := string(d.Node)
+	if node, ok := g.Node(d.Node); ok {
+		where = node.Title()
+	}
+	if p, ok := g.Param(d.Param); ok {
+		where += " " + p.Position()
+	}
+	return where
+}
+
+// AllDiagnostics is everything worth reporting about a graph, in a stable order:
+// the container, then each scope, then each node followed by its arguments.
+//
+// It is a walk rather than a list of its own. Every diagnostic is stored once, on
+// the element it is about, so what a reader is told and what is drawn as broken
+// come from the same record and cannot disagree.
+func (g *Graph) AllDiagnostics() []LocatedDiagnostic {
+	var out []LocatedDiagnostic
+
+	for _, d := range g.Diagnostics {
+		out = append(out, LocatedDiagnostic{Diagnostic: d})
+	}
+	for _, s := range g.Scopes {
+		for _, d := range s.Diagnostics {
+			out = append(out, LocatedDiagnostic{Diagnostic: d, Scope: s.ID})
+		}
+	}
+	for _, n := range g.Nodes {
+		for _, d := range n.Diagnostics {
+			out = append(out, LocatedDiagnostic{Diagnostic: d, Scope: n.Scope, Node: n.ID})
+		}
+		for _, p := range n.Params {
+			for _, d := range p.Diagnostics {
+				out = append(out, LocatedDiagnostic{Diagnostic: d, Scope: n.Scope, Node: n.ID, Param: p.ID})
+			}
+		}
+	}
+
+	return out
 }
 
 // Node returns the node with the given ID.

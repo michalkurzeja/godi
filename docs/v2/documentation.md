@@ -398,8 +398,40 @@ A pass may register another pass: it joins the queue as soon as the pass adding 
 whose place has already gone by is a build error naming both — running it now would run the stages
 out of order, and running it later is not the place it asked for.
 
+#### Reporting what a pass objects to
+
+A pass that only returns an error says what went wrong and not what it went wrong about, so the
+dependency graph of the failed build has nowhere to draw it. Report it instead, against the thing
+it is about:
+
+```go
+b.ReportError(di.AtServiceArg(def, slot), err, "could not override argument %d of %s", i, def)
+b.Report(di.Diagnostic{Severity: di.SeverityWarning, Site: di.AtService(def), Message: "looks expensive"})
+```
+
+| Site | Shown on |
+|---|---|
+| `AtContainer()` | The graph itself. Where a fault belongs to nothing narrower. |
+| `AtScope(scope)` | The scope. |
+| `AtService(def)` / `AtFunction(def)` | The node. |
+| `AtServiceArg(def, slot)` / `AtFunctionArg(def, slot)` | The argument. Factory and method arguments alike. |
+
+An error-severity diagnostic stops compilation once the reporting pass returns, and `Build` fails
+with its `Err`; a pass that reports one should return `nil` rather than the same error twice. A
+warning or an info note never fails a build, and stays on the container it produced.
+
+`ReportError` splits the two readers: the message is the bare fault, shown beside an element that
+already says where it is, and the wrapped error is what stands alone in a terminal. A pass that
+returns an error rather than reporting still reaches the graph, at container level, because the
+compiler records one for it.
+
+The pass name is filled in by the compiler. A pass reports what it found; naming itself is not
+its job.
+
 `Compiler`: `AddPass(pass)`, `Passes()`, `Progress()`, `Run(builder)`.
 `CompilerPass`: `Name()`, `Stage()`, `Priority()`, `WithPriority(n)`, `Run(builder)`.
+`ContainerBuilder`: `Report(d)`, `ReportError(site, err, format, ...)`.
+`Container`: `Diagnostics()`.
 `BasePasses(skipCycleValidation)` returns godi's own five, and each is exported on its own as an
 example of the shape: `NewInterfaceBindingPass()`, `NewAutowiringPass()`, `NewArgValidationPass()`,
 `NewCycleValidationPass()` and `NewEagerInitPass()`. The pipeline is readable, not replaceable:
@@ -463,30 +495,45 @@ Extraction options: `WithLiteralValues(maxRunes)`, `WithRedactor(fn)`, `WithoutL
 Literal values are left out by default: a literal is routinely a DSN or a token, and graphs get
 committed and pasted into issues.
 
+Diagnostic messages take the same care and a knob of their own, because they answer a different
+question: `WithDiagnosticMarks()` keeps what is broken and drops what was said about it,
+`WithoutDiagnostics()` drops both, and `WithDiagnosticRedactor(fn)` filters the text. Messages are
+included by default — a graph of a failed build that will not say what failed is no use — and a
+message from a factory carries **whatever that factory put in its error**.
+
 ### 5.2 The model
 
-`Graph` holds `Scopes`, `Nodes`, `Edges`, `Bindings`, `GraphDiagnostics`, an optional `Snapshot`
+`Graph` holds `Scopes`, `Nodes`, `Edges`, `Bindings`, `Diagnostics`, an optional `Snapshot`
 and a `SourceRoot`. It is plain data.
 
 - **Node** — a service or a function: its type, name, signature, labels, flags, where it was
   registered and where it is defined, and a `Param` per argument.
 - **Param** — one argument: what was asked for, what filled it (`Origin`, `OriginPass`), any
-  literals, and whether it resolved.
+  literals, and whatever is wrong with it.
 - **Edge** — one dependency: from a node, through a param, to a node, with the `Resolution` that
   matched and the `Bindings` it traversed.
 - **Scope** — a box, with the definition that owns it when one does.
 
 Display rules live on the model, so every format gives the same answer: `Node.Title`,
-`Node.Subtitle`, `Node.KnownByName`, `Node.Anonymous`, `Edge.DecidedBy`, `Edge.PassCredit`.
+`Node.Subtitle`, `Node.KnownByName`, `Node.Anonymous`, `Param.Position`, `Edge.DecidedBy`,
+`Edge.PassCredit`.
 
 ### 5.3 Diagnostics
 
-`GraphDiagnostics` are stored and are about the graph or the file it came from: a scope no
-definition owns, a schema this build does not know. `WiringDiagnostics()` is **derived** from the
-parameters — an argument naming something that is not there, or one nothing wired once nothing is
-going to — so what a reader is told is wrong cannot drift from what is drawn as wrong.
-`AllDiagnostics()` is what the encoders render, wiring first. `Severity` is `info`, `warning` or
-`error`.
+**A diagnostic is stored on the element it is about.** `Graph`, `Scope`, `Node` and `Param` each
+carry their own, and the graph itself takes the ones nothing narrower fits: a pass that could not
+be scheduled, a definition that never made it into the container, a file written against a schema
+this build does not know.
+
+`AllDiagnostics()` walks them in a stable order — the container, then each scope, then each node
+followed by its arguments — and pairs each with the ids of what it came from, which is what the
+encoders render. `Where(g)` names that place in words. `Node.Faulty()` and `Param.Faulty()` ask
+whether something carries an error rather than storing a second answer to the same question, so
+what a reader is told is wrong cannot drift from what is drawn as wrong.
+
+`Severity` is `info`, `warning` or `error`. Where a filter cut a diagnostic away with the element
+it was about, `Graph.ElidedDiagnostics` counts it, so a narrowed graph does not read as a
+container with nothing wrong with it.
 
 ### 5.4 Narrowing
 
@@ -511,8 +558,8 @@ questions — and a `Filter` is its own type, so an extraction option cannot be 
 A graph taken before the container finished carries a `Snapshot`: the stage and pass in progress,
 the passes already done, whether autowiring has run, and the pass that failed if one did. Every
 encoder prints it, because a half-wired graph otherwise reads as a finished one with dependencies
-missing. `Node.Incomplete` and the wiring diagnostics are gated on `Snapshot.Autowired`: before
-autowiring, every slot is empty and marking them says nothing.
+missing. Saying that an argument is unwired is gated on `Snapshot.Autowired`: before autowiring,
+every slot is empty and marking them says nothing.
 
 ### 5.6 Formats and the CLI
 

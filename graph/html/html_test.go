@@ -488,12 +488,18 @@ func TestElisionReachesThePayload(t *testing.T) {
 // scope belonging to no definition has no node to be marked on.
 func TestDiagnosticsReachThePayload(t *testing.T) {
 	g := model()
-	// A fault in the wiring is not written down twice: the parameter carries it,
-	// and the graph works the notice out from there.
-	g.Nodes[0].Params[0].Unresolved = true
-	g.Nodes[0].Params[0].Note = "dependency is not registered in this container"
-	g.GraphDiagnostics = []*graph.Diagnostic{
-		{Severity: graph.SeverityInfo, Scope: "root/child", Message: `scope "root/child" belongs to no definition`},
+	// Each is stored on what it is about, and the payload reads the ids back off
+	// the walk. That is what keeps the panel's list and the red borders in step.
+	g.Nodes[0].Params[0].Diagnostics = []graph.Diagnostic{
+		{Severity: graph.SeverityError, Message: "dependency is not registered in this container", Pass: "argument validation"},
+	}
+	g.Scopes = append(g.Scopes, &graph.Scope{
+		ID: "root/child", Parent: "root", Depth: 1, Name: "child",
+		Diagnostics: []graph.Diagnostic{
+			{Severity: graph.SeverityInfo, Message: `scope "root/child" belongs to no definition`},
+		},
+	})
+	g.Diagnostics = []graph.Diagnostic{
 		{Severity: graph.SeverityWarning, Message: "written by godi v2.1, read by v2.0"},
 	}
 
@@ -501,6 +507,8 @@ func TestDiagnosticsReachThePayload(t *testing.T) {
 		Diagnostics []struct {
 			Severity string `json:"severity"`
 			Message  string `json:"message"`
+			Where    string `json:"where"`
+			Pass     string `json:"pass"`
 			Node     string `json:"node"`
 			Param    string `json:"param"`
 			Scope    string `json:"scope"`
@@ -510,17 +518,20 @@ func TestDiagnosticsReachThePayload(t *testing.T) {
 
 	require.Len(t, data.Diagnostics, 3)
 
-	require.Equal(t, "warning", data.Diagnostics[0].Severity)
-	require.Equal(t, "dependency is not registered in this container", data.Diagnostics[0].Message)
-	require.Equal(t, string(g.Nodes[0].ID), data.Diagnostics[0].Node)
-	require.Equal(t, string(g.Nodes[0].Params[0].ID), data.Diagnostics[0].Param)
+	require.Empty(t, data.Diagnostics[0].Node, "a notice about the file names nothing in the graph")
+	require.Empty(t, data.Diagnostics[0].Scope)
 
 	require.Equal(t, "info", data.Diagnostics[1].Severity, "a pass making a scope is not a fault")
 	require.Equal(t, "root/child", data.Diagnostics[1].Scope)
 	require.Empty(t, data.Diagnostics[1].Node)
 
-	require.Empty(t, data.Diagnostics[2].Node, "a notice about the file names nothing in the graph")
-	require.Empty(t, data.Diagnostics[2].Scope)
+	require.Equal(t, "error", data.Diagnostics[2].Severity)
+	require.Equal(t, "dependency is not registered in this container", data.Diagnostics[2].Message)
+	require.Equal(t, string(g.Nodes[0].ID), data.Diagnostics[2].Node)
+	require.Equal(t, string(g.Nodes[0].Params[0].ID), data.Diagnostics[2].Param)
+	require.Equal(t, "argument validation", data.Diagnostics[2].Pass)
+	require.Equal(t, "app.(*Consumer) argument 0", data.Diagnostics[2].Where,
+		"the panel names what it is about without walking the graph again")
 }
 
 func TestAGraphWithNothingWrongCarriesNoDiagnostics(t *testing.T) {

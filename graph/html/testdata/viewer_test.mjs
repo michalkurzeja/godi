@@ -1970,8 +1970,8 @@ await test('a graph that is both unfinished and faulty says both, one under the 
 	}
 	if (strips.some((s) => s.hidden)) return 'one of the two strips stayed hidden';
 	// A fault in the wiring and a note about the graph are not the same thing,
-	// and the strip says which is which: one of each, not "2 warnings".
-	return strips[1].text.includes('1 warning · 1 info') || strips[1].text;
+	// and the strip says which is which: one of each, not "2 notices".
+	return strips[1].text.includes('1 error · 1 info') || strips[1].text;
 });
 
 // A notice about a scope has no node to be marked on, so the page is the only
@@ -1980,7 +1980,7 @@ await test('the notices are listed where a reader with nothing picked is already
 	const text = await panelText();
 
 	if (!text.includes('Notices')) return text;
-	if (!text.includes('argument is not wired')) return 'the notice about a node is missing';
+	if (!text.includes('argument 0 is not set')) return 'the notice about a node is missing';
 	return text.includes('belongs to no definition') || 'the notice about a scope is missing';
 });
 

@@ -36,10 +36,9 @@ func (x *extractor) assignIDs() {
 		// Worth saying, because such a scope is drawn without an owner and
 		// nothing in the container explains it. It is not a fault: a compiler
 		// pass is entitled to make one.
-		x.note(graph.SeverityInfo, graph.Diagnostic{
-			Scope:   x.scopeIDs[scope],
-			Message: fmt.Sprintf("scope %q belongs to no definition", scope.Name()),
-		})
+		entry := x.scopeEntries[scope]
+		x.record(&entry.Diagnostics, graph.SeverityInfo,
+			fmt.Sprintf("scope %q belongs to no definition", scope.Name()), "")
 	}
 }
 
@@ -74,6 +73,7 @@ func (x *extractor) assignScope(scope *di.Scope, id, parent graph.ScopeID, depth
 		entry.OwnerName = x.ownerName(owner)
 	}
 	x.out.Scopes = append(x.out.Scopes, entry)
+	x.scopeEntries[scope] = entry
 
 	// Name the definitions before recursing. A child scope is named after the
 	// node that declared it.

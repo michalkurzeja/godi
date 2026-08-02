@@ -213,8 +213,9 @@ Three consequences worth knowing before touching this area:
 - A failed `Build` deliberately leaves `b.container` non-nil, so `extract.FromBuilder` after a
   failure shows exactly where the compiler stopped. That is the main use of the feature; a
   successfully built builder has handed its container over and says so.
-- `Node.Incomplete` and `Graph.WiringDiagnostics` are gated on `Snapshot.Autowired`. Before
-  autowiring runs every slot is empty, so marking them says nothing.
+- Saying that an argument is unwired (`markUnwired`) is gated on `Snapshot.Autowired`. Before
+  autowiring runs every slot is empty, so marking them says nothing. What a pass objected to is
+  not gated: a build that stopped in the Automation stage is exactly when that is all there is.
 - There is no route from the facade `Builder` to a graph. Adding one means an accessor that
   prepares as it hands over, or the graph misses everything registered since.
 
@@ -223,13 +224,52 @@ compiler passes are registered too: "prepared" means everything the facade knows
 Its deferred registration is load-bearing — the order and number of `Services`/`Functions`/
 `Bindings` calls must stay irrelevant, and forward references must keep working across calls.
 
-### Diagnostics: two kinds, one of them derived
+### Diagnostics: stored on the thing they are about
 
-`Graph.GraphDiagnostics` are stored and are about the graph or the file it came from — a scope no
-definition owns, a schema this build does not know. `Graph.WiringDiagnostics()` is derived from
-the parameters, so what a reader is told is wrong and what is drawn as wrong cannot disagree.
-Encoders render `AllDiagnostics()`. Do not store a wiring fault: set `Param.Unresolved` and
-`Param.Note`, and it will be reported.
+`Graph`, `Scope`, `Node` and `Param` each carry their own `Diagnostics`, and the graph itself takes
+what fits nothing narrower — a pass that could not be scheduled, a definition that never made it
+into the container, a schema this build does not know. `AllDiagnostics()` is a walk over them, in a
+stable order, pairing each with the ids of what it came from; that is what the encoders render.
+
+One record, many readers, so nothing can disagree: `Node.Faulty()` and `Param.Faulty()` are
+questions rather than stored flags, and `Select` cuts a diagnostic away with the element it was
+about, counting it into `Graph.ElidedDiagnostics`. **Do not add a list beside the elements**, and do
+not copy a param's diagnostic onto its node — "is this node faulty" is a question that looks at the
+node and its arguments.
+
+A compiler pass is what puts most of them there. `ContainerBuilder.Report` takes a `di.Diagnostic`
+whose `Site` names what it is about, and the sites are exactly the levels the model stores at:
+`AtContainer`, `AtScope`, `AtService`, `AtFunction`, `AtServiceArg`, `AtFunctionArg`. There is no
+edge site, and there should not be: the engine has no edge to point at, since an edge is
+manufactured by extraction out of `ArgTrace.Matches` and its ordinal is a position in a list that
+depends on what happens to be registered. If a fault ever needs to be narrower than a slot, the way
+in is a sub-argument site, which the engine does have.
+
+`di.Diagnostic` carries `Message` and `Err`, and they are two things rather than one twice: the
+message is what a reader is told and all the graph carries, and the error is what `Build` returns,
+wrapped however the pass words its failures. That split is what let every built-in pass move onto
+reporting without changing a single released error string. `ReportError` builds both from one
+error, so they cannot drift.
+
+Compilation stops when a pass returns an error **or** reports an error-severity diagnostic; a pass
+that reports one returns nil rather than the same error twice. A returned error is recorded as a
+container-level diagnostic, so a third-party pass that never calls `Report` still reaches the graph
+— coarsely, but never silently.
+
+A diagnostic message is arbitrary user text: an eager-init failure carries whatever a factory put
+in its error. `graph.Config` gates it — `DiagnosticMessages` (the default), `DiagnosticMarks`,
+`DiagnosticNone`, plus a redactor — the same care `LiteralMode` takes over values.
+
+**Where a compiler diagnostic names an argument, it replaces what extraction guessed about it**
+(`graph/extract/diagnostics.go`). The pass saw more. This loses nothing because the validation pass
+is exhaustive over slots and `compoundArg.validate` joins every sub-argument's error, so its
+diagnostic for a faulty argument already contains everything the trace could have added. Extraction
+cannot instead ask "has validation run": a pass may not be identified by name.
+
+`ArgTrace.Fault` is not obsolete and must stay. It is what the graph can say when no pass has
+objected *yet* — `extras.CaptureGraph`, `extract.LiveBuilder` mid-build, a builder nobody compiled,
+a build that failed at an earlier pass — and `ArgFaultCircularBinding` has no compiler counterpart
+at all.
 
 ### Extraction asks the arguments
 

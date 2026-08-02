@@ -62,6 +62,28 @@ func (b *ContainerBuilder) FunctionDefinitionsSeq() iter.Seq2[*Scope, *FunctionD
 	}
 }
 
+// Report records what a compiler pass has to say about the container: an
+// argument it objects to, a service it could not build, a warning about wiring
+// that will work but probably should not.
+//
+// This is how a fault reaches the dependency graph. The site says what the
+// diagnostic is about, and the graph shows it there — on the argument, the node,
+// the scope, or the container itself when it belongs to nothing narrower.
+//
+// An error-severity diagnostic stops compilation once the reporting pass
+// returns, and Build fails with it. A pass that reports one should return nil
+// rather than the same error twice.
+func (b *ContainerBuilder) Report(d Diagnostic) {
+	b.container.report(d)
+}
+
+// ReportError records an error a pass has in hand. The diagnostic carries the
+// error itself as its message, so the graph shows the fault without the wrapping;
+// wrapFormat is how the pass words it for the error Build returns.
+func (b *ContainerBuilder) ReportError(site Site, err error, wrapFormat string, a ...any) {
+	b.Report(newDiagnosticError(site, err, wrapFormat, a...))
+}
+
 // Container is the container being built. It is nil once Build has handed it
 // over.
 //

@@ -371,10 +371,14 @@ g, md, err := graph.ReadJSON(r)           // md.Schema, md.WrittenAt, md.GodiVer
 src := graph.Static(g)                    // a graph read from a file, as a graph.Source
 ```
 
-A schema `ReadJSON` does not recognise is a warning in `GraphDiagnostics`, not an error — the
-graph is decoded anyway. `Graph.WiringDiagnostics()` is the other half, derived from the
-arguments: what is wrong with the container rather than with the picture of it.
-`AllDiagnostics()` is what the encoders print.
+A schema `ReadJSON` does not recognise is a warning on the graph, not an error — the graph is
+decoded anyway.
+
+**A diagnostic is stored on the element it is about.** `Graph`, `Scope`, `Node` and `Param`
+each carry their own `Diagnostics`, and the graph itself takes what fits nothing narrower.
+`AllDiagnostics()` walks them and is what the encoders print; `Node.Faulty()` and
+`Param.Faulty()` ask whether one carries an error, so what a reader is told is wrong and what
+is drawn as wrong cannot disagree.
 
 Filters work on the model, so every format gets them. Reach for them on any real container:
 past a hundred nodes a whole-graph picture is unreadable.
@@ -389,7 +393,9 @@ g = g.Select(
 )
 ```
 
-`From` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`);
+`From` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`,
+and `WithDiagnosticMarks`/`WithoutDiagnostics`/`WithDiagnosticRedactor` for the same care over
+diagnostic text — a message from a factory carries whatever that factory put in its error);
 `Select` takes `Filter`s. They are different types on purpose - neither compiles in the
 other's place. `Focus` limits its reach with `Dependencies(n)` and `Consumers(n)`.
 
@@ -409,9 +415,23 @@ extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error { ... })  /
 
 A failed `Build` leaves the builder standing, which is what the failure snapshot is written
 from - and what `extract.FromBuilder(b)` reads inside a pass or after a failure.
-`Snapshot.Failed` names the pass that failed, and every node
-with `Incomplete` set — an argument naming a service that is not registered, or one nothing
-will wire — is drawn with a red border in the viewer.
+`Snapshot.Failed` names the pass that failed, and what that pass objected to is on the
+argument or the service it objected to, in the words the build failed with. Every faulty node
+is drawn with a red border in the viewer.
+
+A compiler pass of your own reaches the same place. Report what you object to against the
+thing it is about, rather than only returning an error, and the graph of the failed build
+shows it there:
+
+```go
+b.ReportError(di.AtServiceArg(def, slot), err, "could not override argument %d of %s", i, def)
+b.Report(di.Diagnostic{Severity: di.SeverityWarning, Site: di.AtService(def), Message: "looks expensive"})
+```
+
+The sites are `AtContainer()`, `AtScope(scope)`, `AtService(def)`, `AtFunction(def)`,
+`AtServiceArg(def, slot)` and `AtFunctionArg(def, slot)`. An error-severity diagnostic fails
+the build once the pass returns, so report it and return `nil`; a warning does not, and stays
+on the container the build produced.
 
 No code is needed for the common case. Set `GODI_SNAPSHOT_ON_BUILD_ERR=true` and a failed
 `Build` writes its graph as JSON, printing the path and the command to run on stderr;

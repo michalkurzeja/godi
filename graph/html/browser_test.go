@@ -318,7 +318,9 @@ func snapshotModel() *graph.Graph {
 		// What an unfilled slot looks like: nothing has decided anything yet.
 		Origin: graph.ArgOriginNone,
 		Arg:    graph.ArgKindNone,
-		Note:   "argument is not wired",
+		Diagnostics: []graph.Diagnostic{
+			{Severity: graph.SeverityError, Message: "argument 0 is not set"},
+		},
 	}, {
 		ID:    graph.ParamID(metrics.ID + "#f:1"),
 		Node:  metrics.ID,
@@ -332,19 +334,18 @@ func snapshotModel() *graph.Graph {
 		Origin:   graph.ArgOriginNone,
 		Arg:      graph.ArgKindNone,
 	}}
-	// Both are set by the extractor from the argument above, and written down here
-	// because this fixture is built by hand.
-	//
-	// The notice the page lists is not written down. The graph reads it off the
-	// parameter, which is what keeps the count and the red borders in step.
-	metrics.Incomplete = true
+	// The red border and the notice the page lists are both read back off the
+	// argument above, which is what keeps the count and the borders in step.
 
-	// About the graph rather than the container, with no node to be marked on -
-	// and not a fault, since a compiler pass is entitled to make a scope. Only
-	// the page's own list carries this kind.
-	g.GraphDiagnostics = []*graph.Diagnostic{
-		{Severity: graph.SeverityInfo, Scope: "root/jobs", Message: `scope "root/jobs" belongs to no definition`},
-	}
+	// A scope a compiler pass made, which no definition owns. What is worth
+	// saying about it is said on it, and it is not a fault: a pass is entitled to
+	// make one.
+	g.Scopes = append(g.Scopes, &graph.Scope{
+		ID: "root/jobs", Parent: "root", Depth: 1, Name: "jobs",
+		Diagnostics: []graph.Diagnostic{
+			{Severity: graph.SeverityInfo, Message: `scope "root/jobs" belongs to no definition`},
+		},
+	})
 
 	return g
 }

@@ -257,8 +257,13 @@ func TestASlotNothingFilledSaysWhichKindOfNothing(t *testing.T) {
 	require.Contains(t, encode(t, g), "(not wired)")
 
 	g = model()
-	g.Nodes[1].Params[0].Unresolved = true
-	require.Contains(t, encode(t, g), "(unresolved)")
+	g.Nodes[1].Params[0].Diagnostics = []graph.Diagnostic{
+		{Severity: graph.SeverityError, Message: "no services of type app.Plugin"},
+	}
+	out := encode(t, g)
+	require.Contains(t, out, "(unresolved)")
+	require.Contains(t, out, "! error: no services of type app.Plugin",
+		"the fault reads where the argument is, not only in the notices")
 }
 
 func TestAnUnusedBindingSaysSo(t *testing.T) {
@@ -283,14 +288,19 @@ func TestNoticesAreReported(t *testing.T) {
 	t.Parallel()
 
 	g := model()
-	g.GraphDiagnostics = []*graph.Diagnostic{
+	g.Diagnostics = []graph.Diagnostic{
 		{Severity: graph.SeverityWarning, Message: "scope \"orphan\" belongs to no definition"},
+	}
+	g.Nodes[0].Diagnostics = []graph.Diagnostic{
+		{Severity: graph.SeverityError, Message: "connection refused", Pass: "eager initialization"},
 	}
 
 	out := encode(t, g)
 
 	require.Contains(t, out, "notices:")
 	require.Contains(t, out, "warning: scope \"orphan\" belongs to no definition")
+	require.Contains(t, out, "error: "+g.Nodes[0].Title()+": connection refused",
+		"a notice names what it is about, so a reader can find it")
 }
 
 // Paths depend on the machine the binary was built on, so a comparison of the

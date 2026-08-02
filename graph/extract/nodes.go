@@ -40,6 +40,7 @@ func (x *extractor) buildNodes() {
 		}
 
 		x.out.Nodes = append(x.out.Nodes, node)
+		x.nodeEntries[node.ID] = node
 	}
 
 	for scope, def := range x.container.FunctionDefinitionsSeq() {
@@ -67,6 +68,7 @@ func (x *extractor) buildNodes() {
 		}
 
 		x.out.Nodes = append(x.out.Nodes, node)
+		x.nodeEntries[node.ID] = node
 	}
 }
 

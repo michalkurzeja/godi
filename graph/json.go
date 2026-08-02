@@ -80,8 +80,9 @@ func (g *Graph) WriteJSONIndented(w io.Writer, indent string) error {
 // a file from another, and half a graph beats none when a build has already gone
 // wrong.
 //
-// The warning is recorded in GraphDiagnostics, so it travels with the graph into
-// whatever renders it.
+// The warning is recorded on the graph, so it travels into whatever renders it.
+// It belongs to the file rather than to anything in the container, which is what
+// the graph's own diagnostics are for.
 func ReadJSON(r io.Reader) (*Graph, Metadata, error) {
 	var env envelope
 
@@ -97,7 +98,7 @@ func ReadJSON(r io.Reader) (*Graph, Metadata, error) {
 	g.Schema = env.Metadata.Schema // The file's own account of itself, not ours.
 
 	if g.Schema != Schema {
-		g.GraphDiagnostics = append(g.GraphDiagnostics, &Diagnostic{
+		g.Diagnostics = append(g.Diagnostics, Diagnostic{
 			Severity: SeverityWarning,
 			Message:  schemaMismatch(g.Schema),
 		})

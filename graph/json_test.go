@@ -110,9 +110,9 @@ func TestAGraphSurvivesTheRoundTrip(t *testing.T) {
 	require.Equal(t, want.Nodes, got.Nodes)
 	require.Equal(t, want.Edges, got.Edges)
 	require.Equal(t, want.Bindings, got.Bindings)
-	require.Equal(t, want.GraphDiagnostics, got.GraphDiagnostics)
-	require.Equal(t, want.WiringDiagnostics(), got.WiringDiagnostics(),
-		"the wiring half recomputes from the parameters, so it survives the trip")
+	require.Equal(t, want.Diagnostics, got.Diagnostics)
+	require.Equal(t, want.AllDiagnostics(), got.AllDiagnostics(),
+		"a diagnostic travels with the element it is about")
 	require.Nil(t, got.Snapshot, "a built container has nothing to say about when it was read")
 }
 
@@ -181,10 +181,10 @@ func TestAnUnknownSchemaIsAWarningNotAFailure(t *testing.T) {
 	require.Equal(t, "godi.graph/v99", md.Schema)
 	require.Equal(t, "godi.graph/v99", got.Schema, "the graph keeps the file's account of itself")
 
-	require.Len(t, got.GraphDiagnostics, 1)
-	require.Equal(t, graph.SeverityWarning, got.GraphDiagnostics[0].Severity)
-	require.Contains(t, got.GraphDiagnostics[0].Message, "godi.graph/v99")
-	require.Contains(t, got.GraphDiagnostics[0].Message, graph.Schema)
+	require.Len(t, got.Diagnostics, 1)
+	require.Equal(t, graph.SeverityWarning, got.Diagnostics[0].Severity)
+	require.Contains(t, got.Diagnostics[0].Message, "godi.graph/v99")
+	require.Contains(t, got.Diagnostics[0].Message, graph.Schema)
 }
 
 func TestAGraphNamingNoSchemaSaysSo(t *testing.T) {
@@ -193,8 +193,8 @@ func TestAGraphNamingNoSchemaSaysSo(t *testing.T) {
 	got, _, err := graph.ReadJSON(strings.NewReader(`{"metadata":{},"graph":{"nodes":[]}}`))
 	require.NoError(t, err)
 
-	require.Len(t, got.GraphDiagnostics, 1)
-	require.Contains(t, got.GraphDiagnostics[0].Message, "names no schema")
+	require.Len(t, got.Diagnostics, 1)
+	require.Contains(t, got.Diagnostics[0].Message, "names no schema")
 }
 
 // The lookup indexes are not serialised, so a decoded graph has to build them

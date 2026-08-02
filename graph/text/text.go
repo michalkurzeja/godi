@@ -292,6 +292,28 @@ func (p *printer) param(param *graph.Param, depth int) {
 	for _, e := range edges {
 		p.linef(depth+1, "-> %s%s", p.name(e.To), bracketed(p.resolution(e)))
 	}
+	p.paramDiagnostics(param, depth+1)
+}
+
+// paramDiagnostics says what is wrong with an argument where the argument is,
+// and not only in the notices at the end. An argument can resolve to something
+// and still be wrong, so this does not wait for one that resolved to nothing.
+func (p *printer) paramDiagnostics(param *graph.Param, depth int) {
+	for _, d := range param.Diagnostics {
+		if d.Message == "" {
+			p.linef(depth, "! %s", d.Severity)
+			continue
+		}
+		// A compiler pass reports one fault per argument, and an argument
+		// assembled from several parts has a line for each of them.
+		for i, line := range strings.Split(d.Message, "\n") {
+			if i == 0 {
+				p.linef(depth, "! %s: %s", d.Severity, line)
+				continue
+			}
+			p.linef(depth, "  %s", line)
+		}
+	}
 }
 
 // name is what to call a node in a row that points at it. A node ID is a path
@@ -318,7 +340,7 @@ func (p *printer) unresolved(param *graph.Param) string {
 	switch {
 	case param.Unwired():
 		return "  (not wired)"
-	case param.Unresolved:
+	case param.Faulty():
 		return "  (unresolved)"
 	case param.Label != "":
 		return "  (label: " + param.Label + ")"
@@ -370,13 +392,34 @@ func bracketed(parts []string) string {
 
 func (p *printer) diagnostics() {
 	notices := p.graph.AllDiagnostics()
-	if len(notices) == 0 {
+	if len(notices) == 0 && p.graph.ElidedDiagnostics == 0 {
 		return
 	}
 
 	p.printf("\n")
 	p.linef(0, "notices:")
 	for _, d := range notices {
-		p.linef(1, "%s: %s", d.Severity, d.Message)
+		p.linef(1, "%s: %s", d.Severity, p.notice(d))
+	}
+	// A filter takes a diagnostic away with the thing it was about. Saying so
+	// stops a narrowed graph reading as a container with nothing wrong with it.
+	if n := p.graph.ElidedDiagnostics; n > 0 {
+		p.linef(1, "info: %d more about what this view leaves out", n)
+	}
+}
+
+// notice is one line of the list: what the diagnostic is about, and what it says.
+// The place is worth naming here even though the argument row carries it too,
+// because this is the list a reader scans first.
+func (p *printer) notice(d graph.LocatedDiagnostic) string {
+	message := strings.ReplaceAll(d.Message, "\n", "; ")
+	where := d.Where(p.graph)
+	switch {
+	case where == "":
+		return message
+	case message == "":
+		return where
+	default:
+		return where + ": " + message
 	}
 }

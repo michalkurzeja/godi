@@ -235,10 +235,20 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 	for i := 0; i < len(c.passes); i++ {
 		pass := c.passes[i]
 
+		reported := builder.container.diagnosticCount()
+
 		c.running = pass
 		err := pass.Run(builder)
 		c.running = nil
+
+		// A pass that returned an error said something the graph should show too,
+		// even though it named nothing to attach it to.
 		if err != nil {
+			builder.Report(Diagnostic{Severity: SeverityError, Site: AtContainer(), Message: err.Error(), Err: err})
+		}
+		builder.container.creditDiagnosticsTo(reported, pass.name)
+
+		if err := builder.container.diagnosticErrors(reported); err != nil {
 			// Kept: the builder still stands, and its graph shows how far the
 			// container got.
 			c.failed = pass.name
@@ -253,6 +263,7 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		err = c.schedulePending(pass, i+1)
 		if err != nil {
 			c.failed = pass.name
+			builder.Report(Diagnostic{Severity: SeverityError, Site: AtContainer(), Message: err.Error(), Err: err, Pass: pass.name})
 			return err
 		}
 	}

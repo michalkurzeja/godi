@@ -96,6 +96,22 @@ func graphAtPreAutomation(t *testing.T, b *godi.Builder) *graph.Graph {
 	return seen
 }
 
+// graphAtValidation is the wiring once godi has worked out everything it is going
+// to, taken by a pass of the test's own. An argument still unwired by then is one
+// nothing is going to wire.
+func graphAtValidation(t *testing.T, b *godi.Builder, opts ...graph.Option) *graph.Graph {
+	t.Helper()
+
+	var seen *graph.Graph
+	_, _ = b.CompilerPasses(extras.CaptureGraph(di.PreValidation, func(g *graph.Graph) error {
+		seen = g
+		return nil
+	}, opts...)).Build()
+
+	require.NotNil(t, seen, "the capturing pass never ran")
+	return seen
+}
+
 // paramOf returns the single param of the node with the given type suffix at the
 // given slot index.
 func paramOf(t *testing.T, g *graph.Graph, nodeType string, index int) *graph.Param {
@@ -743,7 +759,10 @@ func TestASnapshotNamesThePassThatStoppedTheBuild(t *testing.T) {
 	require.Equal(t, "taken where the argument validation pass failed", g.Snapshot.Label())
 
 	p := paramOf(t, g, "v2_test.(*Server)", 1)
-	require.True(t, p.Unresolved, "the argument that stopped the build says so")
+	require.True(t, p.Faulty(), "the argument that stopped the build says so")
+	require.Contains(t, p.Diagnostics[0].Message, "no services found for type",
+		"in the words the compiler objected in")
+	require.Equal(t, "argument validation", p.Diagnostics[0].Pass)
 }
 
 // Finding the service that failed by reading every argument of every service is
@@ -754,9 +773,9 @@ func TestTheNodeThatStoppedTheBuildIsMarkedIncomplete(t *testing.T) {
 		godi.Svc(NewEnGreeter),
 	))
 
-	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete,
+	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Faulty(),
 		"the service missing a dependency is the one to find")
-	require.False(t, nodeOf(t, g, "v2_test.EnGreeter").Incomplete,
+	require.False(t, nodeOf(t, g, "v2_test.EnGreeter").Faulty(),
 		"a service with nothing wrong with it must not be flagged")
 }
 
@@ -776,13 +795,13 @@ func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
 
 	g := graphOfFailedBuild(t, b)
 
-	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Incomplete)
+	require.True(t, nodeOf(t, g, "v2_test.(*Server)").Faulty())
 
-	faults := g.WiringDiagnostics()
+	faults := g.AllDiagnostics()
 	require.Len(t, faults, 1, "one thing is wrong, so one thing is reported")
 	require.Equal(t, "argument 2 is not set", faults[0].Message)
 	require.Equal(t, nodeOf(t, g, "v2_test.(*Server)").ID, faults[0].Node)
-	require.Empty(t, g.GraphDiagnostics, "nothing is odd about the graph itself")
+	require.Empty(t, g.Diagnostics, "nothing is odd about the graph itself")
 }
 
 // A variadic slot nobody filled is an optional dependency nothing provides, and
@@ -800,7 +819,7 @@ func TestAnEmptyVariadicArgumentIsNotAFault(t *testing.T) {
 	require.Equal(t, graph.ArgOriginNone, p.Origin, "nothing filled the slot")
 	require.False(t, p.Unwired(), "and nothing had to")
 
-	require.False(t, nodeOf(t, g, "v2_test.(*Collector)").Incomplete)
+	require.False(t, nodeOf(t, g, "v2_test.(*Collector)").Faulty())
 	require.Empty(t, g.AllDiagnostics())
 }
 
@@ -813,7 +832,7 @@ func TestNothingIsIncompleteBeforeAutowiringHasRun(t *testing.T) {
 	)
 
 	for _, n := range graphAtPreAutomation(t, b).Nodes {
-		require.False(t, n.Incomplete, "%s is only waiting to be wired", n.ID)
+		require.False(t, n.Faulty(), "%s is only waiting to be wired", n.ID)
 	}
 }
 
@@ -828,7 +847,7 @@ func TestABuiltContainerHasNothingIncompleteInIt(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, n := range graphOf(t, c).Nodes {
-		require.False(t, n.Incomplete, "%s", n.ID)
+		require.False(t, n.Faulty(), "%s", n.ID)
 	}
 }
 

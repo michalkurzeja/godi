@@ -1,10 +1,12 @@
 package di
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/elliotchance/orderedmap/v2"
@@ -17,6 +19,11 @@ const RootScope = "root"
 type Container struct {
 	root   *Scope
 	scopes *orderedmap.OrderedMap[string, *Scope]
+
+	// diagnostics is what the compiler passes had to say about this container.
+	// They live here rather than on the builder so that they outlast a build,
+	// whether it succeeded or not.
+	diagnostics []Diagnostic
 
 	// buildMu serialises construction: one call into the container builds at a
 	// time and the rest wait. A factory runs while it is held, which is why a
@@ -35,6 +42,54 @@ func NewContainer() *Container {
 	c := &Container{scopes: orderedmap.NewOrderedMap[string, *Scope]()}
 	c.root = NewScope(RootScope, c, nil)
 	return c
+}
+
+// Diagnostics is what the compiler passes had to say about this container, in
+// the order they said it. It is a copy: a pass may still be reporting.
+func (c *Container) Diagnostics() []Diagnostic {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Clone(c.diagnostics)
+}
+
+// report records what a pass has to say. Nothing may hold mu while calling it.
+func (c *Container) report(d Diagnostic) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.diagnostics = append(c.diagnostics, d)
+}
+
+// creditDiagnosticsTo names the pass behind everything reported since from. The
+// Compiler calls it after each pass, the same way it credits wiring: a pass
+// reports what it found, and naming itself is not its job.
+func (c *Container) creditDiagnosticsTo(from int, pass string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.diagnostics[from:] {
+		c.diagnostics[from+i].Pass = pass
+	}
+}
+
+// diagnosticErrors is what compilation should fail with, out of everything
+// reported since the given point.
+func (c *Container) diagnosticErrors(from int) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var joined error
+	for _, d := range c.diagnostics[from:] {
+		if d.Severity == SeverityError {
+			joined = errors.Join(joined, d.err())
+		}
+	}
+	return joined
+}
+
+// diagnosticCount is how many diagnostics have been reported so far.
+func (c *Container) diagnosticCount() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.diagnostics)
 }
 
 func (c *Container) HasService(id ID) bool {

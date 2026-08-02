@@ -57,6 +57,7 @@ func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {
 
 func (b *Builder) Build() (Container, error) {
 	prepErr := b.prepare()
+	b.reportPrepErr(prepErr)
 
 	container, err := b.cb.Build()
 	err = errors.Join(prepErr, err)
@@ -64,6 +65,25 @@ func (b *Builder) Build() (Container, error) {
 		b.reportFailedBuild(container)
 	}
 	return container, err
+}
+
+// reportPrepErr puts what went wrong before compilation into the container, so
+// that the graph of a failed build shows it. A definition that would not parse
+// never became one, so the container is the only thing left to attach it to.
+//
+// Each error is reported on its own. They arrive joined, and one line per fault
+// is what a reader wants.
+func (b *Builder) reportPrepErr(err error) {
+	if err == nil {
+		return
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range joined.Unwrap() {
+			b.reportPrepErr(e)
+		}
+		return
+	}
+	b.cb.Report(di.Diagnostic{Severity: di.SeverityError, Site: di.AtContainer(), Message: err.Error(), Err: err})
 }
 
 // prepare hands everything registered since last time to the container builder:
