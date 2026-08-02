@@ -2011,8 +2011,20 @@ await test('a notice is coloured by how much it matters', async () => {
 
 // godi's own checks and a third-party pass report through the same mechanism and
 // read alike. Without the pass, a reader cannot tell whose rule they have broken.
-await test('a notice says which compiler pass found it', async () =>
-	(await panelText()).includes('found by') || 'no notice names the pass that reported it');
+await test('a notice says which compiler pass found it, on a line of its own', async () => {
+	const found = await ev(`[...document.querySelectorAll('#panel .notice .found-by')].map((el) => ({
+		text: el.textContent.trim(),
+		emphasised: el.querySelector('em') ? el.querySelector('em').textContent.trim() : '',
+		sameRowAsWhere: el.previousElementSibling ? el.previousElementSibling.classList.contains('found-by') : false,
+	}))`);
+
+	if (!found.length) return 'no notice names the pass that reported it';
+	const one = found[0];
+	if (!one.text.startsWith('found by ')) return 'the line reads ' + one.text;
+	// Italic, because it is about the notice rather than about the wiring.
+	return one.emphasised === one.text.replace('found by ', '') ||
+		'the pass name is not the emphasised part: ' + JSON.stringify(one);
+});
 
 // A registration that never became a definition is not on the page anywhere, so
 // the location is the only way back to the line that has to change.

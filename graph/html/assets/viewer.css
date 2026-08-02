@@ -624,6 +624,7 @@ kbd {
 .notice { padding: .35rem 0; border-bottom: 1px dotted var(--border); }
 .notice:last-of-type { border-bottom: 0; }
 .notice .where { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
+.notice .found-by { color: var(--muted); font-size: 11px; }
 
 /* Colour is the first thing read, so it carries the severity rather than
    repeating what the word beside it already says. Nothing else on the page is

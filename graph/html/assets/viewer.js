@@ -1119,6 +1119,8 @@ function showNotices(panel) {
 
 		const where = noticeWhere(d);
 		if (where) notice.append(where);
+		const pass = noticePass(d);
+		if (pass) notice.append(pass);
 		parts.push(notice);
 	}
 	parts.push(hint);
@@ -1150,12 +1152,23 @@ function noticeWhere(d) {
 		where.append(at);
 	}
 
-	// Who is telling the reader this. godi's own checks and an extension's arrive
-	// through the same mechanism and read alike, so the pass is the only thing
-	// that says which of them found it.
-	if (d.pass) where.append(make('span', 'via pass', 'found by ' + d.pass));
-
 	return where.children.length ? where : null;
+}
+
+// noticePass says who is telling the reader this. godi's own checks and an
+// extension's arrive through the same mechanism and read alike, so the pass is
+// the only thing that says which of them found it.
+//
+// On a line of its own, and in italics: it is about the notice rather than about
+// the wiring, and on the same row it reads as one more thing the argument is.
+function noticePass(d) {
+	if (!d.pass) return null;
+
+	const line = make('div', 'where found-by');
+	const said = make('span', 'via');
+	said.append(document.createTextNode('found by '), make('em', null, d.pass));
+	line.append(said);
+	return line;
 }
 
 function showPanel(id) {
