@@ -85,6 +85,14 @@ func (i *TestIfaceImpl) TestIfaceMethod() {
 	i.MethodCalled = true
 }
 
+// A named implementation, so that a binding collecting every service of one type
+// can be checked on what it collected and in which order.
+type TestNamedIfaceImpl struct {
+	Name string
+}
+
+func (i *TestNamedIfaceImpl) TestIfaceMethod() {}
+
 func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -427,6 +435,39 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 				svc, err := di.SvcByType[*TestSvc](c)
 				require.NoError(t, err)
 				require.Equal(t, []any{"literal-str", "service-str"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with a compound arg spreading a slice",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("foo"),
+						di.SpreadSlice(di.SliceOf[string]()),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			// Only a compound has two ways to take a slice, so anywhere else the
+			// spread is the argument it wraps.
+			name: "a spread slice arg outside a compound is the argument it wraps",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcSliceArgs, di.SpreadSlice(di.SliceOf[string]())).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar"}, svc.Args)
 			},
 		},
 		{
@@ -1809,6 +1850,101 @@ func TestAVariadicArgumentIsOptionalWithoutAutowiring(t *testing.T) {
 		svc, err := di.SvcByType[*TestSvc](c)
 		require.NoError(t, err)
 		require.Empty(t, svc.Args)
+	})
+}
+
+// BindSlice says an interface resolves to every service of one type. It used to
+// resolve to the *single* service of that type, so a second one made the build
+// fail with "multiple services found".
+func TestABoundSliceCollectsEveryServiceOfItsType(t *testing.T) {
+	t.Parallel()
+
+	c, err := di.New().
+		Services(
+			di.SvcVal(&TestNamedIfaceImpl{Name: "foo"}),
+			di.SvcVal(&TestNamedIfaceImpl{Name: "bar"}),
+			di.Svc(NewTestSvcIfaceSliceArgs),
+		).
+		Bindings(di.BindSlice[TestIface, *TestNamedIfaceImpl]()).
+		Build()
+	require.NoError(t, err)
+
+	svc, err := di.SvcByType[*TestSvc](c)
+	require.NoError(t, err)
+	require.Equal(t, []any{
+		TestIface(&TestNamedIfaceImpl{Name: "foo"}),
+		TestIface(&TestNamedIfaceImpl{Name: "bar"}),
+	}, svc.Args)
+}
+
+// A binding says what an interface resolves to, and the argument resolving
+// through it says whether it wants one of them or all of them. Handing the
+// binding's value straight over ignored the difference and panicked in reflect,
+// after a build that reported no problem.
+func TestABindingFitsTheArgumentThatResolvesThroughIt(t *testing.T) {
+	t.Parallel()
+
+	impl := &TestIfaceImpl{}
+
+	t.Run("a slice argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceSliceArgs),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a variadic argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceVariadicArgs),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a hand-written slice argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceSliceArgs, di.SliceOf[TestIface]()).NotAutowired(),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a single argument cannot resolve through a binding to a slice", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceArg),
+			).
+			Bindings(di.BindSlice[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.ErrorContains(t, err, "binding on github.com/michalkurzeja/godi/v2_test.TestIface resolves to []di_test.TestIface, which cannot fill an argument of type github.com/michalkurzeja/godi/v2_test.TestIface")
 	})
 }
 

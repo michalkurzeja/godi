@@ -36,7 +36,7 @@ func BindType[Iface, To any]() *InterfaceBindingBuilder {
 	return BindArg[Iface](Type[To]())
 }
 
-// BindSlice binds the interface Iface, or []Iface, to a slice []To.
+// BindSlice binds the interface Iface, or []Iface, to every service of type To.
 func BindSlice[Iface, To any]() *InterfaceBindingBuilder {
-	return BindArg[Iface](Compound[Iface](Type[To]()))
+	return BindArg[Iface](Compound[Iface](SpreadSlice(SliceOf[To]())))
 }

@@ -869,6 +869,22 @@ Compound arg makes it possible to combine values obtained in different ways into
 The type parameter is the *element* type: `di.Compound[string]` fills a `[]string` or `...string` argument.
 While powerful, it's probably only useful in generic code, e.g. in godi extensions.
 
+##### di.SpreadSlice
+
+Wrap a part of a compound in `di.SpreadSlice` to add its elements one by one, rather than the whole
+slice as a single element.
+
+```go
+di.Svc(NewStringsCollector, di.Compound[string](
+	di.Val("literal-str"),
+	di.SpreadSlice(di.SliceOf[string]()), // Every string service, added individually.
+))
+```
+
+Which of the two a compound should do can't be read off the types - a `[]string` is a valid element
+of a `[]any`, for instance - so you say which you mean. Outside a compound, `di.SpreadSlice` is just
+the argument it wraps.
+
 #### Arg order
 
 You can pass arguments in any order, godi will match them with the function's arguments by their types.

@@ -152,6 +152,7 @@ right. Anything that is not an `*ArgBuilder` or a `*SvcReference` is taken as a 
 | `Type[T]()` | The service of type `T`. `Type[T](label)` narrows to a label. |
 | `SliceOf[T]()` | Every service of type `T`, as `[]T`. `SliceOf[T](label)` narrows to a label. |
 | `Compound[T](a, b, …)` | A `[]T` assembled from the given arguments. |
+| `SpreadSlice(a)` | Inside a `Compound[T]`, the elements of the `[]T` that `a` resolves to, rather than that slice as one element. |
 | `Arg(v)` | Whichever of the above suits `v`. |
 | `.Slot(n)` | Pins an argument to slot `n` rather than the next free one. |
 
@@ -352,6 +353,7 @@ passes and the graph would not understand is worse than no argument at all.
 | `NewLabelArg(label, typ, slice)` | Services carrying the label. |
 | `NewFlexibleSliceArg(elem, allowEmpty)` | The slice type if something provides it, otherwise every service of the element type. What autowiring fills a slice slot with. |
 | `NewCompoundArg(typ, args...)` | A `[]typ` from the given arguments — `typ` is the element type, and `Type()` reports `[]typ`. Returns `(nil, nil)` when given none. |
+| `NewSpreadSliceArg(arg)` | `arg`, whose elements a compound takes one by one. Errors unless `arg` is a slice. |
 | `NewSlottedArg(arg, n)` | `arg`, pinned to slot `n`. |
 
 `ArgList` and `Slot` model a function's parameters. A slot is filled by `Set` (assignable to the
@@ -545,8 +547,14 @@ expression, whose first parameter is the receiver; godi fills it. Your arguments
 
 **Registering the same method twice keeps the last.** Method calls are keyed by name.
 
-**`BindSlice[Iface, To]()` resolves to `[]Iface`.** It wraps `Type[To]()` in a `Compound[Iface]`,
-so the element type is the interface and the implementations are assignable to it.
+**`BindSlice[Iface, To]()` resolves to `[]Iface`.** It spreads `SliceOf[To]()` into a
+`Compound[Iface]`, so the element type is the interface and every implementation is converted to
+it.
+
+**A binding is fitted to the argument that resolves through it.** `BindType` names one
+implementation and `BindSlice` collects every one, while the argument asks for a single value or a
+slice. A single value reaching a slice argument is wrapped in a one-element slice; a slice reaching
+a single argument is a build error, since there is nothing sensible to pick.
 
 **Child services are private.** They live in a scope of their own, so nothing outside can retrieve
 one, and a reference to one does not resolve through the container.

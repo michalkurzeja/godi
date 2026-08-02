@@ -82,6 +82,18 @@ func SliceOf[T any](label ...Label) *ArgBuilder {
 	}}
 }
 
+// SpreadSlice returns an argument builder that hands a compound the elements of
+// a slice rather than the slice itself. It is only meaningful inside Compound.
+func SpreadSlice(builder *ArgBuilder) *ArgBuilder {
+	return &ArgBuilder{newArg: func() (di.Arg, error) {
+		arg, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+		return di.NewSpreadSliceArg(arg)
+	}}
+}
+
 // Compound returns an argument builder for an argument composed of other arguments.
 func Compound[T any](builders ...*ArgBuilder) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {

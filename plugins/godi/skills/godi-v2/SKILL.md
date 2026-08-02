@@ -136,6 +136,7 @@ Use these when autowiring can't (or shouldn't) decide. Pass them positionally to
 | `di.SliceOf[T]()` | all services of type `T` as `[]T` |
 | `di.SliceOf[T]("label")` | all services of type `T` with that label |
 | `di.Compound[T](args...)` | combines several args into one `[]T` — niche, mostly for generic/extension code |
+| `di.SpreadSlice(arg)` | inside `di.Compound[T]`, takes the elements of the `[]T` that `arg` resolves to instead of the slice itself |
 
 Shorthands: a plain value → `di.Val`; a `*di.SvcReference` → `di.Ref`. So these are equal:
 
@@ -172,6 +173,9 @@ di.BindType[Iface, Impl]()  // bind interface Iface to the service of concrete t
 di.BindArg[Iface](di.Ref(&ref))   // bind Iface to any arg expression
 di.BindSlice[Iface, Impl]()       // bind a []Iface arg to all services of type Impl
 ```
+
+A binding is fitted to the argument resolving through it: `di.BindType` on a `[]Iface` argument
+gives a one-element slice, while `di.BindSlice` on a single `Iface` argument is a build error.
 
 Example — two `any` implementers, bind the single-arg case to the int:
 

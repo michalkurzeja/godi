@@ -33,6 +33,27 @@ func TestACompoundArgTakesNoArgumentOfAnotherType(t *testing.T) {
 	require.ErrorContains(t, err, "argument int cannot be assigned to type string")
 }
 
+func TestOnlyASliceArgumentCanBeSpread(t *testing.T) {
+	t.Parallel()
+
+	_, err := di.NewSpreadSliceArg(di.NewLiteralArg("foo"))
+	require.ErrorContains(t, err, "argument string cannot be spread: it is not a slice")
+}
+
+func TestACompoundTakesASpreadSliceByItsElementType(t *testing.T) {
+	t.Parallel()
+
+	spread, err := di.NewSpreadSliceArg(di.NewLiteralArg([]string{"foo", "bar"}))
+	require.NoError(t, err)
+
+	arg, err := di.NewCompoundArg(reflect.TypeFor[string](), spread)
+	require.NoError(t, err)
+	require.Equal(t, reflect.TypeFor[[]string](), arg.Type())
+
+	_, err = di.NewCompoundArg(reflect.TypeFor[int](), spread)
+	require.ErrorContains(t, err, "argument []string cannot be spread into a slice of int")
+}
+
 // A binding says what an interface resolves to, and a slice argument resolving
 // through one expects a slice back. So a slice of the interface is a valid
 // target, which is what BindSlice binds.
