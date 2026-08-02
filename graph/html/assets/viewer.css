@@ -20,13 +20,20 @@ svg[hidden] { display: none; }
 	--node: #ffffff;
 	--node-root: #c8dbfa;
 	--node-border: #b6bdc6;
-	--scope: #00000014;
+	--scope: #ebebeb;
 	--scope-border: #c9ced6;
 	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 	--sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
-/* The dark values are listed twice on purpose: plain CSS has no way to share
+/* A scope is an opaque colour rather than a wash over the canvas, because
+   Cytoscape draws the boxes and takes neither form of one. An eight-digit hex it
+   drops outright, without saying so, and the parent then falls back to the plain
+   node rule and comes out the same colour as the nodes inside it. An rgba() it
+   reads as the colour and discards the alpha, which is worse: opaque white. So
+   the value here is what the wash used to composite to.
+
+   The dark values are listed twice on purpose: plain CSS has no way to share
    one declaration block between a class and a media query. */
 html.theme-dark {
 	--bg: #0d1117;
@@ -44,7 +51,7 @@ html.theme-dark {
 	--node: #273140;
 	--node-root: #234a7d;
 	--node-border: #454d57;
-	--scope: #ffffff0a;
+	--scope: #161a20;
 	--scope-border: #30363d;
 }
 
@@ -69,7 +76,7 @@ html.theme-auto { color-scheme: light dark; }
 		--node: #273140;
 		--node-root: #234a7d;
 		--node-border: #454d57;
-		--scope: #ffffff0a;
+		--scope: #161a20;
 		--scope-border: #30363d;
 	}
 }

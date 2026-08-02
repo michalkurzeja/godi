@@ -1770,11 +1770,14 @@ await test('a root is tinted rather than warned about', async () => {
 	return root !== plain || `both nodes are ${root}, so a root is not distinguishable`;
 });
 
-// A node box used to sit at almost the same lightness as the scope box behind it,
-// so it read as part of its container rather than as a thing inside it. What that
-// costs is legibility, so the separations and the text contrast are held together:
-// brightening a box until it stands out is only an improvement while the words on
-// it can still be read.
+// A node box used to be drawn in exactly the colour of the scope box behind it,
+// so it read as part of its container rather than as a thing inside it. Not
+// because the palette said so — because Cytoscape could not read the value the
+// palette gave for a scope, dropped it, and fell back to the node rule.
+//
+// So this reads what was painted rather than what was asked for, and holds the
+// separations against the text contrast: brightening a box until it stands out is
+// only an improvement while the words on it can still be read.
 //
 // Both themes, because the two palettes are written out separately and only one of
 // them is ever in front of whoever changes a colour.
@@ -1783,17 +1786,14 @@ const boxContrast = (theme) => ev(`(() => {
 	select.value = ${JSON.stringify(theme)};
 	select.dispatchEvent(new Event('change'));
 
+	// Read off the canvas, not off the stylesheet. Cytoscape parses colours its
+	// own way and drops what it cannot read without a word, so a variable that
+	// looks right is no evidence that anything was painted with it.
+	const drawn = (el) => el.style('background-color').match(/\\d+/g).map(Number);
 	const css = getComputedStyle(document.documentElement);
-	const parts = (c) => {
-		const h = c.trim().replace('#', '');
-		const at = (i) => parseInt(h.slice(i, i + 2), 16);
-		return h.length === 8 ? [at(0), at(2), at(4), at(6) / 255] : [at(0), at(2), at(4), 1];
-	};
-	// A scope is a translucent wash, so what the eye gets is it over the canvas.
-	const over = (name) => {
-		const [r, g, b, a] = parts(css.getPropertyValue(name));
-		const [br, bg, bb] = parts(css.getPropertyValue('--bg'));
-		return [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a)];
+	const hex = (name) => {
+		const h = css.getPropertyValue(name).trim().replace('#', '');
+		return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
 	};
 	const luminance = ([r, g, b]) => {
 		const f = (c) => (c /= 255) <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -1804,7 +1804,10 @@ const boxContrast = (theme) => ev(`(() => {
 		return (x + 0.05) / (y + 0.05);
 	};
 
-	const [node, root, scope, text] = ['--node', '--node-root', '--scope', '--text'].map(over);
+	const scope = drawn(godi.cy.nodes(':parent')[0]);
+	const node = drawn(godi.cy.nodes(':childless').filter((n) => !n.data('root'))[0]);
+	const root = drawn(godi.cy.nodes(':childless').filter((n) => n.data('root'))[0]);
+	const text = hex('--text');
 	return {
 		textOnNode: ratio(text, node),
 		textOnRoot: ratio(text, root),
