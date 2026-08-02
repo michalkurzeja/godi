@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -373,6 +374,58 @@ func TestViewServesUntilItIsStopped(t *testing.T) {
 
 	cancel()
 	require.NoError(t, <-done, "a server told to stop has not failed")
+}
+
+// The page keeps the reader's settings against the origin it was served from, so
+// a port chosen fresh each run loses them every time. The default is fixed for
+// that reason, and gives way rather than failing when something already has it.
+func TestViewFallsBackWhenItsUsualPortIsTaken(t *testing.T) {
+	t.Parallel()
+
+	// Whatever the default is, hold it, so the run below has to give way. Bound
+	// on this machine only, and released when the test ends.
+	held, err := net.Listen("tcp", defaultAddr)
+	if err != nil {
+		t.Skipf("cannot hold %s to test the fallback: %s", defaultAddr, err)
+	}
+	defer held.Close()
+
+	var stdout, stderr syncBuffer
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	cmd := newRootCmd(&stdout, &stderr)
+	cmd.SetArgs([]string{"view", "--no-open", fixture}) // No --addr: the default is the point.
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.ExecuteContext(ctx) }()
+
+	url := awaitURL(t, &stderr)
+	require.NotContains(t, url, defaultAddr, "the held port was taken anyway")
+	require.Contains(t, stderr.String(), "is taken, serving on a free port instead",
+		"a reader whose settings will not be there has to be told why")
+
+	res, err := http.Get(url) //nolint:noctx // Our own loopback server, in a test.
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	require.NoError(t, res.Body.Close())
+
+	cancel()
+	require.NoError(t, <-done)
+}
+
+// An address asked for by name is one the caller means, so it fails rather than
+// quietly serving somewhere else.
+func TestViewFailsWhenTheAddressItWasGivenIsTaken(t *testing.T) {
+	t.Parallel()
+
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer held.Close()
+
+	res := run(t, "view", "--no-open", "--addr", held.Addr().String(), fixture)
+	require.ErrorContains(t, res.err, "serve: listening on")
 }
 
 // syncBuffer is a buffer the test can read while the command writes to it from

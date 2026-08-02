@@ -37,7 +37,7 @@ runs until you stop it.`,
 				return err
 			}
 
-			srv, err := serve.Listen(addr, graph.Static(g), serve.WithEncoder(enc))
+			srv, err := listen(cmd, addr, graph.Static(g), serve.WithEncoder(enc))
 			if err != nil {
 				return err
 			}
@@ -58,11 +58,34 @@ runs until you stop it.`,
 	}
 
 	htmlOpts.register(cmd)
-	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:0", "address to serve on; port 0 takes whatever is free")
+	cmd.Flags().StringVar(&addr, "addr", defaultAddr,
+		"address to serve on; port 0 takes whatever is free, as the default does when it is already in use")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "print the address without opening a browser")
 	completeGraphFiles(cmd)
 
 	return cmd
+}
+
+// defaultAddr is a fixed port rather than whatever is free, because the page
+// keeps the reader's settings — the colour scheme, what the wheel is taken to be,
+// the panel — in the browser's storage for the origin it was served from. A port
+// that changes every run is a new origin every run, and every setting starts
+// again from the default.
+const defaultAddr = "127.0.0.1:7777"
+
+// listen serves on addr, and falls back to a free port when the default one is
+// taken. Two graphs open at once is worth more than the second one remembering
+// its settings, and only the default falls back: an address asked for by name is
+// one the caller means.
+func listen(cmd *cobra.Command, addr string, src graph.Source, opts ...serve.Option) (*serve.Server, error) {
+	srv, err := serve.Listen(addr, src, opts...)
+	if err == nil || addr != defaultAddr {
+		return srv, err
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"godi: %s is taken, serving on a free port instead; this page will not have your saved settings\n", addr)
+	return serve.Listen("127.0.0.1:0", src, opts...)
 }
 
 // serveUntilDone serves until the context is cancelled, which is what an

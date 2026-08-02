@@ -2323,6 +2323,42 @@ await test('a node missing something it needs is drawn in the warning colour', a
     return style.width > style.otherWidth || `border width ${style.width} does not stand out`;
 });
 
+// Selecting a node used to repaint its border, which took the warning colour away
+// from the one node a reader had gone looking for. The ring is drawn outside the
+// border now, so picking a broken node says both things at once.
+await test('and keeps saying so while it is selected', async () => {
+	const broken = 'root/svc:app.(*Metrics)';
+	const before = await ev(`godi.cy.getElementById(${JSON.stringify(broken)}).style('border-color')`);
+
+	await selectNode(broken);
+
+	const after = await ev(`(() => {
+		const n = godi.cy.getElementById(${JSON.stringify(broken)});
+		return {
+			border: n.style('border-color'),
+			borderWidth: parseFloat(n.style('border-width')),
+			outline: n.style('outline-color'),
+			outlineWidth: parseFloat(n.style('outline-width')),
+			outlineOffset: parseFloat(n.style('outline-offset')),
+		};
+	})()`);
+
+	// Put the selection back, so what follows starts where it did before.
+	await ev(`(() => { document.getElementById('clear').click(); return true; })()`);
+	await settle();
+
+	if (after.border !== before) return `selecting it repainted the border ${before} as ${after.border}`;
+	if (!(after.outlineWidth > 0)) return 'a selected node has no ring to say so';
+	if (after.outline === after.border) return 'the ring and the border are the same colour, so neither reads';
+	// Flush against the border: set off from it, the two read as two rings around
+	// one box rather than as a box that is picked.
+	if (after.outlineOffset !== 0) return `the ring stands ${after.outlineOffset} off the border`;
+	// Thinner than what it hugs, so the border stays the louder of the two: the
+	// ring says which node was picked, the border says which one is broken.
+	return after.outlineWidth < after.borderWidth ||
+		`the ring is ${after.outlineWidth} against a ${after.borderWidth} border, which drowns it out`;
+});
+
 await test('the footer counts what is incomplete', async () =>
     (await ev(`document.getElementById('counts').textContent`)).includes('2 incomplete') ||
         await ev(`document.getElementById('counts').textContent`));

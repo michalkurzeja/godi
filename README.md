@@ -1140,6 +1140,11 @@ godi completion bash > /etc/bash_completion.d/godi
 # also: fish, powershell
 ```
 
+`godi view` serves on `127.0.0.1:7777` unless you say otherwise, and takes a free port instead when that one
+is busy. The fixed port is not for tidiness: the page keeps your colour scheme, your pointer device mode and
+the rest in the browser's storage, which is keyed by origin, so a port that changed every run would lose them
+every run. A run that had to fall back says so, because that page will not have them.
+
 The graph carries the schema it was written against. A file from a different version of godi is a warning
 rather than a refusal — it is drawn anyway, with a notice saying which version wrote it.
 

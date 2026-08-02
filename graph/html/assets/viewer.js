@@ -475,8 +475,15 @@ function stylesheet() {
 		// Edges read as noise when they are not about the selection, so they fade
 		// much further and their labels go entirely.
 		{ selector: 'edge.dim', style: { opacity: 0.13, 'text-opacity': 0 } },
-		{ selector: 'node.match', style: { 'border-color': p.accent, 'border-width': 2.4 } },
-		{ selector: 'node.sel', style: { 'border-color': p.accent, 'border-width': 3.4 } },
+		// Outside the border rather than on it. The border is the node's own news —
+		// a red one means it is missing something it needs — and taking it over to
+		// say "this one is selected" answers a question nobody asked at the cost of
+		// the one they did. A ring outside leaves both to be read.
+		//
+		// Flush against the border, and thin. Set off from it, the two read as two
+		// separate rings around one box rather than as a box that is picked.
+		{ selector: 'node.match', style: { 'outline-color': p.accent, 'outline-width': 1.5, 'outline-offset': 0, 'outline-opacity': 0.55 } },
+		{ selector: 'node.sel', style: { 'outline-color': p.accent, 'outline-width': 1.8, 'outline-offset': 0, 'outline-opacity': 1 } },
 	];
 }
 

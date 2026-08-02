@@ -448,7 +448,7 @@ to start a browser:
 ```shell
 go install github.com/michalkurzeja/godi/v2/cmd/godi@latest
 
-godi view graph.json                  # serve it and open a browser
+godi view graph.json                  # serve on 127.0.0.1:7777 and open a browser
 godi export text graph.json           # an outline, in the terminal
 godi export dot graph.json | dot -Tsvg -o graph.svg
 ```
