@@ -351,12 +351,12 @@ passes and the graph would not understand is worse than no argument at all.
 | `NewTypeArg(typ, slice)` | Services of the type, in the scope chain. |
 | `NewLabelArg(label, typ, slice)` | Services carrying the label. |
 | `NewFlexibleSliceArg(elem, allowEmpty)` | The slice type if something provides it, otherwise every service of the element type. What autowiring fills a slice slot with. |
-| `NewCompoundArg(typ, args...)` | A `[]typ` from the given arguments. Returns `(nil, nil)` when given none. |
+| `NewCompoundArg(typ, args...)` | A `[]typ` from the given arguments — `typ` is the element type, and `Type()` reports `[]typ`. Returns `(nil, nil)` when given none. |
 | `NewSlottedArg(arg, n)` | `arg`, pinned to slot `n`. |
 
 `ArgList` and `Slot` model a function's parameters. A slot is filled by `Set` (assignable to the
 slot type) or `Append` (element-typed, for a slice or variadic slot; the elements become a compound
-when read).
+when read). A compound is a slice, so it `Set`s a slice slot rather than being appended to one.
 
 Three entry points act on an argument: `ValidateArg(scope, arg)`, `ResolveArg(scope, arg)` and
 `ResolveArgIDs(scope, arg)`. `ArgResolver` is the same three under an older name.

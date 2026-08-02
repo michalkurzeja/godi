@@ -378,6 +378,58 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			},
 		},
 		{
+			name: "can register a service with a compound arg in a slice slot",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("foo"),
+						di.Val("bar"),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with a compound arg in a variadic slot",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs, di.Compound[string](
+						di.Val("foo"),
+						di.Val("bar"),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			// The shape the README documents: a compound is worth having because
+			// its parts arrive by different means.
+			name: "can register a service with a compound arg combining a literal and a reference",
+			build: func(b *di.Builder, refs *Refs) {
+				str := refs.Svc.New("str")
+				b.Services(
+					di.SvcVal("service-str").Bind(str),
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("literal-str"),
+						di.Ref(str),
+					)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"literal-str", "service-str"}, svc.Args)
+			},
+		},
+		{
 			name: "can register a manual service with no variadic args",
 			build: func(b *di.Builder, refs *Refs) {
 				b.Services(
@@ -553,6 +605,19 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			},
 			assertBuildErr: func(t *testing.T, err error) {
 				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcSliceArgs: argument 0 is not set")
+			},
+		},
+		{
+			// A compound is a []string, so the slot it fits is a []string one.
+			// This used to slot cleanly and fail at instantiation.
+			name: "cannot register a service with a compound arg in a non-slice slot",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcStrArg, di.Compound[string](di.Val("foo"))).NotAutowired(),
+				)
+			},
+			assertBuildErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "invalid definition of github.com/michalkurzeja/godi/v2_test.(*TestSvc): failed to add factory args: argument []string cannot be slotted to function")
 			},
 		},
 		{

@@ -433,6 +433,8 @@ type compoundArg struct {
 	typ  reflect.Type
 }
 
+// NewCompoundArg returns an argument that assembles the given ones into a slice.
+// typ is the *element* type: the argument resolves to, and reports, a []typ.
 func NewCompoundArg(typ reflect.Type, args ...Arg) (Arg, error) {
 	if len(args) == 0 {
 		return nil, nil
@@ -455,7 +457,7 @@ func (c *compoundArg) String() string {
 }
 
 func (c *compoundArg) Type() reflect.Type {
-	return c.typ
+	return reflect.SliceOf(c.typ)
 }
 
 func (c *compoundArg) validate(scope *Scope) error {

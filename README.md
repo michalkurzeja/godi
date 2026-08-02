@@ -866,6 +866,7 @@ func main() {
 ```
 
 Compound arg makes it possible to combine values obtained in different ways into a single collection.
+The type parameter is the *element* type: `di.Compound[string]` fills a `[]string` or `...string` argument.
 While powerful, it's probably only useful in generic code, e.g. in godi extensions.
 
 #### Arg order

@@ -30,10 +30,20 @@ func NewInterfaceBinding(iface reflect.Type, boundTo Arg) (*InterfaceBinding, er
 	if iface.Kind() != reflect.Interface {
 		return nil, fmt.Errorf("invalid binding: %s is not an interface", util.Signature(iface))
 	}
-	if !boundTo.Type().Implements(iface) {
-		return nil, fmt.Errorf("invalid binding: %s does not implement %s", util.Signature(boundTo.Type()), util.Signature(iface))
+	if !bindableTo(boundTo.Type(), iface) {
+		return nil, fmt.Errorf("invalid binding: %s does not implement %s, and is not a slice of it", util.Signature(boundTo.Type()), util.Signature(iface))
 	}
 	return &InterfaceBinding{ifaceTyp: iface, boundTo: boundTo, origin: BindOriginManual, dirty: true}, nil
+}
+
+// bindableTo reports whether an argument of this type can stand for the
+// interface. A slice of the interface counts: that is what BindSlice binds, and
+// what a slice argument resolving through the binding expects to receive.
+func bindableTo(typ, iface reflect.Type) bool {
+	if typ.Implements(iface) {
+		return true
+	}
+	return typ.Kind() == reflect.Slice && typ.Elem().Implements(iface)
 }
 
 func (b *InterfaceBinding) Interface() reflect.Type {
