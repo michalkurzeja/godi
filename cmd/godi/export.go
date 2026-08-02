@@ -22,7 +22,7 @@ func newExportCmd() *cobra.Command {
 The graph is read from the named file, or from standard input when no file is
 named. The result goes to standard output unless --output says otherwise.`,
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(*cobra.Command, []string) error {
 			return fmt.Errorf("export: a format is required: %s", strings.Join([]string{"text", "dot", "html", "json"}, ", "))
 		},
 	}
