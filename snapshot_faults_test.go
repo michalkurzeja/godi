@@ -138,7 +138,8 @@ func TestAFailedBuildShowsWhatTheCompilerObjectedTo(t *testing.T) {
 		},
 		{
 			// A label says which service to take and nothing about its type, so the
-			// mismatch only shows up when the container goes to pass it.
+			// mismatch only shows up when the container goes to pass it. It is still
+			// the argument that is wrong, and it is reported there.
 			name: "a labelled service of the wrong type",
 			build: func() *godi.Builder {
 				return godi.New().Services(
@@ -146,7 +147,7 @@ func TestAFailedBuildShowsWhatTheCompilerObjectedTo(t *testing.T) {
 					godi.Svc(NewGreeterHolder, godi.Type[Greeter]("greeter")).NotAutowired().Eager(),
 				)
 			},
-			node: "v2_test.(*GreeterHolder)", arg: -1,
+			node: "v2_test.(*GreeterHolder)", arg: 0,
 			says: "should be of type",
 		},
 		{

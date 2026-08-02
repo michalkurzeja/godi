@@ -69,6 +69,17 @@ func (s Site) Service() *ServiceDefinition   { return s.svc }
 func (s Site) Function() *FunctionDefinition { return s.fun }
 func (s Site) Slot() *Slot                   { return s.slot }
 
+// withSlot narrows a definition's site to one of its arguments. Instantiation
+// knows the definition on the way in and the argument on the way down, and this
+// is where the two meet.
+//
+// A slot on its own still finds its argument, so entering instantiation from
+// outside a build, with no definition to name, loses nothing worth having.
+func (s Site) withSlot(slot *Slot) Site {
+	s.slot = slot
+	return s
+}
+
 // Diagnostic is something a compiler pass has to say about the container: an
 // argument it could not resolve, a service whose factory failed, a warning about
 // wiring that will work but probably should not.

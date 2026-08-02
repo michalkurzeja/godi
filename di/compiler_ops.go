@@ -293,8 +293,26 @@ func NewEagerInitPass() CompilerOp {
 			return nil, nil
 		})
 		if err != nil {
-			builder.Report(Diagnostic{Severity: SeverityError, Site: failed, Message: err.Error(), Err: err})
+			builder.Report(eagerDiagnostic(failed, err))
 		}
 		return nil
 	})
+}
+
+// eagerDiagnostic says what failed, as near to the argument as the failure can be
+// pinned.
+//
+// Where an argument would not resolve, that argument is what has to change, and
+// the message is the fault alone: the element it is shown against already says
+// which argument of which definition. Where a factory returned an error of its
+// own, no argument is implicated and the definition is the whole answer.
+//
+// Either way the build fails with the chain, so a reader in a terminal still sees
+// how the container got from an eager service to the fault.
+func eagerDiagnostic(failed Site, err error) Diagnostic {
+	d := Diagnostic{Severity: SeverityError, Site: failed, Message: err.Error(), Err: err}
+	if ae := deepestArgError(err); ae != nil {
+		d.Site, d.Message = ae.site, ae.cause.Error()
+	}
+	return d
 }

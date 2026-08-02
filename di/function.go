@@ -49,12 +49,15 @@ func NewFactory(fn any, args ...Arg) (*Factory, error) {
 // have not had their method calls run yet.
 func (f *Factory) Execute(scope *Scope) (any, error) {
 	return withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
-		return f.execute(ic, scope)
+		return f.execute(ic, scope, Site{})
 	})
 }
 
-func (f *Factory) execute(ic *instantiationContext, scope *Scope) (any, error) {
-	args, err := f.fn.resolveArgs(ic, scope, nil)
+// execute builds the service. owner is the definition this factory belongs to,
+// where the caller knows one, so that a failure can name the argument that caused
+// it rather than the whole definition.
+func (f *Factory) execute(ic *instantiationContext, scope *Scope, owner Site) (any, error) {
+	args, err := f.fn.resolveArgs(ic, scope, nil, owner)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to execute factory")
 	}
@@ -131,7 +134,7 @@ func NewMethod(fn any, receiver Arg, args ...Arg) (*Method, error) {
 // the method on it.
 func (m *Method) Execute(scope *Scope) error {
 	_, err := withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
-		return nil, m.execute(ic, scope, nil)
+		return nil, m.execute(ic, scope, nil, Site{})
 	})
 	return err
 }
@@ -141,8 +144,8 @@ func (m *Method) Execute(scope *Scope) error {
 //
 // A queued call passes the instance godi built. A service that is not shared is
 // never published, so resolving its receiver again would build a second one.
-func (m *Method) execute(ic *instantiationContext, scope *Scope, recv any) error {
-	args, err := m.fn.resolveArgs(ic, scope, recv)
+func (m *Method) execute(ic *instantiationContext, scope *Scope, recv any, owner Site) error {
+	args, err := m.fn.resolveArgs(ic, scope, recv, owner)
 	if err != nil {
 		return errorsx.Wrap(err, "failed to execute method")
 	}
@@ -204,7 +207,7 @@ func NewFunc(fn reflect.Value, args ...Arg) (*Func, error) {
 // handed are fully configured by the time it runs.
 func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 	return withInstantiationContext(scope.container, func(ic *instantiationContext) ([]reflect.Value, error) {
-		args, err := f.resolveArgs(ic, scope, nil)
+		args, err := f.resolveArgs(ic, scope, nil, Site{})
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +220,11 @@ func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 
 // resolveArgs produces the values to pass. A non-nil recv fills argument 0
 // instead of being resolved.
-func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]reflect.Value, error) {
+//
+// owner is the definition this call belongs to, for pinning a failure to the
+// argument that caused it. It is the zero Site when nobody knows one, which is
+// every entry from outside a build.
+func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any, owner Site) ([]reflect.Value, error) {
 	args, err := f.args.ValidateAndCollect()
 	if err != nil {
 		// This should never happen under normal circumstances - the built-in compiler passes verify args.
@@ -230,7 +237,7 @@ func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]
 		if i > 0 || recv == nil {
 			val, err = resolveArg(ic, scope, arg)
 			if err != nil {
-				return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
+				return nil, f.argFailed(owner, i, err)
 			}
 		}
 
@@ -238,11 +245,21 @@ func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]
 		// resolved nil is untyped, and reflect will not pass it as it stands.
 		resolvedArgs[i], err = valueOf(val, f.fn.Type().In(i))
 		if err != nil {
-			return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
+			return nil, f.argFailed(owner, i, err)
 		}
 	}
 
 	return resolvedArgs, nil
+}
+
+// argFailed says which argument would not resolve, in the words it has always
+// been said in and with the slot alongside.
+func (f *Func) argFailed(owner Site, i int, cause error) error {
+	return &argError{
+		site:  owner.withSlot(f.args.Slots()[i]),
+		cause: cause,
+		err:   errorsx.Wrapf(cause, "failed to resolve argument %d", i),
+	}
 }
 
 func (f *Func) call(args []reflect.Value) []reflect.Value {

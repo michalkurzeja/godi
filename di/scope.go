@@ -422,7 +422,7 @@ func (s *Scope) instantiate(ic *instantiationContext, def *ServiceDefinition) (a
 	}
 	defer ic.popDefinition()
 
-	svc, err := def.factory.execute(ic, def.EffectiveScope())
+	svc, err := def.factory.execute(ic, def.EffectiveScope(), AtService(def))
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute factory for service %s", def)
 	}
@@ -438,7 +438,7 @@ func (s *Scope) instantiate(ic *instantiationContext, def *ServiceDefinition) (a
 func (s *Scope) executeFunction(ic *instantiationContext, def *FunctionDefinition) ([]any, error) {
 	fn := def.function
 
-	args, err := fn.resolveArgs(ic, def.EffectiveScope(), nil)
+	args, err := fn.resolveArgs(ic, def.EffectiveScope(), nil, AtFunction(def))
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute function %s", def)
 	}

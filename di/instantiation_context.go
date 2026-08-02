@@ -149,7 +149,7 @@ func (ic *instantiationContext) executeAllMethodCalls() error {
 		p := ic.methodCallsQueue[0]
 		ic.methodCallsQueue = ic.methodCallsQueue[1:]
 
-		err := p.call.execute(ic, p.scope, p.svc)
+		err := p.call.execute(ic, p.scope, p.svc, AtService(p.def))
 		if err != nil {
 			return errorsx.Wrapf(err, "failed to execute method %s of service %s", p.call, p.def)
 		}
