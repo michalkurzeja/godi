@@ -2045,6 +2045,15 @@ await test('an argument nothing has wired yet says so, rather than saying none',
 	return !/\bnone\b/i.test(text) || 'the panel called an unwired argument "none"';
 });
 
+await test('an empty variadic argument is not called unwired', async () => {
+	await selectNode('root/svc:app.(*Metrics)');
+	const text = await panelText();
+
+	if (!text.includes('No arguments')) return text;
+	return (await ev(`document.getElementById('counts').textContent`)).includes('1 incomplete') ||
+		'a variadic slot nobody filled was counted as a fault';
+});
+
 // ------------------------------------------------------------------ scopes ---
 
 // Reported twice: isolating a selection on a container with scopes inside

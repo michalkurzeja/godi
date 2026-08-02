@@ -59,4 +59,8 @@ func TestAnUnwiredArgumentIsNoFaultUntilAutowiringHasRun(t *testing.T) {
 	require.Empty(t, unwired(&graph.Snapshot{Pass: "autowiring"}).WiringDiagnostics())
 	require.Len(t, unwired(&graph.Snapshot{Pass: "validation", Autowired: true}).WiringDiagnostics(), 1)
 	require.Len(t, unwired(nil).WiringDiagnostics(), 1, "a built container is past autowiring by definition")
+
+	g := unwired(nil)
+	g.Nodes[0].Params[0].Variadic = true
+	require.Empty(t, g.WiringDiagnostics(), "a variadic slot takes no arguments just as happily")
 }

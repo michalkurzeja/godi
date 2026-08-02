@@ -65,9 +65,9 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 	node.Params = append(node.Params, p)
 
 	if !slot.IsFilled() {
-		// Only reachable before autowiring runs. The argument validation pass
-		// rejects an unfilled slot, so a built container never has one. The origin
-		// is the whole story, and each encoder has its own words for it.
+		// Before autowiring runs, or a variadic slot nobody supplied: the argument
+		// validation pass rejects every other unfilled slot. The origin is the whole
+		// story, and each encoder has its own words for it.
 		p.Origin, p.Arg = graph.ArgOriginNone, graph.ArgKindNone
 		return
 	}

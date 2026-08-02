@@ -319,6 +319,18 @@ func snapshotModel() *graph.Graph {
 		Origin: graph.ArgOriginNone,
 		Arg:    graph.ArgKindNone,
 		Note:   "argument is not wired",
+	}, {
+		ID:    graph.ParamID(metrics.ID + "#f:1"),
+		Node:  metrics.ID,
+		Kind:  graph.InjectFactoryArg,
+		Index: 1,
+		Type:  "[]github.com/acme/app.Plugin",
+		// Unfilled too, and nobody's fault: a variadic slot takes no arguments
+		// just as happily. It gets neither a notice nor a red border.
+		Slice:    true,
+		Variadic: true,
+		Origin:   graph.ArgOriginNone,
+		Arg:      graph.ArgKindNone,
 	}}
 	// Both are set by the extractor from the argument above, and written down here
 	// because this fixture is built by hand.

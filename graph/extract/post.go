@@ -95,7 +95,7 @@ func (x *extractor) markIncomplete() {
 
 	for _, node := range x.out.Nodes {
 		for _, p := range node.Params {
-			if !wired || p.Origin != graph.ArgOriginNone {
+			if !wired || !p.Unwired() {
 				if p.Unresolved {
 					node.Incomplete = true
 				}

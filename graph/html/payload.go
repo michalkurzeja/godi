@@ -126,6 +126,7 @@ type viewParam struct {
 	Label      string          `json:"label,omitzero"`
 	Literals   []string        `json:"literals,omitzero"`
 
+	Unwired    bool   `json:"unwired,omitzero"`
 	Unresolved bool   `json:"unresolved,omitzero"`
 	Note       string `json:"note,omitzero"`
 }
@@ -251,6 +252,7 @@ func newViewParam(param *graph.Param) viewParam {
 		Origin:     param.Origin,
 		OriginPass: param.OriginPass,
 		Label:      param.Label,
+		Unwired:    param.Unwired(),
 		Unresolved: param.Unresolved,
 		Note:       param.Note,
 	}

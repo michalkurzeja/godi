@@ -267,7 +267,7 @@ func (p *printer) paramText(param *graph.Param) string {
 	case len(param.Literals) > 0:
 		sb.WriteString(" = ")
 		sb.WriteString(param.LiteralsText())
-	case param.Origin == graph.ArgOriginNone:
+	case param.Unwired():
 		sb.WriteString(" (not wired)")
 	case param.Unresolved:
 		sb.WriteString(" (unresolved)")

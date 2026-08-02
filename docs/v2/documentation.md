@@ -157,6 +157,11 @@ right. Anything that is not an `*ArgBuilder` or a `*SvcReference` is taken as a 
 
 `Type[T](label ...Label)` uses the **last** label given and silently ignores the rest.
 
+Every slot must be filled, by you or by autowiring, and validation reports "argument N is not
+set" otherwise. A variadic slot is the exception: no arguments is a valid call, so leaving it out
+passes an empty slice. That holds whether or not the definition is autowired — an autowired one
+finding no services of the element type comes to the same thing.
+
 ### 3.3 Bindings
 
 ```go
@@ -168,7 +173,8 @@ di.BindArg[Clock](di.Ref(&fixedClock))  // Clock resolves to whatever the refere
 A binding maps an interface to an *argument*, in a scope. It does not fill any slot: autowiring
 does that, and resolution follows the binding when it reaches the interface. With
 `NotAutowired()`, nothing fills the slot and validation reports "argument N is not set" — the
-binding cannot help, so pass the argument yourself.
+binding cannot help, so pass the argument yourself. A variadic slot is left empty instead, with
+no error, so a `BindSlice` you expected to arrive silently does not.
 
 ### 3.4 Retrieval
 

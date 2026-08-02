@@ -135,7 +135,7 @@ Use these when autowiring can't (or shouldn't) decide. Pass them positionally to
 | `di.Type[T]("label")` | the single service of type `T` carrying that label |
 | `di.SliceOf[T]()` | all services of type `T` as `[]T` |
 | `di.SliceOf[T]("label")` | all services of type `T` with that label |
-| `di.Compound[[]T](args...)` | combines several args into one `[]T` — niche, mostly for generic/extension code |
+| `di.Compound[T](args...)` | combines several args into one `[]T` — niche, mostly for generic/extension code |
 
 Shorthands: a plain value → `di.Val`; a `*di.SvcReference` → `di.Ref`. So these are equal:
 
@@ -281,7 +281,8 @@ Three settings, configurable per definition or per container:
   not-shared builds a fresh instance every injection/retrieval. `Shared()`/`NotShared()`;
   `di.DefaultShared()`/`di.DefaultNotShared()`.
 - **Autowired / NotAutowired** — autowired (default) resolves omitted args by type;
-  not-autowired means *you* must supply every arg. `Autowired()`/`NotAutowired()`;
+  not-autowired means *you* must supply every arg, except a variadic one, which may be
+  left out and is then called with none. `Autowired()`/`NotAutowired()`;
   `di.DefaultAutowired()`/`di.DefaultNotAutowired()`.
 
 What a definition asks for wins; the container's default fills in the rest.

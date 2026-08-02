@@ -379,6 +379,16 @@ type Param struct {
 // TypeShort is Type without the package path, for labels.
 func (p *Param) TypeShort() string { return render.Short(p.Type) }
 
+// Unwired reports that nothing filled this argument and something had to. A
+// variadic slot is exempt: no arguments is a valid call, so an empty one is an
+// optional dependency nothing provides rather than a gap in the wiring.
+//
+// It is on the model so that every format draws the same arguments as faulty,
+// and so that they are the ones Graph.WiringDiagnostics reports.
+func (p *Param) Unwired() bool {
+	return p.Origin == ArgOriginNone && !p.Variadic
+}
+
 // Literal is a constant passed to a factory. Values are omitted unless asked
 // for: literals routinely carry credentials.
 type Literal struct {
@@ -627,7 +637,7 @@ func (g *Graph) WiringDiagnostics() []*Diagnostic {
 
 	for _, node := range g.Nodes {
 		for _, p := range node.Params {
-			unfilled := autowired && p.Origin == ArgOriginNone
+			unfilled := autowired && p.Unwired()
 			if !p.Unresolved && !unfilled {
 				continue
 			}

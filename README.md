@@ -379,6 +379,7 @@ Per container: `di.New(di.DefaultShared())` or `di.New(di.DefaultNotShared())`.
 
 By default, godi will attempt automatically resolve dependencies for you.
 If changed to not autowired, all dependencies will have to be resolved manually by you.
+A variadic argument is the exception: you can leave it out, and the function is called with none.
 
 Per container: `di.New(di.DefaultAutowired())` or `di.New(di.DefaultNotAutowired())`.
 
@@ -854,7 +855,7 @@ func main() {
 
 	di.New().Services(
 		di.SvcVal("service-str").Bind(&ref),
-		di.Svc(NewStringsCollector, di.Compound[[]string](
+		di.Svc(NewStringsCollector, di.Compound[string](
 			di.Val("literal-str"),
 			di.Ref(&ref),
 		)),

@@ -247,7 +247,13 @@ func TestASlotNothingFilledSaysWhichKindOfNothing(t *testing.T) {
 	g := model()
 	require.Contains(t, encode(t, g), "0 <- []app.Plugin  (nothing)  [autowiring]")
 
+	// A variadic slot nobody filled is the same nothing: no arguments is a valid
+	// call, so the container passes an empty slice rather than reporting a gap.
 	g.Nodes[1].Params[0].Origin = graph.ArgOriginNone
+	require.Contains(t, encode(t, g), "0 <- []app.Plugin  (nothing)  [none]")
+
+	g = model()
+	g.Nodes[1].Params[0].Origin, g.Nodes[1].Params[0].Variadic = graph.ArgOriginNone, false
 	require.Contains(t, encode(t, g), "(not wired)")
 
 	g = model()

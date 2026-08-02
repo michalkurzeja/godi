@@ -785,6 +785,25 @@ func TestAnArgumentNobodyFilledIsReportedLikeAnyOtherFault(t *testing.T) {
 	require.Empty(t, g.GraphDiagnostics, "nothing is odd about the graph itself")
 }
 
+// A variadic slot nobody filled is an optional dependency nothing provides, and
+// the container builds. Drawing it as a fault would send a reader looking for a
+// problem that is not there.
+func TestAnEmptyVariadicArgumentIsNotAFault(t *testing.T) {
+	c, err := godi.New().Services(
+		godi.Svc(NewCollector).NotAutowired(),
+	).Build()
+	require.NoError(t, err)
+
+	g := graphOf(t, c)
+
+	p := paramOf(t, g, "v2_test.(*Collector)", 0)
+	require.Equal(t, graph.ArgOriginNone, p.Origin, "nothing filled the slot")
+	require.False(t, p.Unwired(), "and nothing had to")
+
+	require.False(t, nodeOf(t, g, "v2_test.(*Collector)").Incomplete)
+	require.Empty(t, g.AllDiagnostics())
+}
+
 // Before autowiring runs every argument is unwired, so marking each of them
 // would point at everything, which is the same as pointing at nothing.
 func TestNothingIsIncompleteBeforeAutowiringHasRun(t *testing.T) {

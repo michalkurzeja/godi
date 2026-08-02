@@ -169,7 +169,8 @@ func (p *AutowiringPass) autowire(args *ArgList) error {
 // stage: Validation
 
 // ArgValidationPass rejects an argument that names a dependency the container
-// does not have, and one nothing has filled.
+// does not have, and one nothing has filled. A variadic slot is exempt: no
+// arguments is a valid call.
 type ArgValidationPass struct{}
 
 // NewArgValidationPass returns a compiler pass that validates all arguments of factories, method calls and functions
@@ -209,7 +210,12 @@ func (p *ArgValidationPass) validateArgs(scope *Scope, args *ArgList) error {
 	var joinedErr error
 	for i, slot := range args.Slots() {
 		if !slot.IsFilled() {
-			joinedErr = errors.Join(joinedErr, fmt.Errorf("argument %d is not set", i))
+			// A variadic slot nobody filled is an optional dependency nothing
+			// provides. The call gets an empty slice, the same as an autowired one
+			// that finds no services.
+			if !slot.IsVariadicSlice() {
+				joinedErr = errors.Join(joinedErr, fmt.Errorf("argument %d is not set", i))
+			}
 			continue
 		}
 		err := ValidateArg(scope, slot.Arg())

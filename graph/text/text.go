@@ -316,7 +316,7 @@ func (p *printer) paramEdges(param *graph.Param) []*graph.Edge {
 
 func (p *printer) unresolved(param *graph.Param) string {
 	switch {
-	case param.Origin == graph.ArgOriginNone:
+	case param.Unwired():
 		return "  (not wired)"
 	case param.Unresolved:
 		return "  (unresolved)"

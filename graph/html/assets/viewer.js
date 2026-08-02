@@ -61,6 +61,11 @@ const named = (origin, pass) => {
 };
 const boundBy = (e) => named(e.bindOrigin, e.bindPass);
 
+// A variadic slot nobody filled is the one unwired argument that is nobody's
+// fault: no arguments is a valid call. The payload has already decided which,
+// so every format says the same about it.
+const paramOrigin = (p) => (p.origin === 'none' && !p.unwired ? 'no arguments' : named(p.origin, p.originPass));
+
 // The model works out what a node is headed by and what goes under it, so every
 // format gives the same answer. Both arrive ready to print.
 //
@@ -1246,7 +1251,7 @@ function paramBlock(p, outgoing) {
 	const head = make('div', 'phead');
 	head.append(make('span', 'pidx', '#' + p.index));
 	head.append(make('span', 'mono', p.short));
-	head.append(badge(named(p.origin, p.originPass), 'origin-' + p.origin));
+	head.append(badge(paramOrigin(p), 'origin-' + p.origin));
 	block.append(head);
 
 	for (const lit of p.literals || []) block.append(make('div', 'plit', '= ' + lit));

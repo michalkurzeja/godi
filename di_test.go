@@ -378,6 +378,19 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			},
 		},
 		{
+			name: "can register a manual service with no variadic args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Empty(t, svc.Args)
+			},
+		},
+		{
 			name: "can register a service with manual interface variadic arg (variadic-style)",
 			build: func(b *di.Builder, refs *Refs) {
 				b.Services(
@@ -540,17 +553,6 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			},
 			assertBuildErr: func(t *testing.T, err error) {
 				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcSliceArgs: argument 0 is not set")
-			},
-		},
-		{
-			name: "cannot register a manual service with empty variadic arg",
-			build: func(b *di.Builder, refs *Refs) {
-				b.Services(
-					di.Svc(NewTestSvcVariadicArgs).NotAutowired(),
-				)
-			},
-			assertBuildErr: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcVariadicArgs: argument 0 is not set")
 			},
 		},
 		{
@@ -1672,6 +1674,76 @@ func TestTheContainerServesFunctionsAndValuesToo(t *testing.T) {
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (cycle validation) returned an error: service string has a circular dependency on bool")
+	})
+}
+
+// A variadic parameter takes any number of arguments, none included, so a slot
+// nobody fills is an optional dependency rather than a gap in the wiring. An
+// autowired definition already behaves this way: autowiring fills the slot with
+// an argument allowed to match nothing.
+func TestAVariadicArgumentIsOptionalWithoutAutowiring(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a factory is called with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(di.Svc(NewTestSvcVariadicArgs).NotAutowired()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
+	})
+	t.Run("a method call is made with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.Svc(NewTestSvcNoArgs).
+					MethodCall((*TestSvc).AddArgsVariadic).
+					NotAutowired(),
+			).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
+	})
+	t.Run("a function is called with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		var ref di.FuncReference
+		c, err := di.New().
+			Functions(
+				di.Func(func(args ...string) int { return len(args) }).
+					Bind(&ref).
+					NotAutowired(),
+			).
+			Build()
+		require.NoError(t, err)
+
+		res, err := di.ExecByRef(c, ref)
+		require.NoError(t, err)
+		require.Equal(t, []any{0}, res)
+	})
+	t.Run("a bound interface does not reach a variadic slot", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(new(TestIfaceImpl)),
+				di.Svc(NewTestSvcIfaceVariadicArgs).NotAutowired(),
+			).
+			Bindings(di.BindSlice[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
 	})
 }
 
