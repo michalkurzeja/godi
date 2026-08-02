@@ -193,10 +193,10 @@ const shownParam = (p) => state.args && (state.show.method || !isMethod(p));
 
 function rows(n) {
 	const lines = [];
-	// A root is the top of a tree, and a function is a function. A root function
-	// wears both marks. A node missing something it needs wears none: the red
-	// border already says so.
-	const head = (n.root ? '▲ ' : '') + (n.kind === 'function' ? 'ƒ ' : '');
+	// A function is marked as one. A root is not: the fill already says so, and a
+	// mark beside the name only takes room from it. A node missing something it
+	// needs is unmarked too, for the same reason — the red border says it.
+	const head = n.kind === 'function' ? 'ƒ ' : '';
 	const heading = n.title;
 	const sub = displaySub(n);
 	lines.push(clip(head + heading));
@@ -1345,6 +1345,7 @@ const CONTROLS = () => [
 			['f', 'Fit the whole graph'],
 			['r', 'Lay the graph out again'],
 			['t', 'Cycle the colour scheme'],
+			['m', 'Cycle pointer device mode: auto, mouse, trackpad'],
 			['d', 'Show or hide the detail panel'],
 			['l', 'Show or hide the legend'],
 			['g', 'Go to a node by its graph id'],
@@ -1518,18 +1519,141 @@ function installPanning() {
 	canvasEl().addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
 }
 
-// A notched mouse wheel reports whole multiples of 120, and Firefox reports lines
-// rather than pixels for one. A trackpad sends small or fractional steps, usually
-// with a sideways component.
+// Telling a wheel from a trackpad is a guess, because the DOM does not say which
+// device sent a wheel event. What makes the guess workable is that the evidence
+// only ever runs one way.
 //
-// It is a good guess rather than a fact, which is why the reader can override it.
+// A wheel turns on one axis and steps by whole pixels. It cannot produce a
+// fraction, and it cannot produce a diagonal, so either of those is proof of a
+// trackpad. Nothing a trackpad does is proof of a wheel: swiped slowly and
+// straight it looks exactly like one. So a wheel is what we assume, and a
+// trackpad is what we look for.
+//
+// The old test asked whether a step was a whole multiple of 120, which is what a
+// notched wheel reports. A high-resolution wheel — a Logitech G502X, an MX
+// Master, a Magic Mouse — sends many small steps per turn instead, failed that
+// test, and was taken for a trackpad every time.
+//
+// It stays a guess, which is why the reader can override it (m).
 function fromAMouse(ev) {
 	if (state.wheel !== 'auto') return state.wheel === 'mouse';
+	// Firefox reports lines rather than pixels for a notched wheel, and nothing
+	// else reports anything but pixels.
 	if (ev.deltaMode !== 0) return true;
-	if (ev.wheelDeltaY !== undefined) {
-		return ev.wheelDeltaY !== 0 && Math.abs(ev.wheelDeltaY) % 120 === 0;
+
+	return !rememberWheel(ev).trackpad;
+}
+
+// saysTrackpad is what a wheel is incapable of: two axes at once, or a step that
+// is not a whole number of pixels.
+//
+// A pure sideways step is not evidence. Shift and a wheel arrive that way on
+// some platforms, and so does a tilting scroll ring.
+function saysTrackpad(e) {
+	if (e.dx !== 0 && e.dy !== 0) return true;
+	return !Number.isInteger(e.dx) || !Number.isInteger(e.dy);
+}
+
+// notAWheel is the other tell, for the swipe that goes straight and slow enough to
+// send whole pixels down one axis and never say what it is.
+//
+// What a finger cannot do is turn a detent. A wheel is geared: even a
+// high-resolution one sends a fraction of a notch worth tens of pixels, and
+// turning it slower sends that step less often rather than smaller. So a run with
+// nothing detent-sized in it was not made by a wheel. Real numbers, one machine,
+// both devices:
+//
+//	swipe            8  8  8  8  8  7  7  7  6  6  5 … 2 1 1
+//	swipe            8  3  3  3  3  3  3  3  6  3  2 … 1 1 1
+//	ratchet         80 96 96 112 112 128
+//	free-spin       64 96 112 112 128 128 144 144
+//
+// Nothing lies between 12 and 64, so the threshold has room on both sides and one
+// event is enough to answer with. A swipe is read as one from its first step, and
+// a wheel from its first notch.
+//
+// It reads the peak, so it is an answer rather than a verdict: it is asked again
+// on every event, and the first real detent takes it back. A wheel turned so
+// slowly that it opens below detent size pans for one event and then corrects
+// itself.
+//
+// Smoothing software (BetterMouse, Mac Mouse Fix) animates one detent into a
+// fading ramp of single pixels, which is a swipe by every measure here and is
+// meant to be. There is no rule that reads those as a wheel and a real swipe as a
+// swipe, so this does not try. That is what the override is for (m), and it is
+// remembered.
+function notAWheel(g) {
+	return g.peak < WHEEL_DETENT_PX;
+}
+
+// wheelGesture is what has been made of the events so far. One event is rarely
+// enough: a trackpad gesture betrays itself while the fingers are down and then
+// coasts, and the coast is indistinguishable from a wheel — one axis, whole
+// pixels, on and on.
+//
+//	{ dx: 0, dy: 2 } { dx: 0, dy: 1 } { dx: 0, dy: 1 } { dx: 0, dy: 1 } …
+//
+// So the verdict is held for as long as the events keep coming, rather than read
+// off the last few. Momentum runs at the refresh rate and easily outnumbers
+// anything a window could hold, which is how a swipe used to turn into a zoom
+// halfway through.
+//
+// Two things end a gesture, and it takes both.
+//
+// A pause ends one, but a pause alone is not enough: scrolling a wheel steadily
+// keeps the gaps short for as long as the reader keeps scrolling, so a verdict
+// left over from a coast would ride along with it and never clear. Reaching for
+// the other device only has to beat the gap once.
+//
+// A step larger than the one before it ends one too. Momentum only ever slows, so
+// growth is a new push: a fresh swipe, which gives itself away again immediately,
+// or a hand that has moved to the wheel. Either way the question is open again.
+//
+// Only real growth counts, and real means detent-sized. A coast decays smoothly
+// and is then rounded to whole pixels, so its tail jitters upward on the way down:
+//
+//	… 2, 2, 1, 1, 2, 1, 1, 1
+//
+// which is twice the step before it and means nothing. Neither does a dropped
+// frame, which arrives as two frames' worth at once and doubles a step the same
+// way. Below detent size there is no push to speak of.
+const WHEEL_IDLE_MS = 500;
+const WHEEL_GROWTH = 1.5;
+
+// Detent size, near enough. It is the one number here: what a wheel cannot go
+// below, and what a step has to reach to count as a new push. See notAWheel.
+const WHEEL_DETENT_PX = 24;
+
+const wheelGesture = { evidence: false, trackpad: false, at: 0, step: 0, peak: 0 };
+
+// wheelHistory is what the events carried, for anyone whose hardware this gets
+// wrong. Nothing reads it: the verdict above is not derived from it.
+const wheelHistory = [];
+const WHEEL_HISTORY = 60;
+
+function rememberWheel(ev) {
+	const step = Math.max(Math.abs(ev.deltaX), Math.abs(ev.deltaY));
+	const idle = ev.timeStamp - wheelGesture.at > WHEEL_IDLE_MS;
+	const pushed = step >= WHEEL_DETENT_PX && step > wheelGesture.step * WHEEL_GROWTH;
+
+	if (idle || pushed) {
+		wheelGesture.evidence = false;
+		wheelGesture.peak = 0;
+		wheelHistory.length = 0;
 	}
-	return ev.deltaX === 0 && Math.abs(ev.deltaY) >= 100 && Number.isInteger(ev.deltaY);
+	wheelGesture.at = ev.timeStamp;
+	wheelGesture.step = step;
+	wheelGesture.peak = Math.max(wheelGesture.peak, step);
+
+	// What the events proved is kept; what the run merely suggests is asked again
+	// each time, because a detent can still arrive and settle it.
+	wheelGesture.evidence = wheelGesture.evidence || saysTrackpad({ dx: ev.deltaX, dy: ev.deltaY });
+	wheelGesture.trackpad = wheelGesture.evidence || notAWheel(wheelGesture);
+
+	wheelHistory.push({ dx: ev.deltaX, dy: ev.deltaY, at: ev.timeStamp });
+	if (wheelHistory.length > WHEEL_HISTORY) wheelHistory.shift();
+
+	return wheelGesture;
 }
 
 function zoomAt(ev, by) {
@@ -1736,6 +1860,23 @@ function cycleTheme() {
 	setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]);
 }
 
+// setWheel says what a wheel gesture means. Nothing is redrawn: isMouseWheel
+// reads this when a gesture arrives, so the next one is already the new answer.
+//
+// The select is set here rather than beside each caller, so that the control
+// always shows what is in force however it was changed.
+function setWheel(mode) {
+	state.wheel = mode;
+	$('wheel').value = mode;
+	remember('godi.wheel', mode);
+}
+
+// Cycled from the keyboard, as the colour scheme is. Auto is wrong on some
+// hardware, and finding that out means trying the other two.
+function cycleWheel() {
+	setWheel(WHEELS[(WHEELS.indexOf(state.wheel) + 1) % WHEELS.length]);
+}
+
 // ------------------------------------------------------------------ wiring ---
 
 // Every native control below is read once as it is wired up, not just listened to.
@@ -1820,10 +1961,7 @@ function installControls() {
 
 	const wheel = $('wheel');
 	wheel.value = state.wheel;
-	wheel.addEventListener('change', () => {
-		state.wheel = wheel.value;
-		remember('godi.wheel', state.wheel);
-	});
+	wheel.addEventListener('change', () => setWheel(wheel.value));
 
 	const layout = $('layout');
 	state.layout = layout.value;
@@ -1882,6 +2020,7 @@ function installControls() {
 		else if (ev.key === 'f') cy.fit(cy.elements(':visible'), 30);
 		else if (ev.key === 'r') relayout();
 		else if (ev.key === 't') cycleTheme();
+		else if (ev.key === 'm') cycleWheel();
 		else if (ev.key === 'd') setPanel(!panelOpen());
 		else if (ev.key === 'l') setLegend(!legendOpen());
 		else if (ev.key === 'g') { ev.preventDefault(); openGoto(); }
@@ -1906,7 +2045,12 @@ function rebuildLabels() {
 //
 // godi.mod is the modifier this platform pans with, so a driver of the page does
 // not have to work that rule out again.
-window.godi = { cy, data, state, apply, relayout, mod: MOD };
+//
+// godi.wheelHistory is what the recent wheel events carried and godi.wheelGesture
+// what has been made of them. Whether a wheel event came from a wheel or a
+// trackpad is a guess, and those are the guess and its evidence, for anyone whose
+// hardware it gets wrong.
+window.godi = { cy, data, state, apply, relayout, mod: MOD, wheelHistory, wheelGesture };
 
 showSnapshot();
 showDiagnostics();

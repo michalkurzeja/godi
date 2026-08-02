@@ -380,7 +380,7 @@ func TestRootsAreDistinguishable(t *testing.T) {
 	out := encode(t, g)
 	require.Contains(t, out, `class="service root"`)
 	require.Contains(t, out, `fillcolor="#dbe9fc"`, "a tint, not a warning colour")
-	require.Contains(t, out, "▲ ", "and a marker on the node itself")
+	require.NotContains(t, out, "▲", "the fill says it; a mark beside the name only takes room")
 	require.NotContains(t, out, "⚠", "a root is not a problem")
 	require.Contains(t, out, "nothing injects this: it is the top of a tree")
 }

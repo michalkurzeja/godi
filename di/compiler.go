@@ -287,7 +287,7 @@ func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
 
 	for _, p := range added {
 		if p.compare(pass) < 0 {
-			return fmt.Errorf("compiler pass (%s) added pass (%s), which would have had to run before it", pass, p)
+			return fmt.Errorf("compiler pass (%s) added pass (%s) before itself", pass, p)
 		}
 	}
 

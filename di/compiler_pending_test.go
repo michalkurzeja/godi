@@ -74,6 +74,6 @@ func TestAPassCannotAddOneThatWouldHaveRunBeforeIt(t *testing.T) {
 
 	_, err := b.Build()
 	require.ErrorContains(t, err,
-		"compiler pass (late arrival) added pass (too early), which would have had to run before it")
+		"compiler pass (late arrival) added pass (too early) before itself")
 	require.False(t, ran)
 }

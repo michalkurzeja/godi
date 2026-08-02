@@ -30,31 +30,17 @@ func (e *argError) Unwrap() error { return e.err }
 // level: the outer says an argument would not resolve, the inner says why. The
 // inner one names the argument to change, and its cause is the fault itself
 // rather than another definition's whole failure.
+//
+// errors.As answers with the outermost, so the search carries on from inside each
+// one it finds. It walks joined errors too, which is how a slice argument that
+// collected several services reports the one that failed.
 func deepestArgError(err error) *argError {
 	var deepest *argError
-	for _, e := range unwrapAll(err) {
-		if ae, ok := e.(*argError); ok {
-			deepest = ae
+	for {
+		var found *argError
+		if !errors.As(err, &found) {
+			return deepest
 		}
+		deepest, err = found, found.Unwrap()
 	}
-	return deepest
-}
-
-// unwrapAll is every error in the chain, outermost first. Joined errors are
-// walked too: a slice argument collects several services, and one of them
-// failing puts that failure in a join.
-func unwrapAll(err error) []error {
-	var out []error
-	for err != nil {
-		out = append(out, err)
-
-		if joined, ok := err.(interface{ Unwrap() []error }); ok {
-			for _, e := range joined.Unwrap() {
-				out = append(out, unwrapAll(e)...)
-			}
-			return out
-		}
-		err = errors.Unwrap(err)
-	}
-	return out
 }

@@ -203,7 +203,7 @@ await test('the label leaves a blank row between sections', async () => {
 // panel with a link to its source.
 await test('a service box does not name its factory', async () => {
 	const lines = await rows(SERVER);
-	return (lines[0] === '▲ app.(*Server)' && !lines.some((l) => l.includes('NewServer')))
+	return (lines[0] === 'app.(*Server)' && !lines.some((l) => l.includes('NewServer')))
 		|| `the box reads ${JSON.stringify(lines.slice(0, 2))}`;
 });
 
@@ -225,7 +225,7 @@ await test('a function box is its name and nothing else', async () => {
 	await borrowAsFunction({ kind: 'service', title: 'app.(*Server)' });
 	await rebuildBoxes();
 
-	return (lines[0] === '▲ ƒ app.NewServer' && lines[1].trim() === '')
+	return (lines[0] === 'ƒ app.NewServer' && lines[1].trim() === '')
 		|| `the box reads ${JSON.stringify(lines.slice(0, 2))}`;
 });
 
@@ -242,7 +242,7 @@ await test('unless it is a literal, which has only a signature to go on', async 
 	await borrowAsFunction({ kind: 'service', anonymous: false, title: 'app.(*Server)' });
 	await rebuildBoxes();
 
-	return eq(lines.slice(0, 2), ['▲ ƒ app.NewServer', 'app.(*Server)'], 'the first two rows');
+	return eq(lines.slice(0, 2), ['ƒ app.NewServer', 'app.(*Server)'], 'the first two rows');
 });
 
 // A label is one colour throughout, so the rules are drawn as an image instead
@@ -780,6 +780,34 @@ await test('and so does the ? key', async () => {
 	return await panelShown() === true || 'the ? key left the panel hidden';
 });
 
+// Auto guesses what is under the reader's hand, and it is wrong on some hardware.
+// Trying the other two is how you find that out, so it is on a key rather than
+// only in a menu.
+await test('m cycles what the wheel is taken to be', async () => {
+	// One press per mode, so the wheel is left as it was found: what follows is
+	// about panning and zooming, and it reads this setting.
+	const read = () => ev(`[godi.state.wheel, document.getElementById('wheel').value]`);
+	const press = () => ev(`(() => {
+		document.dispatchEvent(new KeyboardEvent('keydown', {key: 'm', bubbles: true}));
+		return true;
+	})()`);
+
+	const modes = [await read()];
+	for (let i = 0; i < 3; i++) {
+		await press();
+		modes.push(await read());
+	}
+
+	for (const [wheel, control] of modes) {
+		if (wheel !== control) return `the control shows ${control} while ${wheel} is in force`;
+	}
+
+	const seen = modes.map(([wheel]) => wheel);
+	if (seen[0] !== seen[3]) return 'four presses did not come back round: ' + seen.join(', ');
+	if (new Set(seen).size !== 3) return 'not every mode was reached: ' + seen.join(', ');
+	return true;
+});
+
 await selectNode(SERVER);
 
 // --- navigation: panning, zooming, and who is holding the wheel -------------
@@ -880,14 +908,116 @@ const setWheel = (mode) => ev(`(() => {
 	const s = document.getElementById('wheel'); s.value = ${JSON.stringify(mode)};
 	s.dispatchEvent(new Event('change')); return true; })()`);
 
-await test('a trackpad swipe pans and does not zoom', async () =>
-	eq(await wheel({ deltaX: 14, deltaY: 23 }), { zoomed: false, panned: true }, 'a fractional two-finger swipe'));
+// The page holds its verdict for as long as the events keep coming, so a case
+// about one device has to start with the other put down. In the hand that is a
+// pause; here the events arrive milliseconds apart, so the pause is backdated
+// rather than waited out. The page resets itself from that, exactly as it would.
+const newDevice = () => ev(`(() => { godi.wheelGesture.at = 0; return true; })()`);
+
+await test('a trackpad swipe pans and does not zoom', async () => {
+	await newDevice();
+	return eq(await wheel({ deltaX: 14, deltaY: 23 }), { zoomed: false, panned: true }, 'a two-axis swipe');
+});
+
+// One axis, whole pixels, and nothing else to go on: a wheel is what that is.
+await test('and so does a straight one, once it shows a fraction', async () => {
+	await newDevice();
+	await wheel({ deltaY: 8.5 });
+	return eq(await wheel({ deltaY: 12.25 }), { zoomed: false, panned: true }, 'a fractional straight swipe');
+});
 
 await test('a pinch zooms, because the browser flags it', async () =>
 	(await wheel({ deltaY: 18, ctrlKey: true })).zoomed || 'a pinch did not zoom');
 
-await test('a notched mouse wheel zooms', async () =>
-	(await wheel({ deltaY: 120 })).zoomed || 'a 120-step wheel did not zoom');
+await test('a notched mouse wheel zooms', async () => {
+	await newDevice();
+	return (await wheel({ deltaY: 120 })).zoomed || 'a 120-step wheel did not zoom';
+});
+
+// Lifting the fingers does not end the gesture: the trackpad coasts, and the
+// coast is one axis and whole pixels, which is a wheel to look at. Real numbers
+// from a Logitech G502X and a Mac trackpad on one machine, where a swipe used to
+// turn into a zoom halfway through.
+await test('a swipe keeps panning while the trackpad coasts', async () => {
+	await newDevice();
+	// Fingers down, and the swipe speeding up. Each step is bigger than the last,
+	// which is a new push and reopens the question — and answers it again on the
+	// same event, because a swipe cannot help showing what it is.
+	for (const [deltaX, deltaY] of [[0, 1.5], [1, 4.5], [2, 11.5]]) {
+		const got = await wheel({ deltaX, deltaY });
+		if (got.zoomed) return `the swipe zoomed while speeding up, at ${deltaY}px`;
+	}
+
+	// Fingers up. Frames of momentum, thinning out, all of them indistinguishable
+	// from a wheel taken one at a time — and jittering upward as a smooth decay is
+	// rounded to whole pixels. A 1 followed by a 2 is twice the step before it and
+	// is not a push.
+	const tail = [2, 2, 2, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1];
+	for (const deltaY of tail) {
+		const got = await wheel({ deltaY });
+		if (got.zoomed) return `the coast zoomed at a ${deltaY}px step`;
+		if (!got.panned) return `the coast stopped panning at a ${deltaY}px step`;
+	}
+	return true;
+});
+
+// Real runs from one machine, both devices, with and without smoothing software.
+// Every one of them is whole pixels down one axis, so nothing here is settled by a
+// fraction or a diagonal: what separates them is whether anything in the run was
+// ever worth a detent.
+//
+// They are kept together because each was found by breaking one of the others.
+const DEVICE_RUNS = [
+	{ what: 'a slow straight swipe', pans: true, steps: [8, 8, 8, 8, 8, 7, 7, 7, 6, 6, 5, 4, 3, 2, 1, 1] },
+	{ what: 'a swipe with frames dropped', pans: true, steps: [8, 3, 3, 3, 3, 3, 3, 3, 6, 3, 2, 2, 4, 2, 1, 1] },
+	{ what: 'a ratcheted wheel', pans: false, steps: [80, 96, 96, 112, 112, 128] },
+	{ what: 'a free-spinning wheel', pans: false, steps: [64, 96, 112, 112, 128, 128, 144, 144] },
+];
+
+// Smoothing software animates one detent into a fading ramp of single pixels,
+// which is a swipe by every measure here and is meant to be. Nothing can read
+// those as a wheel and a real swipe as a swipe, so nothing here tries: that is
+// what the override is for.
+
+for (const run of DEVICE_RUNS) {
+	await test(`${run.what} ${run.pans ? 'pans' : 'zooms'}`, async () => {
+		await newDevice();
+
+		// From the first step. One event carries enough, so there is no run to
+		// wait for and nothing goes the wrong way while one gathers.
+		for (let i = 0; i < run.steps.length; i++) {
+			const got = await wheel({ deltaY: run.steps[i] });
+			if (run.pans && got.zoomed) return `zoomed at step ${i} of ${run.steps[i]}px`;
+			if (!run.pans && !got.zoomed) return `stopped zooming at step ${i} of ${run.steps[i]}px`;
+		}
+		return true;
+	});
+}
+
+// A machine with both has to answer for whichever is in hand, so the verdict is
+// held for a gesture rather than for good.
+await test('picking up the other device changes the answer', async () => {
+	await newDevice();
+	await wheel({ deltaX: 3, deltaY: 9 });
+	if ((await wheel({ deltaY: 4 })).zoomed) return 'a swipe step zoomed while the trackpad was still in hand';
+
+	await newDevice();
+	return (await wheel({ deltaY: 96 })).zoomed || 'the wheel did not take over once the trackpad was put down';
+});
+
+// Waiting is not the only way out, and it must not be the only way: scrolling a
+// wheel steadily keeps the gaps short indefinitely, so a verdict left over from a
+// coast used to ride along with it until the reader stopped and waited.
+//
+// Momentum only ever slows, so a step that grows is a new push.
+await test('and so does scrolling the wheel while the coast is still fresh', async () => {
+	await newDevice();
+	await wheel({ deltaX: 2, deltaY: 11.5 });
+	for (const deltaY of [2, 2, 1, 1, 1]) await wheel({ deltaY });
+
+	// The hand has moved to the wheel. No pause, and none needed.
+	return (await wheel({ deltaY: 100 })).zoomed || 'the wheel was still taken for a coasting trackpad';
+});
 
 await test('the modifier zooms whatever the wheel is', async () =>
 	(await wheel({ deltaX: 3, deltaY: 7, metaKey: true })).zoomed || 'the modifier did not zoom');
@@ -1624,13 +1754,12 @@ await test('a node nothing injects is a root', async () =>
 		'root/svc:app.(*Server)',
 	], 'the roots'));
 
-await test('a root is marked on the node itself', async () => {
-	const [root, plain] = await ev(`[
-		godi.cy.getElementById('root/svc:app.(*Server)').data('label'),
-		godi.cy.getElementById('root/svc:app.(*Router)').data('label'),
-	]`);
-	return (root.startsWith('▲ ') && !plain.includes('▲'))
-		|| `root label ${JSON.stringify(root.split('\n')[0])}, plain ${JSON.stringify(plain.split('\n')[0])}`;
+// The fill is the whole of it. A mark beside the name said the same thing a
+// second time and took room from the name to do it.
+await test('a root is not marked on the node itself', async () => {
+	const labels = await ev(`godi.cy.nodes().map((n) => n.data('label')).filter(Boolean)`);
+	const marked = labels.filter((l) => l.includes('▲'));
+	return marked.length === 0 || 'a node still wears a root mark: ' + JSON.stringify(marked);
 });
 
 await test('a root is tinted rather than warned about', async () => {
@@ -1640,6 +1769,75 @@ await test('a root is tinted rather than warned about', async () => {
 	]`);
 	return root !== plain || `both nodes are ${root}, so a root is not distinguishable`;
 });
+
+// A node box used to sit at almost the same lightness as the scope box behind it,
+// so it read as part of its container rather than as a thing inside it. What that
+// costs is legibility, so the separations and the text contrast are held together:
+// brightening a box until it stands out is only an improvement while the words on
+// it can still be read.
+//
+// Both themes, because the two palettes are written out separately and only one of
+// them is ever in front of whoever changes a colour.
+const boxContrast = (theme) => ev(`(() => {
+	const select = document.getElementById('theme');
+	select.value = ${JSON.stringify(theme)};
+	select.dispatchEvent(new Event('change'));
+
+	const css = getComputedStyle(document.documentElement);
+	const parts = (c) => {
+		const h = c.trim().replace('#', '');
+		const at = (i) => parseInt(h.slice(i, i + 2), 16);
+		return h.length === 8 ? [at(0), at(2), at(4), at(6) / 255] : [at(0), at(2), at(4), 1];
+	};
+	// A scope is a translucent wash, so what the eye gets is it over the canvas.
+	const over = (name) => {
+		const [r, g, b, a] = parts(css.getPropertyValue(name));
+		const [br, bg, bb] = parts(css.getPropertyValue('--bg'));
+		return [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a)];
+	};
+	const luminance = ([r, g, b]) => {
+		const f = (c) => (c /= 255) <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+		return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+	};
+	const ratio = (a, b) => {
+		const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+		return (x + 0.05) / (y + 0.05);
+	};
+
+	const [node, root, scope, text] = ['--node', '--node-root', '--scope', '--text'].map(over);
+	return {
+		textOnNode: ratio(text, node),
+		textOnRoot: ratio(text, root),
+		nodeOnScope: ratio(node, scope),
+		rootOnScope: ratio(root, scope),
+		rootOnNode: ratio(root, node),
+	};
+})()`);
+
+for (const theme of ['light', 'dark']) {
+	await test(`the boxes are legible and tell themselves apart in the ${theme} theme`, async () => {
+		const got = await boxContrast(theme);
+
+		// AAA for body text. These boxes carry the whole graph's labels.
+		for (const on of ['textOnNode', 'textOnRoot']) {
+			if (got[on] < 7) return `${on} is ${got[on].toFixed(1)}:1, which is not enough to read`;
+		}
+		// Enough of a step to see an edge without one, since a box may sit against
+		// another box rather than against the canvas.
+		for (const pair of ['nodeOnScope', 'rootOnScope', 'rootOnNode']) {
+			if (got[pair] < 1.15) return `${pair} is ${got[pair].toFixed(3)}, so the two blend`;
+		}
+		return true;
+	});
+}
+
+// Put it back, so what follows is not looking at whichever theme ran last.
+await ev(`(() => {
+	const s = document.getElementById('theme');
+	s.value = 'auto';
+	s.dispatchEvent(new Event('change'));
+	return true;
+})()`);
 
 await test('a label sits in a row of its own, not among the badges', async () => {
 	await selectNode('root/svc:app.(*Repo)');

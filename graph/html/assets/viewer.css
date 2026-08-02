@@ -18,9 +18,9 @@ svg[hidden] { display: none; }
 	--auto: #0f766e;
 	--pass: #8250df;
 	--node: #ffffff;
-	--node-root: #dbe9fc;
+	--node-root: #c8dbfa;
 	--node-border: #b6bdc6;
-	--scope: #00000008;
+	--scope: #00000014;
 	--scope-border: #c9ced6;
 	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 	--sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -41,8 +41,8 @@ html.theme-dark {
 	--manual: #e6edf3;
 	--auto: #2dd4bf;
 	--pass: #c297ff;
-	--node: #1b222c;
-	--node-root: #1b3557;
+	--node: #273140;
+	--node-root: #234a7d;
 	--node-border: #454d57;
 	--scope: #ffffff0a;
 	--scope-border: #30363d;
@@ -66,8 +66,8 @@ html.theme-auto { color-scheme: light dark; }
 		--manual: #e6edf3;
 		--auto: #2dd4bf;
 		--pass: #c297ff;
-		--node: #1b222c;
-		--node-root: #1b3557;
+		--node: #273140;
+		--node-root: #234a7d;
 		--node-border: #454d57;
 		--scope: #ffffff0a;
 		--scope-border: #30363d;

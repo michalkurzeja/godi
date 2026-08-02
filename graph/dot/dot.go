@@ -213,13 +213,11 @@ func (p *printer) nodeLabel(node *graph.Node) string {
 	var sb strings.Builder
 	sb.WriteString(`<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">`)
 
+	// A function is marked as one. A root is not: the fill already says so, and a
+	// mark beside the name only takes room from it.
 	marker := ""
-	if node.Root {
-		marker = "▲ " // Nothing injects it: the top of a tree.
-	}
-
 	if node.Kind == graph.NodeFunction {
-		marker += "ƒ "
+		marker = "ƒ "
 	}
 
 	title, subtitle := node.Title(), node.Subtitle()
