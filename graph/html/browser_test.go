@@ -43,7 +43,10 @@ func TestViewerRegressions(t *testing.T) {
 	// different document, not a state the first page can be put into.
 	snapshot := filepath.Join(dir, "snapshot.html")
 	var snapBuf bytes.Buffer
-	require.NoError(t, snapshotModel().Encode(&snapBuf, html.New(html.Title("snapshot"))))
+	require.NoError(t, snapshotModel().Encode(&snapBuf, html.New(
+		html.Title("snapshot"),
+		html.SourceLink("test://open?file={file}&rel={rel}&line={line}"),
+	)))
 	require.NoError(t, os.WriteFile(snapshot, snapBuf.Bytes(), 0o600))
 
 	// A third, because the fixture above has one scope, and what a filtered
@@ -319,7 +322,7 @@ func snapshotModel() *graph.Graph {
 		Origin: graph.ArgOriginNone,
 		Arg:    graph.ArgKindNone,
 		Diagnostics: []graph.Diagnostic{
-			{Severity: graph.SeverityError, Message: "argument 0 is not set"},
+			{Severity: graph.SeverityError, Message: "argument 0 is not set", Pass: "argument validation"},
 		},
 	}, {
 		ID:    graph.ParamID(metrics.ID + "#f:1"),
@@ -337,13 +340,21 @@ func snapshotModel() *graph.Graph {
 	// The red border and the notice the page lists are both read back off the
 	// argument above, which is what keeps the count and the borders in step.
 
+	// A registration that never became a definition. It names nothing on the page,
+	// so the file and the line are the only way back to it.
+	g.Diagnostics = []graph.Diagnostic{{
+		Severity: graph.SeverityError,
+		Message:  "invalid definition of service: failed to build factory: factory kind must be func, got string",
+		Location: graph.Location{File: "cmd/api/wiring.go", Line: 42},
+	}}
+
 	// A scope a compiler pass made, which no definition owns. What is worth
 	// saying about it is said on it, and it is not a fault: a pass is entitled to
 	// make one.
 	g.Scopes = append(g.Scopes, &graph.Scope{
 		ID: "root/jobs", Parent: "root", Depth: 1, Name: "jobs",
 		Diagnostics: []graph.Diagnostic{
-			{Severity: graph.SeverityInfo, Message: `scope "root/jobs" belongs to no definition`},
+			{Severity: graph.SeverityInfo, Message: `scope "jobs" was made by a call to Scope.NewChild rather than declared by a definition, so nothing owns it`},
 		},
 	})
 

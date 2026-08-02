@@ -231,22 +231,24 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 // account, and a compiler pass that objected to the same argument replaces it:
 // the pass saw more, and said it in the words the build failed with.
 func (x *extractor) unresolved(p *graph.Param, msg string) {
-	x.record(&p.Diagnostics, graph.SeverityError, msg, "")
+	x.record(&p.Diagnostics, graph.Diagnostic{Severity: graph.SeverityError, Message: msg})
 }
 
 // record adds one diagnostic to what an element carries, as much of it as the
 // caller asked a graph to carry. A message is written by whoever wrote the code
 // that failed, so it can hold anything that code put in an error.
-func (x *extractor) record(dst *[]graph.Diagnostic, severity graph.Severity, msg, pass string) {
+func (x *extractor) record(dst *[]graph.Diagnostic, d graph.Diagnostic) {
 	if x.cfg.Diagnostics == graph.DiagnosticNone {
 		return
 	}
 
 	// DiagnosticMarks leaves the message out: what is broken still shows as
-	// broken, and why is left out.
-	d := graph.Diagnostic{Severity: severity, Pass: pass}
-	if x.cfg.Diagnostics == graph.DiagnosticMessages {
-		d.Message = x.message(msg)
+	// broken, and why is left out. The location stays either way — it points at
+	// code the reader already has.
+	if x.cfg.Diagnostics == graph.DiagnosticMarks {
+		d.Message = ""
+	} else {
+		d.Message = x.message(d.Message)
 	}
 
 	*dst = append(*dst, d)

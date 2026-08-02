@@ -929,10 +929,15 @@ const badge = (text, cls) => make('span', 'badge' + (cls ? ' ' + cls : ''), sent
 // root, so {file} has to be put back together.
 function locationCell(loc) {
 	const cell = make('dd', 'mono');
-	if (!data.sourceLink) {
-		cell.textContent = loc.text;
-		return cell;
-	}
+	cell.append(locationLink(loc));
+	return cell;
+}
+
+// locationLink is the place itself, as a link where there is a template to build
+// one from and as plain text where there is not. It is its own function because a
+// notice shows a location too, in a row rather than in a definition list.
+function locationLink(loc) {
+	if (!data.sourceLink) return make('span', null, loc.text);
 
 	const absolute = data.sourceRoot ? data.sourceRoot + '/' + loc.file : loc.file;
 	const link = make('a', 'link', loc.text);
@@ -940,8 +945,7 @@ function locationCell(loc) {
 		.replaceAll('{file}', absolute)
 		.replaceAll('{rel}', loc.file)
 		.replaceAll('{line}', String(loc.line));
-	cell.append(link);
-	return cell;
+	return link;
 }
 
 // copyIDButton takes the node's graph id away with you. The id itself is not
@@ -1110,7 +1114,7 @@ function showNotices(panel) {
 	for (const d of diagnostics) {
 		const notice = make('div', 'notice');
 		const head = make('div', 'phead');
-		head.append(badge(d.severity, 'severity'), make('span', null, d.message));
+		head.append(badge(d.severity, 'severity sev-' + d.severity), make('span', null, d.message));
 		notice.append(head);
 
 		const where = noticeWhere(d);
@@ -1137,6 +1141,19 @@ function noticeWhere(d) {
 
 	const p = params.get(d.param);
 	if (p) where.append(make('span', 'via', paramLabel(p)));
+
+	// A registration that never became a definition names nothing on the page, and
+	// the file and line are the only way back to it.
+	if (d.location) {
+		const at = make('span', 'via mono');
+		at.append(locationLink(d.location));
+		where.append(at);
+	}
+
+	// Who is telling the reader this. godi's own checks and an extension's arrive
+	// through the same mechanism and read alike, so the pass is the only thing
+	// that says which of them found it.
+	if (d.pass) where.append(make('span', 'via pass', 'found by ' + d.pass));
 
 	return where.children.length ? where : null;
 }

@@ -1,6 +1,7 @@
 package di
 
 import (
+	"fmt"
 	"reflect"
 	"runtime"
 	"slices"
@@ -20,6 +21,20 @@ type Location struct {
 	File string
 	Line int
 	Func string
+}
+
+// IsZero reports whether nothing was recorded.
+func (l Location) IsZero() bool { return l.File == "" && l.Line == 0 }
+
+func (l Location) String() string {
+	switch {
+	case l.File == "":
+		return ""
+	case l.Line == 0:
+		return l.File
+	default:
+		return fmt.Sprintf("%s:%d", l.File, l.Line)
+	}
 }
 
 // wiringSet holds the packages that register definitions on someone's behalf. A

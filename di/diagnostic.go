@@ -88,7 +88,14 @@ type Diagnostic struct {
 	// Err is what Build returns for this diagnostic. It is nil for anything that
 	// does not fail the build, and an error-severity diagnostic without one is
 	// reported as its message.
-	Err  error
+	Err error
+	// At is where in the source this is about, for a diagnostic whose site cannot
+	// say. A definition that would not parse never became a node with a location
+	// of its own, and the file and line are then all a reader has to go on.
+	//
+	// It is a location rather than words in the message so that a reader can be
+	// sent there: the HTML page makes it a link into an editor.
+	At   Location
 	Pass string
 }
 

@@ -18,7 +18,12 @@ func (x *extractor) reportedDiagnostics() {
 	claimed := make(map[*graph.Param]bool)
 
 	for _, d := range x.container.Diagnostics() {
-		x.record(x.destination(d.Site, claimed), x.severityOf(d.Severity), d.Message, d.Pass)
+		x.record(x.destination(d.Site, claimed), graph.Diagnostic{
+			Severity: x.severityOf(d.Severity),
+			Message:  d.Message,
+			Pass:     d.Pass,
+			Location: x.registered(d.At),
+		})
 	}
 }
 

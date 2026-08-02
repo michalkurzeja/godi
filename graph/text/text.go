@@ -416,10 +416,20 @@ func (p *printer) notice(d graph.LocatedDiagnostic) string {
 	where := d.Where(p.graph)
 	switch {
 	case where == "":
-		return message
 	case message == "":
-		return where
+		message = where
 	default:
-		return where + ": " + message
+		message = where + ": " + message
 	}
+	// A registration that never became a definition names nothing in the graph,
+	// and the file and line are the only way back to it.
+	if !d.Location.IsZero() {
+		message += " (" + d.Location.String() + ")"
+	}
+	// Who is telling the reader this. godi's own checks and an extension's read
+	// alike, so the pass is the only thing that says which of them found it.
+	if d.Pass != "" {
+		message += bracketed([]string{d.Pass})
+	}
+	return message
 }

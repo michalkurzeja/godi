@@ -624,7 +624,14 @@ kbd {
 .notice { padding: .35rem 0; border-bottom: 1px dotted var(--border); }
 .notice:last-of-type { border-bottom: 0; }
 .notice .where { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
+
+/* Colour is the first thing read, so it carries the severity rather than
+   repeating what the word beside it already says. Nothing else on the page is
+   red, which is the point: an error is the reason the picture is wrong. */
 .badge.severity { color: var(--notice); border-color: var(--notice); }
+.badge.sev-error { color: var(--warn); border-color: var(--warn); }
+.badge.sev-warning { color: var(--notice); border-color: var(--notice); }
+.badge.sev-info { color: var(--accent); border-color: var(--accent); }
 
 /* ------------------------------------------------------------ status --- */
 

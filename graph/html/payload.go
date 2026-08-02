@@ -55,6 +55,10 @@ type viewDiagnostic struct {
 	Node  graph.NodeID  `json:"node,omitzero"`
 	Param graph.ParamID `json:"param,omitzero"`
 	Scope graph.ScopeID `json:"scope,omitzero"`
+	// Location is where in the source it is about, for a diagnostic that names
+	// nothing on the page. It is a link when the page was built with a template to
+	// make one from.
+	Location *viewLocation `json:"location,omitzero"`
 }
 
 // viewLocation is a place in the source, pre-rendered for display and kept in
@@ -211,6 +215,7 @@ func newPayload(g *graph.Graph, cfg config) payload {
 			Node:     d.Node,
 			Param:    d.Param,
 			Scope:    d.Scope,
+			Location: newViewLocation(d.Location),
 		})
 	}
 	// A filter takes a diagnostic away with the thing it was about, and the panel

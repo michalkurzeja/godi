@@ -1971,7 +1971,7 @@ await test('a graph that is both unfinished and faulty says both, one under the 
 	if (strips.some((s) => s.hidden)) return 'one of the two strips stayed hidden';
 	// A fault in the wiring and a note about the graph are not the same thing,
 	// and the strip says which is which: one of each, not "2 notices".
-	return strips[1].text.includes('1 error · 1 info') || strips[1].text;
+	return strips[1].text.includes('2 errors · 1 info') || strips[1].text;
 });
 
 // A notice about a scope has no node to be marked on, so the page is the only
@@ -1981,12 +1981,56 @@ await test('the notices are listed where a reader with nothing picked is already
 
 	if (!text.includes('Notices')) return text;
 	if (!text.includes('argument 0 is not set')) return 'the notice about a node is missing';
-	return text.includes('belongs to no definition') || 'the notice about a scope is missing';
+	return text.includes('nothing owns it') || 'the notice about a scope is missing';
+});
+
+// Colour is the first thing read. An error and a note that nothing is wrong must
+// not arrive looking alike, whatever the word beside them says.
+await test('a notice is coloured by how much it matters', async () => {
+	const severities = await ev(`[...document.querySelectorAll('#panel .badge.severity')].map((el) => ({
+		text: el.textContent.trim().toLowerCase(),
+		cls: [...el.classList].find((c) => c.startsWith('sev-')) || '',
+		colour: getComputedStyle(el).color,
+	}))`);
+
+	if (!severities.length) return 'the notices carry no severity at all';
+
+	for (const s of severities) {
+		if (s.cls !== 'sev-' + s.text) return `a ${s.text} notice is classed ${s.cls || 'nothing'}`;
+	}
+
+	// Three severities, three colours: the check is that they differ, not what
+	// they are. The palette is the stylesheet's business and changes with the theme.
+	const byWord = new Map(severities.map((s) => [s.text, s.colour]));
+	const colours = new Set(byWord.values());
+	if (colours.size !== byWord.size) {
+		return 'two severities are drawn the same colour: ' + [...byWord].map((e) => e.join('=')).join(', ');
+	}
+	return true;
+});
+
+// godi's own checks and a third-party pass report through the same mechanism and
+// read alike. Without the pass, a reader cannot tell whose rule they have broken.
+await test('a notice says which compiler pass found it', async () =>
+	(await panelText()).includes('found by') || 'no notice names the pass that reported it');
+
+// A registration that never became a definition is not on the page anywhere, so
+// the location is the only way back to the line that has to change.
+await test('a notice about code the graph does not hold links to that code', async () => {
+	const links = await ev(`[...document.querySelectorAll('#panel .notice .where a.link')].map((el) => ({
+		text: el.textContent.trim(), href: el.getAttribute('href'),
+	}))`);
+
+	const source = links.find((l) => l.text.includes('wiring.go'));
+	if (!source) return 'the notice carries no link to the source: ' + JSON.stringify(links);
+	if (!source.href.startsWith('test://open?file=')) return 'the link ignores the template: ' + source.href;
+	if (!source.href.includes('rel=cmd/api/wiring.go')) return 'the link lost the path: ' + source.href;
+	return source.href.includes('line=42') || 'the link lost the line: ' + source.href;
 });
 
 await test('and a notice about a node is a way to it', async () => {
 	await ev(`(() => {
-		[...document.querySelectorAll('#panel .notice .link')][0].click();
+		[...document.querySelectorAll('#panel .notice button.link')][0].click();
 		return true;
 	})()`);
 	await settle();

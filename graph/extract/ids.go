@@ -33,12 +33,17 @@ func (x *extractor) assignIDs() {
 			}
 		}
 		x.assignScope(scope, parent+graph.ScopeID("/scope:"+scope.Name()), parent, depth, owners)
-		// Worth saying, because such a scope is drawn without an owner and
-		// nothing in the container explains it. It is not a fault: a compiler
-		// pass is entitled to make one.
+		// Every other scope on the page is drawn under the definition that
+		// declared it. This one is drawn under nothing, and a reader would have no
+		// way to find out why. It is not a fault: a compiler pass is entitled to
+		// make a scope, and so is anyone holding the container.
 		entry := x.scopeEntries[scope]
-		x.record(&entry.Diagnostics, graph.SeverityInfo,
-			fmt.Sprintf("scope %q belongs to no definition", scope.Name()), "")
+		x.record(&entry.Diagnostics, graph.Diagnostic{
+			Severity: graph.SeverityInfo,
+			Message: fmt.Sprintf(
+				"scope %q was made by a call to Scope.NewChild rather than declared by a definition, so nothing owns it",
+				scope.Name()),
+		})
 	}
 }
 

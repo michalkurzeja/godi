@@ -655,6 +655,11 @@ type Diagnostic struct {
 	// Pass names the compiler pass that reported it, where one did. Extraction
 	// and the reader of a file report their own findings and name no pass.
 	Pass string `json:"pass,omitzero"`
+	// Location is where in the source this is about, for a diagnostic whose place
+	// in the graph cannot say. A definition that would not parse is not a node, so
+	// the file and line are all a reader has to go on. Paths are relative to the
+	// graph's SourceRoot, like any other location.
+	Location Location `json:"location,omitzero"`
 }
 
 func hasError(diags []Diagnostic) bool {

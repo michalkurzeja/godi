@@ -2,6 +2,7 @@ package extract
 
 import (
 	"errors"
+	"iter"
 	"path"
 	"slices"
 	"strings"
@@ -143,8 +144,44 @@ func (x *extractor) sortAll() {
 		}
 		return strings.Compare(a.Interface, b.Interface)
 	})
-	// The wiring diagnostics need no sorting. They are read off the nodes, which
-	// are sorted here.
+	// The diagnostics need no sorting. They are read off the elements they belong
+	// to, and those are sorted here.
+}
+
+// locations yields every place in the source the graph points at, so that the
+// common root can be taken out of all of them and put back onto any of them.
+func (x *extractor) locations() iter.Seq[*graph.Location] {
+	return func(yield func(*graph.Location) bool) {
+		for i := range x.out.Diagnostics {
+			if !yield(&x.out.Diagnostics[i].Location) {
+				return
+			}
+		}
+		for _, scope := range x.out.Scopes {
+			for i := range scope.Diagnostics {
+				if !yield(&scope.Diagnostics[i].Location) {
+					return
+				}
+			}
+		}
+		for _, node := range x.out.Nodes {
+			if !yield(&node.Registered) || !yield(&node.Declared) {
+				return
+			}
+			for i := range node.Diagnostics {
+				if !yield(&node.Diagnostics[i].Location) {
+					return
+				}
+			}
+			for _, p := range node.Params {
+				for i := range p.Diagnostics {
+					if !yield(&p.Diagnostics[i].Location) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 // trimSourceRoot takes the directory every path shares out of the paths and
@@ -153,11 +190,9 @@ func (x *extractor) sortAll() {
 // original path.
 func (x *extractor) trimSourceRoot() {
 	var paths []string
-	for _, node := range x.out.Nodes {
-		for _, loc := range []graph.Location{node.Registered, node.Declared} {
-			if loc.File != "" {
-				paths = append(paths, loc.File)
-			}
+	for loc := range x.locations() {
+		if loc.File != "" {
+			paths = append(paths, loc.File)
 		}
 	}
 
@@ -167,9 +202,8 @@ func (x *extractor) trimSourceRoot() {
 	}
 
 	x.out.SourceRoot = root
-	for _, node := range x.out.Nodes {
-		node.Registered.File = strings.TrimPrefix(node.Registered.File, root+"/")
-		node.Declared.File = strings.TrimPrefix(node.Declared.File, root+"/")
+	for loc := range x.locations() {
+		loc.File = strings.TrimPrefix(loc.File, root+"/")
 	}
 }
 

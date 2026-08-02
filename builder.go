@@ -57,7 +57,6 @@ func (b *Builder) CompilerPasses(passes ...*di.CompilerPass) *Builder {
 
 func (b *Builder) Build() (Container, error) {
 	prepErr := b.prepare()
-	b.reportPrepErr(prepErr)
 
 	container, err := b.cb.Build()
 	err = errors.Join(prepErr, err)
@@ -67,23 +66,22 @@ func (b *Builder) Build() (Container, error) {
 	return container, err
 }
 
-// reportPrepErr puts what went wrong before compilation into the container, so
-// that the graph of a failed build shows it. A definition that would not parse
-// never became one, so the container is the only thing left to attach it to.
+// registrationFailed records a definition that never made it into the container,
+// so that the graph of a failed build shows it. There is nothing narrower than
+// the container left to attach it to: the definition does not exist.
 //
-// Each error is reported on its own. They arrive joined, and one line per fault
-// is what a reader wants.
-func (b *Builder) reportPrepErr(err error) {
-	if err == nil {
-		return
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, e := range joined.Unwrap() {
-			b.reportPrepErr(e)
-		}
-		return
-	}
-	b.cb.Report(di.Diagnostic{Severity: di.SeverityError, Site: di.AtContainer(), Message: err.Error(), Err: err})
+// It carries where the registration was written, because a definition that would
+// not parse has no name to be found by and the file and line are all a reader has
+// to go on.
+func (b *Builder) registrationFailed(err error, at di.Location) {
+	b.prepErr = errors.Join(b.prepErr, err)
+	b.cb.Report(di.Diagnostic{
+		Severity: di.SeverityError,
+		Site:     di.AtContainer(),
+		Message:  err.Error(),
+		Err:      err,
+		At:       at,
+	})
 }
 
 // prepare hands everything registered since last time to the container builder:
@@ -100,17 +98,23 @@ func (b *Builder) prepare() error {
 	services := b.services[b.prepared.services:]
 	b.prepared.services = len(b.services)
 
+	// Factories first, so that a definition can refer to one registered later. A
+	// builder whose factory would not parse is dropped rather than built: what
+	// Build would say about it is that its factory did not parse, which is the
+	// fault already reported and not a second one.
+	parsed := make([]*ServiceDefinitionBuilder, 0, len(services))
 	for _, builder := range services {
 		builder.applyDefaults(b.defaults)
 		if err := builder.ParseFactory(); err != nil {
-			b.prepErr = errors.Join(b.prepErr, err)
+			b.registrationFailed(err, builder.def.RegisteredAt())
 			continue
 		}
+		parsed = append(parsed, builder)
 	}
 
-	for _, builder := range services {
+	for _, builder := range parsed {
 		if err := builder.Build(b.cb.RootScope()); err != nil {
-			b.prepErr = errors.Join(b.prepErr, err)
+			b.registrationFailed(err, builder.def.RegisteredAt())
 			continue
 		}
 	}
@@ -118,7 +122,7 @@ func (b *Builder) prepare() error {
 	for _, builder := range b.functions[b.prepared.functions:] {
 		builder.applyDefaults(b.defaults)
 		if err := builder.Build(b.cb.RootScope()); err != nil {
-			b.prepErr = errors.Join(b.prepErr, err)
+			b.registrationFailed(err, builder.def.RegisteredAt())
 			continue
 		}
 	}
@@ -126,7 +130,7 @@ func (b *Builder) prepare() error {
 
 	for _, builder := range b.bindings[b.prepared.bindings:] {
 		if err := builder.Build(b.cb.RootScope()); err != nil {
-			b.prepErr = errors.Join(b.prepErr, err)
+			b.registrationFailed(err, di.Location{})
 			continue
 		}
 	}
