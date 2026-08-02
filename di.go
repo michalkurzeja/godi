@@ -23,6 +23,11 @@ type Container interface {
 	ExecuteFunctionsByType(typ reflect.Type) ([][]any, error)
 	GetFunctionsIDsByLabel(label Label) []ID
 	ExecuteFunctionsByLabel(label Label) ([][]any, error)
+
+	// Deprecated: use the graph package with the text encoder:
+	//
+	//	g, err := di.Graph(c)
+	//	err = g.Encode(w, text.New())
 	Print(w io.Writer)
 }
 
@@ -91,12 +96,12 @@ func SvcByLabel[T any](c Container, label Label) (T, error) {
 
 // SvcsByLabel returns all services from the container by their label.
 func SvcsByLabel[T any](c Container, label Label) ([]T, error) {
-	ids, err := c.GetServicesByLabel(label)
+	svcs, err := c.GetServicesByLabel(label)
 	if err != nil {
 		return nil, err
 	}
 
-	return castSliceTo[T](ids)
+	return castSliceTo[T](svcs)
 }
 
 // ExecByRef executes a function by its reference.

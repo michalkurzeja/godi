@@ -1,7 +1,9 @@
 package di
 
 import (
+	"cmp"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -10,23 +12,34 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// Defaults for Definition properties. Change them
-// to change the default configuration of services.
-// These can be overridden per Definition.
+// Defaults for Definition properties, for a definition built without a Config
+// to take them from. These are what NewDefaults returns.
 var (
 	defaultLazy      = true
 	defaultShared    = true
 	defaultAutowired = true
 )
 
+// SetDefaultLazy sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container. A package-level
+// default means two containers in one process cannot disagree, a library that
+// sets one changes its host's containers, and a test that flips one leaks into
+// the next.
 func SetDefaultLazy(b bool) {
 	defaultLazy = b
 }
 
+// SetDefaultShared sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container.
 func SetDefaultShared(b bool) {
 	defaultShared = b
 }
 
+// SetDefaultAutowired sets the default for every container in the process.
+//
+// Deprecated: use Config.Defaults, which is per container.
 func SetDefaultAutowired(b bool) {
 	defaultAutowired = b
 }
@@ -48,68 +61,32 @@ func (l Label) String() string {
 }
 
 type ServiceDefinition struct {
-	id     ID
-	labels []Label
+	definition[*ServiceDefinition]
 
 	factory     *Factory
 	methodCalls map[string]*Method
 
-	scope      *Scope
-	childScope *Scope
+	// val is the value this definition was handed, rather than one it builds.
+	// fromVal says whether there is one. Checking val is not enough: a nil
+	// interface leaves it invalid.
+	val     reflect.Value
+	fromVal bool
 
-	// Properties
-	lazy      bool
-	shared    bool
-	autowired bool
+	shared bool
 }
 
 func NewServiceDefinition(factory *Factory) *ServiceDefinition {
-	return &ServiceDefinition{
-		id:      NewID(),
-		factory: factory,
-
+	d := &ServiceDefinition{
+		factory:     factory,
 		methodCalls: make(map[string]*Method),
-
-		lazy:      defaultLazy,
-		shared:    defaultShared,
-		autowired: defaultAutowired,
+		shared:      defaultShared,
 	}
-}
-
-func (d *ServiceDefinition) ID() ID {
-	return d.id
+	d.init(d, captureSource())
+	return d
 }
 
 func (d *ServiceDefinition) Type() reflect.Type {
 	return d.factory.Creates()
-}
-
-func (d *ServiceDefinition) Scope() *Scope {
-	return d.scope
-}
-
-func (d *ServiceDefinition) SetScope(scope *Scope) *ServiceDefinition {
-	d.scope = scope
-	return d
-}
-
-func (d *ServiceDefinition) ChildScope() *Scope {
-	return d.childScope
-}
-
-func (d *ServiceDefinition) SetChildScope(scope *Scope) *ServiceDefinition {
-	d.childScope = scope
-	return d
-}
-
-// EffectiveScope returns the scope in which all the dependencies should be resolved.
-// For most services this is the scope where that service is defined.
-// But if a service has a child-scope, then the dependencies should be resolved with that scope included.
-func (d *ServiceDefinition) EffectiveScope() *Scope {
-	if d.childScope != nil {
-		return d.childScope
-	}
-	return d.scope
 }
 
 func (d *ServiceDefinition) Factory() *Factory {
@@ -122,9 +99,11 @@ func (d *ServiceDefinition) SetFactory(factory *Factory) *ServiceDefinition {
 }
 
 func (d *ServiceDefinition) MethodCalls() []*Method {
-	return util.SortedAsc(lo.Values(d.methodCalls), func(m *Method) string {
-		return m.Name()
+	calls := lo.Values(d.methodCalls)
+	slices.SortFunc(calls, func(a, b *Method) int {
+		return cmp.Compare(a.Name(), b.Name())
 	})
+	return calls
 }
 
 func (d *ServiceDefinition) SetMethodCalls(methodCalls ...*Method) *ServiceDefinition {
@@ -144,34 +123,6 @@ func (d *ServiceDefinition) RemoveMethodCalls(names ...string) *ServiceDefinitio
 	return d
 }
 
-func (d *ServiceDefinition) Labels() []Label {
-	return d.labels
-}
-
-func (d *ServiceDefinition) SetLabels(labels ...Label) *ServiceDefinition {
-	d.labels = labels
-	return d
-}
-
-func (d *ServiceDefinition) AddLabels(labels ...Label) *ServiceDefinition {
-	d.labels = append(d.labels, labels...)
-	return d
-}
-
-func (d *ServiceDefinition) RemoveLabels(labels ...Label) *ServiceDefinition {
-	d.labels = lo.Without(d.labels, labels...)
-	return d
-}
-
-func (d *ServiceDefinition) IsLazy() bool {
-	return d.lazy
-}
-
-func (d *ServiceDefinition) SetLazy(lazy bool) *ServiceDefinition {
-	d.lazy = lazy
-	return d
-}
-
 func (d *ServiceDefinition) IsShared() bool {
 	return d.shared
 }
@@ -181,17 +132,28 @@ func (d *ServiceDefinition) SetShared(shared bool) *ServiceDefinition {
 	return d
 }
 
-func (d *ServiceDefinition) IsAutowired() bool {
-	return d.autowired
+// SetVal records that this definition serves a value it was handed, rather than
+// one it builds. The factory is then only a wrapper godi wrote to hold the
+// value.
+func (d *ServiceDefinition) SetVal(val reflect.Value) *ServiceDefinition {
+	d.val, d.fromVal = val, true
+	return d
 }
 
-func (d *ServiceDefinition) SetAutowired(autowired bool) *ServiceDefinition {
-	d.autowired = autowired
-	return d
+// Val is the value this definition was built from, and whether it was built
+// from one at all. The value may be invalid even so: nil is a value.
+func (d *ServiceDefinition) Val() (reflect.Value, bool) {
+	return d.val, d.fromVal
 }
 
 func (d *ServiceDefinition) FactoryName() string {
 	return d.factory.Name()
+}
+
+// DeclaredAt is where the factory function is written, as against RegisteredAt,
+// which is where this definition was created.
+func (d *ServiceDefinition) DeclaredAt() Location {
+	return declaredAt(d.factory.value())
 }
 
 func (d *ServiceDefinition) String() string {
@@ -201,76 +163,24 @@ func (d *ServiceDefinition) String() string {
 	} else {
 		bld.WriteString("service")
 	}
-	if len(d.labels) > 0 {
-		bld.WriteString(" (")
-		for i, label := range d.labels {
-			if i > 0 {
-				bld.WriteString(", ")
-			}
-			bld.WriteString(label.String())
-		}
-		bld.WriteString(")")
-	}
+	bld.WriteString(d.labelSuffix())
 	return bld.String()
 }
 
 type FunctionDefinition struct {
-	id       ID
+	definition[*FunctionDefinition]
+
 	function *Func
-	labels   []Label
-
-	scope      *Scope
-	childScope *Scope
-
-	// Properties
-	lazy      bool
-	autowired bool
 }
 
 func NewFunctionDefinition(function *Func) *FunctionDefinition {
-	return &FunctionDefinition{
-		id:       NewID(),
-		function: function,
-
-		lazy:      defaultLazy,
-		autowired: defaultAutowired,
-	}
-}
-
-func (d *FunctionDefinition) ID() ID {
-	return d.id
+	d := &FunctionDefinition{function: function}
+	d.init(d, captureSource())
+	return d
 }
 
 func (d *FunctionDefinition) Type() reflect.Type {
 	return d.function.Type()
-}
-
-func (d *FunctionDefinition) Scope() *Scope {
-	return d.scope
-}
-
-func (d *FunctionDefinition) SetScope(scope *Scope) *FunctionDefinition {
-	d.scope = scope
-	return d
-}
-
-func (d *FunctionDefinition) ChildScope() *Scope {
-	return d.childScope
-}
-
-func (d *FunctionDefinition) SetChildScope(scope *Scope) *FunctionDefinition {
-	d.childScope = scope
-	return d
-}
-
-// EffectiveScope returns the scope in which all the dependencies should be resolved.
-// For most services this is the scope where that service is defined.
-// But if a service has a child-scope, then the dependencies should be resolved with that scope includes.
-func (d *FunctionDefinition) EffectiveScope() *Scope {
-	if d.childScope != nil {
-		return d.childScope
-	}
-	return d.scope
 }
 
 func (d *FunctionDefinition) Func() *Func {
@@ -282,41 +192,10 @@ func (d *FunctionDefinition) SetFunc(fn *Func) *FunctionDefinition {
 	return d
 }
 
-func (d *FunctionDefinition) Labels() []Label {
-	return d.labels
-}
-
-func (d *FunctionDefinition) SetLabels(labels ...Label) *FunctionDefinition {
-	d.labels = labels
-	return d
-}
-
-func (d *FunctionDefinition) AddLabels(labels ...Label) *FunctionDefinition {
-	d.labels = append(d.labels, labels...)
-	return d
-}
-
-func (d *FunctionDefinition) RemoveLabels(labels ...Label) *FunctionDefinition {
-	d.labels = lo.Without(d.labels, labels...)
-	return d
-}
-
-func (d *FunctionDefinition) IsLazy() bool {
-	return d.lazy
-}
-
-func (d *FunctionDefinition) SetLazy(lazy bool) *FunctionDefinition {
-	d.lazy = lazy
-	return d
-}
-
-func (d *FunctionDefinition) IsAutowired() bool {
-	return d.autowired
-}
-
-func (d *FunctionDefinition) SetAutowired(autowired bool) *FunctionDefinition {
-	d.autowired = autowired
-	return d
+// DeclaredAt is where the function itself is written, as against RegisteredAt,
+// which is where this definition was created.
+func (d *FunctionDefinition) DeclaredAt() Location {
+	return declaredAt(d.function.value())
 }
 
 func (d *FunctionDefinition) String() string {
@@ -326,15 +205,6 @@ func (d *FunctionDefinition) String() string {
 	} else {
 		bld.WriteString("function")
 	}
-	if len(d.labels) > 0 {
-		bld.WriteString(" (")
-		for i, label := range d.labels {
-			if i > 0 {
-				bld.WriteString(", ")
-			}
-			bld.WriteString(label.String())
-		}
-		bld.WriteString(")")
-	}
+	bld.WriteString(d.labelSuffix())
 	return bld.String()
 }

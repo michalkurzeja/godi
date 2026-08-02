@@ -1,14 +1,31 @@
 log-level: "warn"
+template: "testify"
+
 all: true
-dir: "{{.InterfaceDir}}/mocks"
-outpkg: "mocks"
-filename: "{{.InterfaceName | snakecase}}.go"
-mockname: "{{.InterfaceName}}"
 recursive: true
+
+# One mocks package per package that declares an interface, and one file in it.
+# A package here never has enough interfaces to be worth splitting, and a single
+# file makes the generated tree easy to delete and regenerate wholesale.
+dir: "{{.InterfaceDir}}/mocks"
+pkgname: "mocks"
+filename: "mocks.go"
+# Keep the interface's own name: the package it lands in already says it is a
+# mock.
+structname: "{{.InterfaceName}}"
+
+# The examples are wiring to read, not seams to mock.
+exclude-subpkg-regex:
+  - "examples"
+
 packages:
   github.com/michalkurzeja/godi/v2:
-
-# Deprecations compliance
-resolve-type-alias: false
-disable-version-string: true
-issue-845-fix: true
+  # Arg is sealed - its methods are unexported, so nothing outside the package
+  # can implement it and a generated mock does not compile. Naming the other two
+  # is how it is left out, since `all` would take it back.
+  github.com/michalkurzeja/godi/v2/di:
+    config:
+      all: false
+    interfaces:
+      CompilerOp:
+      Definition:

@@ -1,88 +1,122 @@
+version: "2"
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 linters:
-  disable-all: true
+  default: none
   enable:
+    - asciicheck
     - bodyclose
+    - copyloopvar
     - dogsled
     - errcheck
+    - errorlint
+    - exhaustive
     - goconst
-    - goimports
+    - gocyclo
     - goprintffuncname
     - gosec
-    - gosimple
     - govet
     - ineffassign
     - misspell
     - nakedret
-    - copyloopvar
+    - revive
     - staticcheck
-    - stylecheck
-    - typecheck
     - unconvert
     - unused
     - whitespace
-    - gocyclo
-    - exhaustive
-    - typecheck
-    - asciicheck
-    - errorlint
-    - revive
-
-linters-settings:
-  revive:
-    ignore-generated-header: false
-    severity: warning
+  settings:
+    # A switch with a default has already said what it does about everything it
+    # does not name. Without this, every switch on reflect.Kind is asked to
+    # enumerate all twenty-six.
+    exhaustive:
+      default-signifies-exhaustive: true
+    # A repeated literal is worth a name when the name says more than the value.
+    # These are the opposite: DOT attribute values, the words the CLI flags
+    # actually take, and an SPDX licence id. The string is the value, so a
+    # constant only puts a second name in front of it.
+    goconst:
+      # The exclusion rule below cannot cover goconst: it counts occurrences
+      # across the whole package and reports at the first, so a literal written
+      # once in the code and fifteen times in its table-driven test is reported
+      # against the code.
+      ignore-tests: true
+      ignore-string-values:
+        - '^(solid|dashed|dotted|normal|odiamond)$' # graphviz attribute values
+        - '^(auto|light|dark|on|off)$' # the words --theme and --ports take
+        - '^[0-9]+\.[0-9]+$' # pen widths
+        - ^MIT$
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+          exclude:
+            - TEST
+        - name: var-declaration
+        - name: var-naming
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: empty-block
-      - name: error-naming
-      - name: error-return
-      - name: error-strings
-      - name: errorf
-      - name: if-return
-      - name: increment-decrement
-      - name: indent-error-flow
-      - name: range
-      - name: receiver-naming
-      - name: redefines-builtin-id
-      - name: superfluous-else
-      - name: time-naming
-      - name: unexported-return
-      - name: unreachable-code
-      - name: unused-parameter
-        exclude: ["TEST"]
-      - name: var-declaration
-      - name: var-naming
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-      - shadow
-
-issues:
-  exclude-rules:
-    - source: "^//\\s*go:generate\\s"
-      linters: [ lll ]
-    - source: "(noinspection|TODO)"
-      linters: [ godot ]
-    - source: "//noinspection"
-      linters: [ gocritic ]
-    - path: "_test\\.go"
-      linters:
-        - bodyclose
-        - dupl
-        - funlen
-        - goconst
-        - gosec
-        - noctx
-        - wrapcheck
-
-output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  sort-results: true
-
+      - linters:
+          - lll
+        source: ^//\s*go:generate\s
+      - linters:
+          - godot
+        source: (noinspection|TODO)
+      - linters:
+          - gocritic
+        source: //noinspection
+      - linters:
+          - bodyclose
+          - dupl
+          - funlen
+          - goconst
+          - gosec
+          - noctx
+          - wrapcheck
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

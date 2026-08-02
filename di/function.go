@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/samber/lo"
-
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
@@ -47,12 +45,24 @@ func NewFactory(fn any, args ...Arg) (*Factory, error) {
 	return &Factory{fn: f, returnedType: fnType.Out(0), returnsErr: returnsErr}, nil
 }
 
+// Execute builds the service. As during a build, the dependencies it is handed
+// have not had their method calls run yet.
 func (f *Factory) Execute(scope *Scope) (any, error) {
-	out, err := f.fn.Execute(scope)
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
+		return f.execute(ic, scope, Site{})
+	})
+}
+
+// execute builds the service. owner is the definition this factory belongs to,
+// where the caller knows one, so that a failure can name the argument that caused
+// it rather than the whole definition.
+func (f *Factory) execute(ic *instantiationContext, scope *Scope, owner Site) (any, error) {
+	args, err := f.fn.resolveArgs(ic, scope, nil, owner)
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to execute factory")
 	}
 
+	out := f.fn.call(args)
 	if f.returnsErr && !out[1].IsNil() {
 		return out[0].Interface(), out[1].Interface().(error)
 	}
@@ -69,6 +79,16 @@ func (f *Factory) AddArgs(args ...Arg) error {
 
 func (f *Factory) Creates() reflect.Type {
 	return f.returnedType
+}
+
+// Type is the factory function's own type, as against what it creates.
+func (f *Factory) Type() reflect.Type {
+	return f.fn.Type()
+}
+
+// value is the factory function itself, for reading where it was declared.
+func (f *Factory) value() reflect.Value {
+	return f.fn.value()
 }
 
 func (f *Factory) Name() string {
@@ -110,12 +130,27 @@ func NewMethod(fn any, receiver Arg, args ...Arg) (*Method, error) {
 	return &Method{fn: f, returnsErr: returnsErr}, nil
 }
 
+// Execute resolves the receiver along with the rest of the arguments and calls
+// the method on it.
 func (m *Method) Execute(scope *Scope) error {
-	out, err := m.fn.Execute(scope)
+	_, err := withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
+		return nil, m.execute(ic, scope, nil, Site{})
+	})
+	return err
+}
+
+// execute calls the method. A non-nil recv is the receiver to call it on; nil
+// means resolve the receiver like any other argument.
+//
+// A queued call passes the instance godi built. A service that is not shared is
+// never published, so resolving its receiver again would build a second one.
+func (m *Method) execute(ic *instantiationContext, scope *Scope, recv any, owner Site) error {
+	args, err := m.fn.resolveArgs(ic, scope, recv, owner)
 	if err != nil {
 		return errorsx.Wrap(err, "failed to execute method")
 	}
 
+	out := m.fn.call(args)
 	if m.returnsErr && !out[0].IsNil() {
 		return out[0].Interface().(error)
 	}
@@ -168,7 +203,28 @@ func NewFunc(fn reflect.Value, args ...Arg) (*Func, error) {
 	return f, nil
 }
 
+// Execute resolves the arguments and calls the function. The services it is
+// handed are fully configured by the time it runs.
 func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) ([]reflect.Value, error) {
+		args, err := f.resolveArgs(ic, scope, nil, Site{})
+		if err != nil {
+			return nil, err
+		}
+		if err := ic.commit(); err != nil {
+			return nil, err
+		}
+		return f.call(args), nil
+	})
+}
+
+// resolveArgs produces the values to pass. A non-nil recv fills argument 0
+// instead of being resolved.
+//
+// owner is the definition this call belongs to, for pinning a failure to the
+// argument that caused it. It is the zero Site when nobody knows one, which is
+// every entry from outside a build.
+func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any, owner Site) ([]reflect.Value, error) {
 	args, err := f.args.ValidateAndCollect()
 	if err != nil {
 		// This should never happen under normal circumstances - the built-in compiler passes verify args.
@@ -177,15 +233,37 @@ func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
 
 	resolvedArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		val, err := ResolveArg(scope, arg)
-		if err != nil {
-			return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
+		val := recv
+		if i > 0 || recv == nil {
+			val, err = resolveArg(ic, scope, arg)
+			if err != nil {
+				return nil, f.argFailed(owner, i, err)
+			}
 		}
-		resolvedArgs[i] = reflect.ValueOf(val)
+
+		// The parameter type says what a nil means. Nothing else here knows: a
+		// resolved nil is untyped, and reflect will not pass it as it stands.
+		resolvedArgs[i], err = valueOf(val, f.fn.Type().In(i))
+		if err != nil {
+			return nil, f.argFailed(owner, i, err)
+		}
 	}
 
-	call := lo.Ternary(f.args.IsVariadic(), f.fn.CallSlice, f.fn.Call)
-	return call(resolvedArgs), nil
+	return resolvedArgs, nil
+}
+
+// argFailed says which argument would not resolve, in the words it has always
+// been said in and with the slot alongside.
+func (f *Func) argFailed(owner Site, i int, cause error) error {
+	return &argError{
+		site:  owner.withSlot(f.args.Slots()[i]),
+		cause: cause,
+		err:   errorsx.Wrapf(cause, "failed to resolve argument %d", i),
+	}
+}
+
+func (f *Func) call(args []reflect.Value) []reflect.Value {
+	return callUserCode(f.fn, args, f.args.IsVariadic())
 }
 
 func (f *Func) Args() *ArgList {
@@ -221,6 +299,11 @@ func (f *Func) AddArgs(args ...Arg) error {
 
 func (f *Func) Type() reflect.Type {
 	return f.fn.Type()
+}
+
+// value is the function itself, for reading where it was declared.
+func (f *Func) value() reflect.Value {
+	return f.fn
 }
 
 func (f *Func) Name() string {

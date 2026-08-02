@@ -1,0 +1,687 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+/* An SVG is a foreign element, so the hidden attribute does not reach it and
+   the icon sprite would reserve its default 300x150 box above everything. */
+svg[hidden] { display: none; }
+
+:root {
+	--bg: #ffffff;
+	--chrome: #f6f7f9;
+	--panel: #fbfbfc;
+	--border: #d8dce2;
+	--text: #1f2328;
+	--muted: #57606a;
+	--accent: #0969da;
+	--warn: #cf222e;
+	--notice: #9a6700;
+	--manual: #1f2328;
+	--auto: #0f766e;
+	--pass: #8250df;
+	--node: #ffffff;
+	--node-root: #c8dbfa;
+	--node-border: #b6bdc6;
+	--scope: #ebebeb;
+	--scope-border: #c9ced6;
+	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	--sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+/* A scope is an opaque colour rather than a wash over the canvas, because
+   Cytoscape draws the boxes and takes neither form of one. An eight-digit hex it
+   drops outright, without saying so, and the parent then falls back to the plain
+   node rule and comes out the same colour as the nodes inside it. An rgba() it
+   reads as the colour and discards the alpha, which is worse: opaque white. So
+   the value here is what the wash used to composite to.
+
+   The dark values are listed twice on purpose: plain CSS has no way to share
+   one declaration block between a class and a media query. */
+html.theme-dark {
+	--bg: #0d1117;
+	--chrome: #161b22;
+	--panel: #12171e;
+	--border: #30363d;
+	--text: #e6edf3;
+	--muted: #9198a1;
+	--accent: #6cb6ff;
+	--warn: #ff7b72;
+	--notice: #d29922;
+	--manual: #e6edf3;
+	--auto: #2dd4bf;
+	--pass: #c297ff;
+	--node: #273140;
+	--node-root: #234a7d;
+	--node-border: #454d57;
+	--scope: #161a20;
+	--scope-border: #30363d;
+}
+
+html { color-scheme: light; }
+html.theme-dark { color-scheme: dark; }
+html.theme-auto { color-scheme: light dark; }
+
+@media (prefers-color-scheme: dark) {
+	html.theme-auto {
+		--bg: #0d1117;
+		--chrome: #161b22;
+		--panel: #12171e;
+		--border: #30363d;
+		--text: #e6edf3;
+		--muted: #9198a1;
+		--accent: #6cb6ff;
+		--warn: #ff7b72;
+		--notice: #d29922;
+		--manual: #e6edf3;
+		--auto: #2dd4bf;
+		--pass: #c297ff;
+		--node: #273140;
+		--node-root: #234a7d;
+		--node-border: #454d57;
+		--scope: #161a20;
+		--scope-border: #30363d;
+	}
+}
+
+body {
+	margin: 0;
+	font: 13px/1.45 var(--sans);
+	color: var(--text);
+	background: var(--bg);
+}
+
+#app {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	/* The panel's width lives here because three things follow it: the panel,
+	   the tab pinned to its edge, and the grip that resizes it. */
+	--panel-w: 23rem;
+}
+
+/* ----------------------------------------------------------- top bar --- */
+
+#bar, #filters {
+	display: flex;
+	align-items: center;
+	gap: .6rem;
+	padding: .4rem .7rem;
+	background: var(--chrome);
+	border-bottom: 1px solid var(--border);
+	flex-wrap: wrap;
+}
+
+#filters { padding-top: .3rem; padding-bottom: .3rem; font-size: 12px; }
+
+/* A strip rather than a badge: what it says applies to everything below it,
+   and a graph that stops short without saying so reads as the whole story.
+   Two of them, because a half-wired graph and a graph with faults in it are
+   different facts and either can be true on its own. They stack in that order:
+   what the graph is, then what is wrong with it. */
+.strip {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	padding: .3rem .7rem;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 8%, var(--chrome));
+	border-bottom: 1px solid var(--border);
+}
+.strip[hidden] { display: none; }
+.strip .i { flex: none; }
+.strip-close { padding: .1rem; border: 0; background: none; color: inherit; line-height: 0; }
+.strip-close:hover { color: var(--text); }
+
+/* Amber rather than red: a notice is something to read, not the reason the
+   picture below it is incomplete. */
+#diagnostics {
+	color: var(--notice);
+	background: color-mix(in srgb, var(--notice) 10%, var(--chrome));
+}
+
+#brand { font-weight: 600; white-space: nowrap; }
+
+.grow { flex: 1; }
+
+#search {
+	width: 17rem;
+	max-width: 36vw;
+	padding: .25rem .5rem;
+	font: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 5px;
+}
+#search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+#found { color: var(--muted); font-size: 12px; }
+
+/* One clear button, ours, so it can be styled and reached from a test. */
+#search::-webkit-search-cancel-button { display: none; }
+#search-clear {
+	margin-left: -1.5rem;
+	padding: .1rem;
+	border: 0;
+	background: none;
+	color: var(--muted);
+	line-height: 0;
+}
+#search-clear:hover { color: var(--accent); }
+#search-clear .i { width: 11px; height: 11px; }
+
+/* What search looks at, offered where it is decided. The buttons are inside the
+   field, so clicking one keeps the focus that opened the panel. */
+#find { position: relative; }
+#search-scopes {
+	display: none;
+	position: absolute;
+	top: calc(100% + 6px);
+	left: 0;
+	z-index: 5;
+	align-items: center;
+	gap: .5rem;
+	padding: .4rem .5rem;
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-radius: 5px;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 14%);
+	white-space: nowrap;
+}
+#find:focus-within #search-scopes { display: flex; }
+
+.ctl { display: flex; align-items: center; gap: .35rem; color: var(--muted); white-space: nowrap; }
+.ctl output { min-width: 1ch; color: var(--text); }
+
+/* Drawn by hand rather than left native, because the thumb is the part that
+   should light up on hover and a native one cannot be reached. */
+.ctl input[type=range] {
+	appearance: none;
+	width: 5rem;
+	height: 12px;
+	background: transparent;
+	cursor: pointer;
+}
+.ctl input[type=range]::-webkit-slider-runnable-track {
+	height: 3px;
+	border-radius: 2px;
+	background: var(--border);
+}
+.ctl input[type=range]::-webkit-slider-thumb {
+	appearance: none;
+	width: 11px;
+	height: 11px;
+	margin-top: -4px;
+	border-radius: 50%;
+	background: var(--accent);
+	transition: box-shadow .1s ease-out;
+}
+.ctl input[type=range]:hover::-webkit-slider-thumb,
+.ctl input[type=range]:focus-visible::-webkit-slider-thumb {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.ctl input[type=range]::-moz-range-track {
+	height: 3px;
+	border-radius: 2px;
+	background: var(--border);
+}
+.ctl input[type=range]::-moz-range-thumb {
+	width: 11px;
+	height: 11px;
+	border: 0;
+	border-radius: 50%;
+	background: var(--accent);
+}
+.ctl input[type=range]:hover::-moz-range-thumb,
+.ctl input[type=range]:focus-visible::-moz-range-thumb {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+button, select {
+	font: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	padding: .2rem .55rem;
+	cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--accent); }
+
+/* One click to switch, rather than a menu to open: this one gets used a lot. */
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 5px 5px 0; }
+/* The buttons overlap by a pixel to share a border, so a highlighted one has to
+   come forward or its neighbour paints over the edge. */
+.seg button:hover,
+.seg button:focus-visible { z-index: 2; }
+/* Off: sunk into the bar. Declared before the pressed rule, which has the same
+   weight and would otherwise lose to it on source order alone. */
+.seg.toggles button { background: var(--chrome); color: var(--muted); padding: .12rem .4rem; }
+.seg.toggles button[aria-pressed="false"] .swatch { opacity: .4; }
+
+/* On: one highlight for the whole toolbar, whether the group is a choice of one
+   or a row of toggles. */
+.seg button[aria-pressed="true"] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--bg);
+	z-index: 1;
+}
+.seg button[aria-pressed="true"] .i { color: inherit; }
+/* The swatch would vanish into the accent, so it is drawn in the text colour
+   and keeps only its line style. The legend carries the colours. */
+.seg button[aria-pressed="true"] .swatch { border-color: currentColor; }
+
+
+
+.i {
+	width: 13px;
+	height: 13px;
+	flex: none;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.5;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+button, select { display: inline-flex; align-items: center; gap: .35rem; }
+button .i { color: var(--muted); }
+button:hover .i { color: var(--accent); }
+
+#find { display: flex; align-items: center; gap: .35rem; color: var(--muted); }
+
+.group { display: flex; align-items: center; gap: .55rem; }
+.group + .group { border-left: 1px solid var(--border); padding-left: .7rem; }
+.glabel { color: var(--muted); }
+
+.swatch { width: .8rem; height: 0; border-top: 2px solid var(--muted); display: inline-block; }
+.swatch.manual { border-color: var(--manual); }
+.swatch.auto { border-top-style: dashed; border-color: var(--auto); }
+.swatch.pass { border-top-style: dashed; border-top-width: 3px; border-color: var(--pass); }
+
+/* ------------------------------------------------------------ canvas --- */
+
+main { flex: 1; display: flex; min-height: 0; position: relative; }
+
+#canvas { flex: 1; min-width: 0; position: relative; background: var(--bg); }
+#cy { position: absolute; inset: 0; cursor: default; }
+
+/* Holding the modifier arms panning, so the cursor says so before anything is
+   dragged. */
+#cy.pan-armed { cursor: grab; }
+#cy.pan-armed:active, #cy.panning { cursor: grabbing; }
+
+#busy {
+	position: absolute;
+	inset: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	background: color-mix(in srgb, var(--bg) 75%, transparent);
+	color: var(--muted);
+	z-index: 2;
+}
+#canvas.busy #busy { display: flex; }
+
+/* ------------------------------------------------------------ legend --- */
+
+/* Bottom left, out of the way of the graph, with a tab that reads bottom to
+   top the way an edge tab should. */
+/* The tab rides on the legend's edge, so it travels with it rather than
+   sitting at the window edge while the panel opens beside it. */
+#legend-dock {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	z-index: 3;
+	display: flex;
+	align-items: flex-end;
+}
+
+#legend-tab {
+	flex: none;
+	margin-bottom: 10px;
+	/* Overlaps the legend's edge, so the seam between them is one line and not
+	   two. The tab is shorter than the panel, so that edge has to stay drawn. */
+	margin-left: -1px;
+	width: 18px;
+	padding: .5rem 0;
+	border: 1px solid var(--muted);
+	border-left: 0;
+	border-radius: 0 5px 5px 0;
+	background: var(--chrome);
+	color: var(--text);
+	box-shadow: 1px 1px 3px rgb(0 0 0 / 12%);
+	font-size: 10.5px;
+	letter-spacing: .04em;
+	writing-mode: vertical-rl;
+}
+#legend-tab:hover { background: var(--panel); color: var(--accent); }
+
+#legend {
+	display: none;
+	gap: 1.1rem;
+	padding: .55rem .8rem .6rem;
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-left: 0;
+	/* It rests on the bottom bar, so that bar's top border is its own. */
+	border-bottom: 0;
+	box-shadow: 1px -1px 3px rgb(0 0 0 / 12%);
+	font-size: 11px;
+}
+#app.legend-open #legend { display: flex; }
+/* With the legend away there is no edge to overlap, and the pull would take the
+   tab a pixel off the window. */
+#app:not(.legend-open) #legend-tab { margin-left: 0; }
+
+.legend-col { display: flex; flex-direction: column; gap: .5rem; }
+.legend-group { display: flex; flex-direction: column; gap: .18rem; }
+.legend-head { font-weight: 600; margin-bottom: .12rem; white-space: nowrap; }
+.legend-head .hint { font-weight: 400; color: var(--muted); margin-left: .3rem; }
+.legend-row { display: flex; align-items: center; gap: .45rem; white-space: nowrap; }
+
+.sample { width: 46px; height: 12px; flex: none; color: var(--muted); }
+.sample .line { fill: none; stroke: currentColor; }
+.sample .head.filled { fill: currentColor; stroke: none; }
+.sample .head.hollow { fill: var(--chrome); stroke: currentColor; stroke-width: 1.3; }
+/* Behind the line and translucent, the same as the canvas draws a faulty edge. */
+.sample .glow { fill: none; stroke: var(--warn); opacity: .45; stroke-linecap: round; }
+.sample.manual { color: var(--manual); }
+.sample.auto { color: var(--auto); }
+.sample.pass { color: var(--pass); }
+.sample.warn { color: var(--warn); }
+
+/* ------------------------------------------------------------- panel --- */
+
+/* A short handle on the panel's edge, so the panel can be sent away for more
+   room and fetched back without hunting for a control. It floats rather than
+   taking a column of its own, so hiding the panel gives the canvas all of it. */
+#panel-tab {
+	position: absolute;
+	top: 10px;
+	/* A pixel over the panel's edge, so the border does not run behind it. */
+	right: calc(var(--panel-w) - 1px);
+	z-index: 3;
+	width: 16px;
+	height: 42px;
+	padding: 0;
+	border: 1px solid var(--muted);
+	border-right: 0;
+	border-radius: 5px 0 0 5px;
+	background: var(--chrome);
+	color: var(--text);
+	box-shadow: -1px 1px 3px rgb(0 0 0 / 12%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+/* The arrow points the way the panel will go: out to the right to hide, back
+   to the left to return. */
+#panel-tab .i { width: 10px; height: 10px; }
+#panel-tab:hover { background: var(--panel); color: var(--accent); }
+#app.panel-hidden #panel { display: none; }
+#app.panel-hidden #panel-tab { right: 0; }
+#app.panel-hidden #panel-tab .i { transform: rotate(180deg); }
+
+/* Something changed behind the tab. Says so without taking the space back:
+   an accidental click must not cost the reader their canvas. */
+#panel-tab.flash { animation: tab-flash 1s ease-out; }
+
+@keyframes tab-flash {
+	0%, 100% { background: var(--chrome); color: var(--muted); }
+	15%, 55% { background: var(--accent); color: var(--bg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#panel-tab.flash { animation-duration: 1ms; }
+}
+
+/* A grab strip over the panel's edge. It sits on top of the border rather than
+   taking width of its own, so the panel is exactly as wide as it says it is. */
+#panel-grip {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: calc(var(--panel-w) - 3px);
+	width: 7px;
+	z-index: 2;
+	cursor: col-resize;
+	background: transparent;
+	transition: background .1s ease-out;
+}
+#panel-grip:hover, #panel-grip:focus-visible, #panel-grip.dragging {
+	background: color-mix(in srgb, var(--accent) 45%, transparent);
+	outline: none;
+}
+#app.panel-hidden #panel-grip { display: none; }
+
+/* While a drag is on, the pointer is often over the canvas rather than the
+   grip, and Cytoscape would read the movement as its own. */
+#app.resizing #cy { pointer-events: none; }
+#app.resizing { cursor: col-resize; user-select: none; }
+
+#panel {
+	width: var(--panel-w);
+	flex: none;
+	overflow: auto;
+	padding: .8rem .9rem 2rem;
+	background: var(--panel);
+	/* The same edge the tab is drawn with, so the two read as one piece. */
+	border-left: 1px solid var(--muted);
+}
+
+.copy {
+	display: inline-flex;
+	align-items: center;
+	gap: .3rem;
+	margin-top: .45rem;
+	padding: .15rem .45rem;
+	font-size: 11px;
+	color: var(--muted);
+	background: none;
+}
+.copy:hover { border-color: var(--accent); color: var(--accent); }
+.copy .i { width: 12px; height: 12px; }
+/* Said rather than animated: the point is to know whether it worked. */
+.copy.done { color: var(--auto); border-color: var(--auto); }
+
+/* ---------------------------------------------------------- go to node --- */
+
+#goto {
+	margin: auto;
+	padding: .9rem 1rem;
+	width: min(34rem, 90vw);
+	color: var(--text);
+	background: var(--chrome);
+	border: 1px solid var(--muted);
+	border-radius: 8px;
+	box-shadow: 0 8px 30px rgb(0 0 0 / 28%);
+}
+#goto::backdrop { background: rgb(0 0 0 / 35%); }
+#goto label { display: block; font-weight: 600; margin-bottom: .45rem; }
+#goto .row { display: flex; gap: .4rem; }
+
+#goto-id {
+	flex: 1;
+	min-width: 0;
+	font: inherit;
+	font-family: var(--mono);
+	font-size: 12px;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	padding: .3rem .45rem;
+}
+#goto-id:focus-visible { outline: none; border-color: var(--accent); }
+#goto-ok { display: flex; align-items: center; padding: .2rem .5rem; }
+#goto-ok .i { width: 14px; height: 14px; }
+
+#goto-note { margin: .45rem 0 0; font-size: 11px; color: var(--muted); }
+#goto-note.bad { color: var(--warn); }
+
+#panel h2 { font-size: 14px; margin: 0 0 .1rem; word-break: break-word; }
+#panel h3 {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .06em;
+	color: var(--muted);
+	margin: 1.1rem 0 .35rem;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: .2rem;
+}
+#panel .empty { color: var(--muted); }
+#panel .mono { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+#panel dl { display: grid; grid-template-columns: auto 1fr; gap: .1rem .6rem; margin: .5rem 0 0; }
+#panel dt { color: var(--muted); }
+#panel dl.keys { grid-template-columns: auto 1fr; gap: .3rem .7rem; align-items: baseline; }
+#panel dl.keys dt { text-align: right; }
+
+#panel .or { color: var(--muted); font-size: 10px; margin: 0 .2rem; }
+
+.gesture { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+
+kbd {
+	font-family: var(--mono);
+	font-size: 10.5px;
+	line-height: 1.4;
+	padding: .05rem .3rem;
+	color: var(--text);
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-bottom-width: 2px;
+	border-radius: 4px;
+	white-space: nowrap;
+}
+#panel dd { margin: 0; word-break: break-word; }
+
+#panel .sig { line-height: 1.5; word-break: normal; overflow-wrap: anywhere; }
+/* A literal's made-up name sits above its signature, and the two ran together
+   into one block of monospace with no telling where the name ended. */
+#panel .sig-name { margin-bottom: .45rem; }
+
+.badges { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
+.badge {
+	font-size: 10.5px;
+	padding: .05rem .35rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	color: var(--muted);
+	/* Never wider than the panel: a label is the reader's own word for a service
+	   and can be as long as they like. flex: none keeps the short ones whole -
+	   they move to the next line rather than wrapping "Not shared" in half - and
+	   leaves breaking to the one that would not fit on a line of its own. */
+	flex: none;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.root { color: var(--accent); border-color: var(--accent); }
+.badge.origin-manual { color: var(--manual); border-color: var(--manual); }
+.badge.origin-autowiring { color: var(--auto); border-color: var(--auto); }
+.badge.origin-compiler-pass { color: var(--pass); border-color: var(--pass); }
+.badge.origin-none { color: var(--warn); border-color: var(--warn); }
+.badge.incomplete { color: var(--warn); border-color: var(--warn); }
+
+/* Everything in the panel is a name of some kind, and a name is one unbroken
+   word: the panel wraps rather than scrolling sideways for any of them. */
+.method, .pidx, .pnote, .plit, .rel .via, .notice { overflow-wrap: anywhere; }
+
+.method {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	color: var(--text);
+	margin: .45rem 0 .1rem;
+}
+.method + .param { padding-top: .1rem; }
+
+.param { padding: .35rem 0; border-bottom: 1px dotted var(--border); }
+.param:last-child { border-bottom: 0; }
+.phead { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+.pidx { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.pnote { color: var(--warn); }
+.plit { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+.link {
+	border: 0;
+	background: none;
+	padding: 0;
+	color: var(--accent);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	/* A type name is one long word with nowhere to break, and a generic naming
+	   its type arguments is a much longer one. Without this the panel grew a
+	   horizontal scrollbar instead of wrapping. */
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+.link:hover { color: var(--text); }
+
+.rel { display: flex; align-items: baseline; gap: .35rem; padding: .12rem 0; flex-wrap: wrap; }
+.rel .via { color: var(--muted); font-size: 11px; }
+
+/* The message leads and the node it is about follows, because the reader is
+   here to find out what is wrong before finding out where. */
+.notice { padding: .35rem 0; border-bottom: 1px dotted var(--border); }
+.notice:last-of-type { border-bottom: 0; }
+.notice .where { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
+.notice .found-by { color: var(--muted); font-size: 11px; }
+
+/* Colour is the first thing read, so it carries the severity rather than
+   repeating what the word beside it already says. Nothing else on the page is
+   red, which is the point: an error is the reason the picture is wrong. */
+.badge.severity { color: var(--notice); border-color: var(--notice); }
+.badge.sev-error { color: var(--warn); border-color: var(--warn); }
+.badge.sev-warning { color: var(--notice); border-color: var(--notice); }
+.badge.sev-info { color: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------------------ status --- */
+
+#status {
+	display: flex;
+	align-items: center;
+	gap: .6rem;
+	padding: .3rem .7rem;
+	background: var(--chrome);
+	border-top: 1px solid var(--border);
+	color: var(--muted);
+	font-size: 11.5px;
+}
+#status .link { font-size: 11.5px; }
+
+/* The bottom bar holds the settings that are not about browsing the graph, so
+   they sit smaller than the toolbar's. */
+#status .ctl { color: var(--muted); }
+#status select,
+#status button:not(.link) {
+	font-size: 11.5px;
+	padding: .1rem .35rem;
+}
+#status .i { width: 11px; height: 11px; }
+
+
+/* The native arrow points down wherever the control is. This one sits at the
+   bottom of the window, so its menu opens upwards and the arrow should say so. */
+#status .ctl { position: relative; }
+#status select { appearance: none; padding-right: 1.1rem; }
+#status .ctl::after {
+	content: "";
+	position: absolute;
+	right: .4rem;
+	top: 50%;
+	margin-top: -2px;
+	width: 0;
+	height: 0;
+	border-left: 3.5px solid transparent;
+	border-right: 3.5px solid transparent;
+	border-bottom: 4px solid var(--muted);
+	pointer-events: none;
+}

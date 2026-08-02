@@ -16,7 +16,7 @@ import (
 
 func NewScope(name string, container *Container, parent *Scope) *Scope {
 	s := &Scope{
-		name:      name,
+		name:      container.unusedScopeName(name),
 		container: container,
 		parent:    parent,
 		svcs:      NewDefinitionRegistry[*ServiceDefinition](),
@@ -24,7 +24,7 @@ func NewScope(name string, container *Container, parent *Scope) *Scope {
 		bindings:  orderedmap.NewOrderedMap[reflect.Type, *InterfaceBinding](),
 		instances: make(map[ID]any),
 	}
-	container.scopes.Set(name, s)
+	container.scopes.Set(s.name, s)
 	return s
 }
 
@@ -34,9 +34,13 @@ type Scope struct {
 	container *Container
 	parent    *Scope
 
-	svcs      *DefinitionRegistry[*ServiceDefinition]
-	funs      *DefinitionRegistry[*FunctionDefinition]
-	bindings  *orderedmap.OrderedMap[reflect.Type, *InterfaceBinding]
+	svcs     *DefinitionRegistry[*ServiceDefinition]
+	funs     *DefinitionRegistry[*FunctionDefinition]
+	bindings *orderedmap.OrderedMap[reflect.Type, *InterfaceBinding]
+
+	// instances are the shared services this scope has built and configured.
+	// Container.mu guards the map; a call publishes into it once, at the end,
+	// so nothing here is ever half-configured.
 	instances map[ID]any
 }
 
@@ -85,6 +89,24 @@ func (s *Scope) HasService(id ID) bool {
 	return s.svcs.Contains(id)
 }
 
+// bindingInChain finds the binding covering typ, and the scope that declared it.
+// GetBoundArgInChain alone would not say which scope it came from.
+func (s *Scope) bindingInChain(typ reflect.Type) (*Scope, *InterfaceBinding, bool) {
+	for scope := range s.Chain() {
+		if binding, ok := scope.GetBinding(typ); ok {
+			return scope, binding, true
+		}
+	}
+	return nil, nil, false
+}
+
+// Instantiated reports whether this scope has already built the service. For a
+// shared service, it means the container is holding the instance.
+func (s *Scope) Instantiated(id ID) bool {
+	_, ok := s.instance(id)
+	return ok
+}
+
 func (s *Scope) HasServiceInChain(id ID) bool {
 	for scope := range s.Chain() {
 		if scope.HasService(id) {
@@ -95,16 +117,28 @@ func (s *Scope) HasServiceInChain(id ID) bool {
 }
 
 func (s *Scope) GetService(id ID) (any, error) {
+	return withInstantiationContext(s.container, func(ic *instantiationContext) (any, error) {
+		return s.getService(ic, id)
+	})
+}
+
+func (s *Scope) getService(ic *instantiationContext, id ID) (any, error) {
 	def, ok := s.svcs.Get(id)
 	if !ok {
 		return nil, nil
 	}
-	return s.getServiceInstance(def)
+	return s.getServiceInstance(ic, def)
 }
 
 func (s *Scope) GetServiceInChain(id ID) (any, error) {
+	return withInstantiationContext(s.container, func(ic *instantiationContext) (any, error) {
+		return s.getServiceInChain(ic, id)
+	})
+}
+
+func (s *Scope) getServiceInChain(ic *instantiationContext, id ID) (any, error) {
 	for scope := range s.Chain() {
-		svc, err := scope.GetService(id)
+		svc, err := scope.getService(ic, id)
 		if svc != nil || err != nil {
 			return svc, err
 		}
@@ -113,26 +147,43 @@ func (s *Scope) GetServiceInChain(id ID) (any, error) {
 }
 
 func (s *Scope) GetServices(ids ...ID) ([]any, error) {
-	return s.getServicesInstances(s.svcs.GetByIDs(ids))
+	return withInstantiationContext(s.container, func(ic *instantiationContext) ([]any, error) {
+		return s.getServices(ic, ids...)
+	})
+}
+
+func (s *Scope) getServices(ic *instantiationContext, ids ...ID) ([]any, error) {
+	return s.getServicesInstances(ic, s.svcs.GetByIDs(ids))
 }
 
 func (s *Scope) GetServicesInChain(ids ...ID) ([]any, error) {
+	return withInstantiationContext(s.container, func(ic *instantiationContext) ([]any, error) {
+		return s.getServicesInChain(ic, ids...)
+	})
+}
+
+func (s *Scope) getServicesInChain(ic *instantiationContext, ids ...ID) ([]any, error) {
 	var defs []*ServiceDefinition
 	for scope := range s.Chain() {
 		defs = append(defs, scope.svcs.GetByIDs(ids)...)
 	}
-	return s.getServicesInstances(defs)
+	return s.getServicesInstances(ic, defs)
 }
 
 func (s *Scope) GetServicesIDsByType(typ reflect.Type) []ID {
 	return s.svcs.GetIDsByType(typ)
 }
 
-func (s *Scope) GetServicesIDsByTypeInChain(typ reflect.Type) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetServicesIDsByType(typ)...)
-	}
-	return ids
+// ServicesIDsByTypeInChainSeq yields the services of the type visible from this
+// scope, nearest scope first. Use it when the first match is all you need.
+func (s *Scope) ServicesIDsByTypeInChainSeq(typ reflect.Type) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetServicesIDsByType(typ))
+	})
+}
+
+func (s *Scope) GetServicesIDsByTypeInChain(typ reflect.Type) []ID {
+	return slices.Collect(s.ServicesIDsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetServicesByType(typ reflect.Type) ([]any, error) {
@@ -143,15 +194,24 @@ func (s *Scope) GetServicesByTypeInChain(typ reflect.Type) ([]any, error) {
 	return s.GetServicesInChain(s.GetServicesIDsByTypeInChain(typ)...)
 }
 
+func (s *Scope) getServicesByTypeInChain(ic *instantiationContext, typ reflect.Type) ([]any, error) {
+	return s.getServicesInChain(ic, s.GetServicesIDsByTypeInChain(typ)...)
+}
+
 func (s *Scope) GetServicesIDsByLabel(label Label) []ID {
 	return s.svcs.GetIDsByLabel(label)
 }
 
-func (s *Scope) GetServicesIDsByLabelInChain(label Label) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetServicesIDsByLabel(label)...)
-	}
-	return ids
+// ServicesIDsByLabelInChainSeq yields the services carrying the label that are
+// visible from this scope, nearest scope first.
+func (s *Scope) ServicesIDsByLabelInChainSeq(label Label) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetServicesIDsByLabel(label))
+	})
+}
+
+func (s *Scope) GetServicesIDsByLabelInChain(label Label) []ID {
+	return slices.Collect(s.ServicesIDsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetServicesByLabel(label Label) ([]any, error) {
@@ -160,6 +220,10 @@ func (s *Scope) GetServicesByLabel(label Label) ([]any, error) {
 
 func (s *Scope) GetServicesByLabelInChain(label Label) ([]any, error) {
 	return s.GetServicesInChain(s.GetServicesIDsByLabelInChain(label)...)
+}
+
+func (s *Scope) getServicesByLabelInChain(ic *instantiationContext, label Label) ([]any, error) {
+	return s.getServicesInChain(ic, s.GetServicesIDsByLabelInChain(label)...)
 }
 
 func (s *Scope) HasFunction(id ID) bool {
@@ -175,32 +239,48 @@ func (s *Scope) HasFunctionInChain(id ID) bool {
 	return false
 }
 
+// ExecuteFunction calls the function, building whatever it needs. The services
+// it is handed are fully configured by the time it runs, as against a factory's
+// dependencies, whose method calls have not run yet.
 func (s *Scope) ExecuteFunction(id ID) ([]any, error) {
 	def, ok := s.funs.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("function %s not found", id)
 	}
-	return s.executeFunction(def)
+	return withInstantiationContext(s.container, func(ic *instantiationContext) ([]any, error) {
+		return s.executeFunction(ic, def)
+	})
 }
 
+// ExecuteFunctionInChain calls the function from the nearest scope that has it.
+// See ExecuteFunction.
 func (s *Scope) ExecuteFunctionInChain(id ID) ([]any, error) {
 	for scope := range s.Chain() {
-		def, ok := s.funs.Get(id)
+		def, ok := scope.funs.Get(id)
 		if ok {
-			return scope.executeFunction(def)
+			return withInstantiationContext(s.container, func(ic *instantiationContext) ([]any, error) {
+				return scope.executeFunction(ic, def)
+			})
 		}
 	}
 	return nil, fmt.Errorf("function %s not found", id)
 }
 
+// ExecuteFunctions calls each of the functions, in the order the IDs are given.
+// One failing does not stop the rest; their errors are joined. See
+// ExecuteFunction.
 func (s *Scope) ExecuteFunctions(ids ...ID) (results [][]any, joinedErrs error) {
 	defs := s.funs.GetByIDs(ids)
 	if len(defs) == 0 {
 		return nil, errors.New("found no functions for given IDs")
 	}
-	return s.executeFunctions(defs)
+	return withInstantiationContext(s.container, func(ic *instantiationContext) ([][]any, error) {
+		return s.executeFunctions(ic, defs)
+	})
 }
 
+// ExecuteFunctionsInChain calls every function found under the IDs, nearest
+// scope first. See ExecuteFunctions.
 func (s *Scope) ExecuteFunctionsInChain(ids ...ID) (results [][]any, joinedErrs error) {
 	var defs []*FunctionDefinition
 	for scope := range s.Chain() {
@@ -209,18 +289,25 @@ func (s *Scope) ExecuteFunctionsInChain(ids ...ID) (results [][]any, joinedErrs 
 	if len(defs) == 0 {
 		return nil, errors.New("found no functions for given IDs")
 	}
-	return s.executeFunctions(defs)
+	return withInstantiationContext(s.container, func(ic *instantiationContext) ([][]any, error) {
+		return s.executeFunctions(ic, defs)
+	})
 }
 
 func (s *Scope) GetFunctionsIDsByType(typ reflect.Type) []ID {
 	return s.funs.GetIDsByType(typ)
 }
 
-func (s *Scope) GetFunctionsIDsByTypeInChain(typ reflect.Type) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetFunctionsIDsByType(typ)...)
-	}
-	return ids
+// FunctionsIDsByTypeInChainSeq yields the functions of the type visible from
+// this scope, nearest scope first.
+func (s *Scope) FunctionsIDsByTypeInChainSeq(typ reflect.Type) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetFunctionsIDsByType(typ))
+	})
+}
+
+func (s *Scope) GetFunctionsIDsByTypeInChain(typ reflect.Type) []ID {
+	return slices.Collect(s.FunctionsIDsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) ExecuteFunctionsByType(typ reflect.Type) ([][]any, error) {
@@ -235,11 +322,16 @@ func (s *Scope) GetFunctionsIDsByLabel(label Label) []ID {
 	return s.funs.GetIDsByLabel(label)
 }
 
-func (s *Scope) GetFunctionsIDsByLabelInChain(label Label) (ids []ID) {
-	for scope := range s.Chain() {
-		ids = append(ids, scope.GetFunctionsIDsByLabel(label)...)
-	}
-	return ids
+// FunctionsIDsByLabelInChainSeq yields the functions carrying the label that
+// are visible from this scope, nearest scope first.
+func (s *Scope) FunctionsIDsByLabelInChainSeq(label Label) iter.Seq[ID] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[ID] {
+		return slices.Values(scope.GetFunctionsIDsByLabel(label))
+	})
+}
+
+func (s *Scope) GetFunctionsIDsByLabelInChain(label Label) []ID {
+	return slices.Collect(s.FunctionsIDsByLabelInChainSeq(label))
 }
 
 func (s *Scope) ExecuteFunctionsByLabel(label Label) ([][]any, error) {
@@ -258,23 +350,48 @@ func (s *Scope) GetBoundArg(typ reflect.Type) (Arg, bool) {
 	return binding.boundTo, true
 }
 
+// GetBoundArgInChain is the argument bound to the type in the nearest scope that
+// binds it. That is the binding that takes effect.
 func (s *Scope) GetBoundArgInChain(typ reflect.Type) (Arg, bool) {
-	for scope := range s.Chain() {
-		boundTo, ok := scope.GetBoundArg(typ)
-		if ok {
-			return boundTo, true
+	return iterx.First(iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[Arg] {
+		return func(yield func(Arg) bool) {
+			if boundTo, ok := scope.GetBoundArg(typ); ok {
+				yield(boundTo)
+			}
 		}
-	}
-	return nil, false
+	}))
 }
 
-func (s *Scope) getServiceInstance(def *ServiceDefinition) (any, error) {
-	svc, ok := s.instances[def.ID()]
+func (s *Scope) instance(id ID) (any, bool) {
+	s.container.mu.RLock()
+	defer s.container.mu.RUnlock()
+
+	svc, ok := s.instances[id]
+	return svc, ok
+}
+
+func (s *Scope) getServiceInstance(ic *instantiationContext, def *ServiceDefinition) (any, error) {
+	svc, ok := ic.stagedInstance(def.ID())
+	if ok {
+		return svc, nil
+	}
+	svc, ok = s.instance(def.ID())
 	if ok {
 		return svc, nil
 	}
 
-	svc, err := s.instantiate(def)
+	err := ic.beginBuild()
+	if err != nil {
+		return nil, errorsx.Wrapf(err, "failed to instantiate service %s", def)
+	}
+
+	// Another call may have built it while this one waited for the build lock.
+	svc, ok = s.instance(def.ID())
+	if ok {
+		return svc, nil
+	}
+
+	svc, err = s.instantiate(ic, def)
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to instantiate service %s", def)
 	}
@@ -282,48 +399,60 @@ func (s *Scope) getServiceInstance(def *ServiceDefinition) (any, error) {
 	return svc, nil
 }
 
-func (s *Scope) getServicesInstances(defs []*ServiceDefinition) (svcs []any, joinedErrs error) {
+func (s *Scope) getServicesInstances(ic *instantiationContext, defs []*ServiceDefinition) (svcs []any, joinedErrs error) {
 	svcs = make([]any, len(defs))
 	for i, def := range defs {
-		svc, err := s.getServiceInstance(def)
+		svc, err := s.getServiceInstance(ic, def)
 		svcs[i] = svc
 		joinedErrs = errors.Join(joinedErrs, err)
 	}
 	return svcs, joinedErrs
 }
 
-func (s *Scope) instantiate(def *ServiceDefinition) (any, error) {
-	svc, err := def.factory.Execute(def.EffectiveScope())
+// instantiate runs the factory and hands the method calls to the context. They
+// run once the whole factory chain is done, so that nothing configures a
+// service another factory is still building.
+//
+// The instance is staged rather than published: only this call can see it until
+// its method calls have run.
+func (s *Scope) instantiate(ic *instantiationContext, def *ServiceDefinition) (any, error) {
+	err := ic.pushDefinition(def)
+	if err != nil {
+		return nil, err
+	}
+	defer ic.popDefinition()
+
+	svc, err := def.factory.execute(ic, def.EffectiveScope(), AtService(def))
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute factory for service %s", def)
 	}
 
 	if def.shared {
-		s.instances[def.id] = svc
+		ic.stage(s, def, svc)
 	}
-
-	for _, method := range def.MethodCalls() {
-		err = method.Execute(def.EffectiveScope())
-		if err != nil {
-			return nil, errorsx.Wrapf(err, "failed to execute method %s of service %s", method, def)
-		}
-	}
+	ic.enqueueMethodCalls(def, svc, def.EffectiveScope())
 
 	return svc, nil
 }
 
-func (s *Scope) executeFunction(def *FunctionDefinition) ([]any, error) {
-	res, err := def.function.Execute(def.EffectiveScope())
+func (s *Scope) executeFunction(ic *instantiationContext, def *FunctionDefinition) ([]any, error) {
+	fn := def.function
+
+	args, err := fn.resolveArgs(ic, def.EffectiveScope(), nil, AtFunction(def))
 	if err != nil {
 		return nil, errorsx.Wrapf(err, "failed to execute function %s", def)
 	}
-	return lo.Map(res, func(v reflect.Value, _ int) any { return v.Interface() }), nil
+	if err := ic.commit(); err != nil {
+		return nil, errorsx.Wrapf(err, "failed to execute function %s", def)
+	}
+
+	return lo.Map(fn.call(args), func(v reflect.Value, _ int) any { return v.Interface() }), nil
 }
 
-func (s *Scope) executeFunctions(defs []*FunctionDefinition) (results [][]any, joinedErrs error) {
+func (s *Scope) executeFunctions(ic *instantiationContext, defs []*FunctionDefinition) (results [][]any, joinedErrs error) {
 	results = make([][]any, len(defs))
 	for i, def := range defs {
-		res, err := s.executeFunction(def)
+		res, err := s.executeFunction(ic, def)
 		results[i] = res
 		joinedErrs = errors.Join(joinedErrs, err)
 	}
@@ -335,45 +464,47 @@ func (s *Scope) ServiceDefinitionsSeq() iter.Seq[*ServiceDefinition] {
 }
 
 func (s *Scope) ServiceDefinitionsInChainSeq() iter.Seq[*ServiceDefinition] {
-	return func(yield func(*ServiceDefinition) bool) {
-		for scope := range s.Chain() {
-			for def := range scope.ServiceDefinitionsSeq() {
-				if !yield(def) {
-					return
-				}
-			}
-		}
-	}
+	return iterx.Flatten(s.Chain(), (*Scope).ServiceDefinitionsSeq)
 }
 
 func (s *Scope) GetServiceDefinitions() []*ServiceDefinition {
-	return iterx.Collect(s.ServiceDefinitionsSeq())
+	return slices.Collect(s.ServiceDefinitionsSeq())
 }
 
 func (s *Scope) GetServiceDefinitionsInChain() []*ServiceDefinition {
-	return iterx.Collect(s.ServiceDefinitionsInChainSeq())
+	return slices.Collect(s.ServiceDefinitionsInChainSeq())
 }
 
 func (s *Scope) GetServiceDefinitionsByType(typ reflect.Type) []*ServiceDefinition {
 	return s.svcs.GetByType(typ)
 }
 
-func (s *Scope) GetServiceDefinitionsByTypeInChain(typ reflect.Type) (defs []*ServiceDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetServiceDefinitionsByType(typ)...)
-	}
-	return defs
+// ServiceDefinitionsByTypeInChainSeq yields the definitions of the type visible
+// from this scope, nearest scope first.
+func (s *Scope) ServiceDefinitionsByTypeInChainSeq(typ reflect.Type) iter.Seq[*ServiceDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*ServiceDefinition] {
+		return slices.Values(scope.GetServiceDefinitionsByType(typ))
+	})
+}
+
+func (s *Scope) GetServiceDefinitionsByTypeInChain(typ reflect.Type) []*ServiceDefinition {
+	return slices.Collect(s.ServiceDefinitionsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetServiceDefinitionsByLabel(label Label) []*ServiceDefinition {
 	return s.svcs.GetByLabel(label)
 }
 
-func (s *Scope) GetServiceDefinitionsByLabelInChain(label Label) (defs []*ServiceDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetServiceDefinitionsByLabel(label)...)
-	}
-	return defs
+// ServiceDefinitionsByLabelInChainSeq yields the definitions carrying the label
+// that are visible from this scope, nearest scope first.
+func (s *Scope) ServiceDefinitionsByLabelInChainSeq(label Label) iter.Seq[*ServiceDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*ServiceDefinition] {
+		return slices.Values(scope.GetServiceDefinitionsByLabel(label))
+	})
+}
+
+func (s *Scope) GetServiceDefinitionsByLabelInChain(label Label) []*ServiceDefinition {
+	return slices.Collect(s.ServiceDefinitionsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetServiceDefinition(id ID) (*ServiceDefinition, bool) {
@@ -409,45 +540,47 @@ func (s *Scope) FunctionDefinitionsSeq() iter.Seq[*FunctionDefinition] {
 }
 
 func (s *Scope) FunctionDefinitionsInChainSeq() iter.Seq[*FunctionDefinition] {
-	return func(yield func(*FunctionDefinition) bool) {
-		for scope := range s.Chain() {
-			for def := range scope.FunctionDefinitionsSeq() {
-				if !yield(def) {
-					return
-				}
-			}
-		}
-	}
+	return iterx.Flatten(s.Chain(), (*Scope).FunctionDefinitionsSeq)
 }
 
 func (s *Scope) GetFunctionDefinitions() []*FunctionDefinition {
-	return iterx.Collect(s.FunctionDefinitionsSeq())
+	return slices.Collect(s.FunctionDefinitionsSeq())
 }
 
 func (s *Scope) GetFunctionDefinitionsInChain() []*FunctionDefinition {
-	return iterx.Collect(s.FunctionDefinitionsInChainSeq())
+	return slices.Collect(s.FunctionDefinitionsInChainSeq())
 }
 
 func (s *Scope) GetFunctionDefinitionsByType(typ reflect.Type) []*FunctionDefinition {
 	return s.funs.GetByType(typ)
 }
 
-func (s *Scope) GetFunctionDefinitionsByTypeInChain(typ reflect.Type) (defs []*FunctionDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetFunctionDefinitionsByType(typ)...)
-	}
-	return defs
+// FunctionDefinitionsByTypeInChainSeq yields the definitions of the type
+// visible from this scope, nearest scope first.
+func (s *Scope) FunctionDefinitionsByTypeInChainSeq(typ reflect.Type) iter.Seq[*FunctionDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*FunctionDefinition] {
+		return slices.Values(scope.GetFunctionDefinitionsByType(typ))
+	})
+}
+
+func (s *Scope) GetFunctionDefinitionsByTypeInChain(typ reflect.Type) []*FunctionDefinition {
+	return slices.Collect(s.FunctionDefinitionsByTypeInChainSeq(typ))
 }
 
 func (s *Scope) GetFunctionDefinitionsByLabel(label Label) []*FunctionDefinition {
 	return s.funs.GetByLabel(label)
 }
 
-func (s *Scope) GetFunctionDefinitionsByLabelInChain(label Label) (defs []*FunctionDefinition) {
-	for scope := range s.Chain() {
-		defs = append(defs, scope.GetFunctionDefinitionsByLabel(label)...)
-	}
-	return defs
+// FunctionDefinitionsByLabelInChainSeq yields the definitions carrying the
+// label that are visible from this scope, nearest scope first.
+func (s *Scope) FunctionDefinitionsByLabelInChainSeq(label Label) iter.Seq[*FunctionDefinition] {
+	return iterx.Flatten(s.Chain(), func(scope *Scope) iter.Seq[*FunctionDefinition] {
+		return slices.Values(scope.GetFunctionDefinitionsByLabel(label))
+	})
+}
+
+func (s *Scope) GetFunctionDefinitionsByLabelInChain(label Label) []*FunctionDefinition {
+	return slices.Collect(s.FunctionDefinitionsByLabelInChainSeq(label))
 }
 
 func (s *Scope) GetFunctionDefinition(id ID) (*FunctionDefinition, bool) {
@@ -477,8 +610,14 @@ func (s *Scope) BindingsSeq() iter.Seq[*InterfaceBinding] {
 	return iterx.Values(s.bindings.Iterator())
 }
 
+// BindingsInChainSeq yields every binding visible from this scope, nearest scope
+// first. That is the order they take effect in.
+func (s *Scope) BindingsInChainSeq() iter.Seq[*InterfaceBinding] {
+	return iterx.Flatten(s.Chain(), (*Scope).BindingsSeq)
+}
+
 func (s *Scope) GetBindings() []*InterfaceBinding {
-	return iterx.Collect(s.BindingsSeq())
+	return slices.Collect(s.BindingsSeq())
 }
 
 func (s *Scope) GetBinding(typ reflect.Type) (*InterfaceBinding, bool) {
@@ -602,7 +741,7 @@ func (r *DefinitionRegistry[Def]) Seq() iter.Seq[Def] {
 }
 
 func (r *DefinitionRegistry[Def]) GetAll() []Def {
-	return iterx.Collect(r.Seq())
+	return slices.Collect(r.Seq())
 }
 
 func (r *DefinitionRegistry[Def]) Len() int {

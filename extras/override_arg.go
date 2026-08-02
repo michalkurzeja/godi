@@ -12,6 +12,10 @@ import (
 // OverrideSvcArg overrides an argument of the referenced service with the one provided.
 // slotIdx is the index of the argument to override.
 // arg is the argument to override the argument with. It can be a literal value (e.g. "foo" or 42) or an *godi.ArgBuilder (e.g. godi.Val("foo") or godi.Type[MyType]()).
+//
+// Where it can say which argument it could not override, it reports the failure
+// against that argument, so the dependency graph of the failed build shows it
+// there. It is the same ContainerBuilder.Report any third-party pass has.
 func OverrideSvcArg(ref godi.SvcReference, slotIdx uint, arg any) *di.CompilerPass {
 	return di.NewCompilerPass("override arg", di.PreAutomation, di.CompilerOpFunc(func(builder *di.ContainerBuilder) error {
 		if ref.IsEmpty() {
@@ -23,11 +27,19 @@ func OverrideSvcArg(ref godi.SvcReference, slotIdx uint, arg any) *di.CompilerPa
 		}
 		a, err := godi.Arg(arg).Build()
 		if err != nil {
-			return errorsx.Wrapf(err, "cannot override argument of %s: invalid arg", ref)
+			builder.ReportError(di.AtService(def), err, "cannot override argument of %s: invalid arg", ref)
+			return nil
 		}
+
+		slots := def.Factory().Args().Slots()
+		site := di.AtService(def)
+		if slotIdx < uint(len(slots)) {
+			site = di.AtServiceArg(def, slots[slotIdx])
+		}
+
 		err = def.Factory().Args().SetSlot(di.NewSlottedArg(a, slotIdx))
 		if err != nil {
-			return errorsx.Wrapf(err, "cannot override argument of %s", ref)
+			builder.ReportError(site, err, "cannot override argument of %s", ref)
 		}
 		return nil
 	}))

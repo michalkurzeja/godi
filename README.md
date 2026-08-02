@@ -8,7 +8,7 @@ You can focus on writing your business logic and let Godi handle the rest!
 
 ## 📋 Requirements
 
-- Go 1.24
+- Go 1.25
 
 ## 🔧 Installation
 
@@ -316,21 +316,47 @@ There's an important rule that those functions follow:
 - If you use a "single" variant of a function, then it will return an error if there is not **exactly** 1 entity. This is useful when you expect only one entity of a given type or label.
 - If you use a "multiple" variant of a function, then it will return all entities of a given type or label and **will not** return any errors even if no services are found.
 
+### Concurrency
+
+A built container is safe to share across goroutines. A shared service is built once however many
+goroutines ask for it at the same time, and nobody is handed a service before its method calls
+have run.
+
+Construction serialises: one call builds at a time and the rest wait, so two goroutines each
+building a different service for the first time go one after the other. Retrieving a service that
+is already built does not serialise.
+
+Registration is a build-time activity. Once `Build()` returns, treat the container as read-only
+apart from the services it builds for you.
+
+> ⚠️ A factory, method call or function must **not** ask the container for anything while it is
+> running: it would block on a lock its own caller holds. Declare the dependency as an argument
+> instead.
+>
+> Calling the container directly returns an error. Starting a goroutine to do it and waiting for
+> that goroutine hangs instead — the new goroutine looks like any other caller, so godi cannot
+> tell it apart.
+
 ### Container behaviour
 
 You can configure some aspects of how the container treats services and functions.
-There are 3 settings that can be configured globally, or per-service/function.
+There are 3 settings, and each can be set per container or per service/function:
 
-> ⚠️ Take care to change the defaults **before** you define any services/functions,
-> as the defaults are applied at an instant when the definition is created
-> (when `di.Svc`/`di.Func` is called).
->
-> Changing the defaults will not affect the already-existing definitions!
+```go
+c, err := di.New(di.DefaultEager()).
+	Services(
+		di.Svc(NewServer),          // eager, as the container says
+		di.Svc(NewCache).Lazy(),    // unless it asks for something else
+	).
+	Build()
+```
 
-> ⚠️ The global defaults are **not safe for concurrent use**.
-> They are package-level variables with no synchronization.
-> Only change them once at program startup (e.g. in `init()` or at the top of `main`),
-> before any `di.Svc`/`di.Func` calls and before spawning goroutines that use the package.
+The defaults belong to the container they are given to, so two containers in one process can disagree and a
+library cannot change its host's.
+
+> ⚠️ The `di.SetDefault*` functions set the same three for every container in the process.
+> They still work and are deprecated: a package-level default means a test that flips one leaks into the next,
+> and they are not safe for concurrent use.
 
 #### Lazy/Eager
 
@@ -339,7 +365,7 @@ If changed to eager, the services will be instantiated and functions executed as
 
 > ⚠️ You cannot access the return values of an eagerly-executed function.
 
-To change globally, call `di.SetDefaultLazy()` or `di.SetDefaultEager()`.
+Per container: `di.New(di.DefaultLazy())` or `di.New(di.DefaultEager())`.
 
 #### Shared/Not shared (services only)
 
@@ -347,14 +373,15 @@ By default, services are shared - once instantiated, they are cached and reused.
 This applies both to retrieving services from the container, or using them as dependencies.
 If changed to not shared, the container will create a new instance every time a service is injected or retrieved.
 
-To change globally, call `di.SetDefaultShared()` or `di.SetDefaultNotShared()`.
+Per container: `di.New(di.DefaultShared())` or `di.New(di.DefaultNotShared())`.
 
 #### Autowired/Not autowired
 
 By default, godi will attempt automatically resolve dependencies for you.
 If changed to not autowired, all dependencies will have to be resolved manually by you.
+A variadic argument is the exception: you can leave it out, and the function is called with none.
 
-To change globally, call `di.SetDefaultAutowired()` or `di.SetDefaultNotAutowired()`.
+Per container: `di.New(di.DefaultAutowired())` or `di.New(di.DefaultNotAutowired())`.
 
 ### Services
 
@@ -536,8 +563,12 @@ func main() {
 
 ### Method calls
 
-Method calls are a way to register a method of a service to be called right after the service is instantiated.
+Method calls are a way to register a method of a service to be called once the service is instantiated.
 Just like factories and functions, the dependencies (arguments) of the method are resolved by the container and can benefit from autowiring.
+
+Method calls run after every factory the request needed. Ask the container for a service, and godi builds
+the whole chain first, then calls the methods it owes, oldest service first. A method call that pulls in a
+service of its own builds it there and then, and its methods join the back of the queue.
 
 > 💡 Method calls are useful when you need to configure a service after it's been instantiated.
 >
@@ -545,6 +576,11 @@ Just like factories and functions, the dependencies (arguments) of the method ar
 > if service A depends on service B, and service B depends on service A,
 > godi won't allow you to inject A to B and B to A via factories, as this would lead to an infinite loop.
 > Instead, you can inject A to B via a factory, and B to A via a method call.
+> Either service can be asked for first — both get the same pair of instances.
+
+> ⚠️ A factory does not see the method calls of the services it is handed: they have not run yet.
+> A dependency you only store is fine; one you *use* while constructing sees it unconfigured.
+> Do that work in a method call of your own instead.
 
 > ⚠️ Registering the same method twice on one service silently **replaces** the first registration.
 > Only the last `MethodCall` for a given method name takes effect.
@@ -686,6 +722,11 @@ func main() {
 
 Both examples above will cause the string `"literal-arg"` to be passed to the `NewService` function.
 
+The value may not be `nil`. Arguments are matched to parameters by type, and an untyped `nil` has
+none - nor does a nil interface, which becomes the same `nil` once it's passed as an `any`. Write a
+typed nil instead, e.g. `di.Val((*Logger)(nil))`. A service that *is* nil is fine, and injected as
+nil.
+
 ##### di.Ref
 
 This argument resolves to the service that the reference points to.
@@ -819,7 +860,7 @@ func main() {
 
 	di.New().Services(
 		di.SvcVal("service-str").Bind(&ref),
-		di.Svc(NewStringsCollector, di.Compound[[]string](
+		di.Svc(NewStringsCollector, di.Compound[string](
 			di.Val("literal-str"),
 			di.Ref(&ref),
 		)),
@@ -830,7 +871,24 @@ func main() {
 ```
 
 Compound arg makes it possible to combine values obtained in different ways into a single collection.
+The type parameter is the *element* type: `di.Compound[string]` fills a `[]string` or `...string` argument.
 While powerful, it's probably only useful in generic code, e.g. in godi extensions.
+
+##### di.SpreadSlice
+
+Wrap a part of a compound in `di.SpreadSlice` to add its elements one by one, rather than the whole
+slice as a single element.
+
+```go
+di.Svc(NewStringsCollector, di.Compound[string](
+	di.Val("literal-str"),
+	di.SpreadSlice(di.SliceOf[string]()), // Every string service, added individually.
+))
+```
+
+Which of the two a compound should do can't be read off the types - a `[]string` is a valid element
+of a `[]any`, for instance - so you say which you mean. Outside a compound, `di.SpreadSlice` is just
+the argument it wraps.
 
 #### Arg order
 
@@ -881,3 +939,219 @@ If it fails, it will try to find a services that implement that interface:
 - For slice or variadic args, it will resolve all services that implement the interface, even if they are all of different types.
 
 This behaviour guarantees that any automatic choice made by godi is unambiguous and deterministic.
+### Dependency graph
+
+Once a container is built, `godi` can hand you its dependency graph: what depends on what, what constant was
+passed where, and — the part you cannot get any other way — *how* each dependency got there. An argument you
+wired by hand, one godi autowired by type, one resolved through an interface binding godi created for you, and
+one substituted by a compiler pass all look identical at runtime. The graph tells them apart.
+
+```go
+import (
+	di "github.com/michalkurzeja/godi/v2"
+	"github.com/michalkurzeja/godi/v2/graph/text"
+)
+
+g, err := di.Graph(c)
+err = g.Encode(os.Stdout, text.New())
+```
+
+Reading a container is `graph/extract`'s job, and `di.Graph` is the way in to it. `graph` itself is only the model — plain data, with no
+dependency on the container — so a program that reads a graph, the CLI above all, carries none of the
+container engine. Each format lives in its own package too, so a binary compiles the ones it asks for and
+nothing else:
+
+| Package | Output |
+|---|---|
+| `graph/text` | An indented outline. Needs nothing installed, so it is what you reach for in a terminal or a test failure. |
+| `graph/dot` | Graphviz DOT. Scopes become nested clusters and every edge lands on the argument row it feeds. |
+| `graph/html` | One self-contained page you can search, filter and drag about. No CDN, no server, no network. |
+| `graph/json` | The interchange format. `g.WriteJSON(w)` writes it without an encoder, and `graph.ReadJSON` reads it back. |
+
+#### Reading a real container
+
+Past a hundred or so services no layout engine produces a picture worth looking at, so narrow the question
+instead. Filters work on the model, which means every format gets them:
+
+```go
+g, err := di.Graph(c)
+
+g = g.Select(
+	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
+	graph.ExcludeLabels("infrastructure"),
+	graph.HideMethodCalls(),
+)
+```
+
+Narrowing is its own step, so one extraction answers several questions — and a `Filter` is its own type, so
+an extraction option cannot be passed to `Select`, where it would have nothing to do.
+
+`Focus` follows the wiring outwards from what you select — both ways by default, or only the direction you
+name with `Dependencies(n)` or `Consumers(n)`. It never turns a corner: a service that merely shares a dependency with your selection is not a
+neighbour of it. Where a limit rather than a name cut the graph, the nodes at the edge say how many neighbours
+went with it, so a narrowed picture does not read as the whole one.
+
+Select by type, factory name, label, graph ID, or the file a service was registered in. Patterns are globs
+where `*` stands for any run of characters, matched against both the qualified name and the short form:
+
+```go
+graph.ByType("app.(*Server)")            // the short form
+graph.ByType("github.com/acme/app/*")    // a whole package tree
+graph.ByFile("internal/*")               // wherever it was registered
+
+graph.All(graph.ByLabel("http"), graph.Not(graph.ByFile("internal/*")))
+```
+
+`All`, `Any` and `Not` combine matchers.
+
+#### Provenance
+
+Every edge carries two independent facts, and both formats draw them on separate channels:
+
+- **Who wired the argument** — you, godi's autowiring, or a compiler pass, named.
+- **How it resolved** — an exact type match, or through an interface binding, which was itself declared by you,
+  created by godi, or created by a pass.
+
+So `extras.OverrideSvcArg` shows up as the pass that did it rather than as something you typed, and a binding
+godi invented for you is distinguishable from one you wrote.
+
+An edge feeding an argument that will not resolve is drawn as wrong, and so is one that closes a cycle. The two
+formats say it differently, because one of them has room to: the HTML page draws the fault as a red glow behind
+the line, so the line goes on saying who chose it, while Graphviz gives an edge a single colour and no second
+layer, so there the edge turns red outright. Either way the argument row and the notices say the rest.
+
+#### Roots
+
+A **root** is a node nothing injects: the top of a dependency tree. Those are your entry points, together with
+any wiring nothing uses, and `godi` does not try to tell the two apart — a service fetched at runtime with
+`SvcByType` or `SvcByRef` leaves no trace in the container, so only you know which of your roots are deliberate.
+
+#### Before it is built
+
+A container you cannot build is exactly the one you want to look at, so a graph can be taken partway through
+compilation — before godi has worked anything out, or after autowiring and before validation. Capture it from
+a pass:
+
+```go
+var midway *graph.Graph
+
+c, err := di.New().
+	Services(...).
+	CompilerPasses(extras.CaptureGraph(engine.PreValidation, func(g *graph.Graph) error {
+		midway = g
+		return nil
+	})).
+	Build()
+```
+
+Either way the graph carries a `graph.Snapshot` saying when it was taken and which passes had run, and every
+format says so on the way out. It matters: a half-wired graph looks exactly like a finished one with
+dependencies missing, and an argument nothing has wired *yet* is not an argument nothing will ever wire.
+
+#### When the build fails
+
+Set one environment variable and a build that fails writes its own graph:
+
+```shell
+GODI_SNAPSHOT_ON_BUILD_ERR=true go run .
+```
+
+```
+godi: build failed at pass "argument validation"
+godi: graph written to /tmp/godi-graph-4821.json
+godi:   godi view /tmp/godi-graph-4821.json
+```
+
+| Variable | Meaning |
+|---|---|
+| `GODI_SNAPSHOT_ON_BUILD_ERR` | Write the graph when `Build` returns an error. Off unless set to something true. |
+| `GODI_SNAPSHOT_PATH` | A directory to write into, or the file to write. Defaults to the system's temporary directory. |
+
+It writes JSON and nothing else, so that no godi binary carries a renderer or the means to start a browser
+for a debugging aid it will almost never use. [The CLI](#the-godi-cli) turns the file into something to look
+at. Whatever happens, the error `Build` returns is untouched: a snapshot that cannot be written says so on
+stderr and is otherwise forgotten.
+
+**What the compiler objected to is in the graph, on the thing it objected to.** The snapshot names the pass
+that failed, and the argument or service that stopped it carries the fault in the words the build failed
+with, so a reader can find it without already knowing what it was:
+
+```
+      args:
+        0 <- main.Iface  [autowiring]
+          -> main.(*Impl)  [by-type, binding on main.Iface (manual)]
+          ! error: binding on main.Iface resolves to []main.Iface, which cannot fill an argument of type main.Iface
+
+notices:
+  error: main.(*User) argument 0: binding on main.Iface resolves to []main.Iface, which cannot fill an argument of type main.Iface
+```
+
+A message carries whatever the code that failed put in its error — a factory that could not reach its
+database puts its connection string in yours — and the graph goes into a file and over HTTP. Hold it back
+with `graph.WithDiagnosticMarks()`, `graph.WithoutDiagnostics()` or `graph.WithDiagnosticRedactor(fn)` where
+that matters.
+
+A failed `Build` leaves the builder standing, which is what the snapshot is written from — and what a compiler
+pass driving `di.NewContainerBuilder` itself can read with `extract.FromBuilder`.
+
+The snapshot names the pass that failed, and every service missing something it needs is drawn with a red
+border and a warning mark — so the one that stopped the build is the one you see first.
+
+#### Example
+
+`examples/graph` wires a small container that exercises every kind of provenance the encoders can draw:
+
+```shell
+go run ./examples/graph -format text            # read it here
+go run ./examples/graph | dot -Tsvg -o graph.svg
+go run ./examples/graph -format html -open      # open the interactive viewer
+go run ./examples/graph -format html -snapshot -open   # the wiring as declared, before it is compiled
+```
+
+### The godi CLI
+
+`cmd/godi` reads a graph written as JSON and renders it. It is a separate binary, so nothing it needs to draw
+a graph — Graphviz, the viewer assets, a browser — is ever compiled into yours:
+
+```shell
+go install github.com/michalkurzeja/godi/v2/cmd/godi@latest
+```
+
+```shell
+godi view graph.json                       # serve it and open a browser
+godi export text graph.json                # an outline, in the terminal
+godi export dot graph.json | dot -Tsvg -o graph.svg
+godi export html graph.json > graph.html
+godi export json --indent '  ' graph.json  # normalise it, for reading or diffing
+```
+
+Every export flag maps onto the encoder option of the same name — `--rankdir`, `--theme`, `--layout`,
+`--link` and the rest; `godi export dot --help` lists them. The file argument may be `-`, or left out, to read
+standard input. `godi view` builds the page for each request rather than writing one, and serves until you
+stop it.
+
+Shell completion covers the subcommands, the flags and the flag values — `--theme` completes to `light dark`,
+`--link` to the editors it knows, and a file argument to the `.json` files in the directory:
+
+```shell
+godi completion zsh > "${fpath[1]}/_godi"
+godi completion bash > /etc/bash_completion.d/godi
+# also: fish, powershell
+```
+
+`godi view` serves on `127.0.0.1:7777` unless you say otherwise, and takes a free port instead when that one
+is busy. The fixed port is not for tidiness: the page keeps your colour scheme, your pointer device mode and
+the rest in the browser's storage, which is keyed by origin, so a port that changed every run would lose them
+every run. A run that had to fall back says so, because that page will not have them.
+
+The graph carries the schema it was written against. A file from a different version of godi is a warning
+rather than a refusal — it is drawn anyway, with a notice saying which version wrote it.
+
+To serve a graph from your own program, including one still being wired, `graph/serve` is the handler behind
+`godi view`:
+
+```go
+srv, err := serve.Listen("127.0.0.1:0", di.LiveGraph(c))  // read again on every request
+fmt.Println(srv.URL())
+err = srv.Serve()
+```

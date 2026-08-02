@@ -2,6 +2,8 @@ package di
 
 import (
 	"cmp"
+	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
@@ -12,15 +14,58 @@ type CompilerPass struct {
 	stage    CompilerStage
 	priority int
 	op       CompilerOp
+
+	argOrigin  ArgOrigin  // What a slot filled by this pass means.
+	bindOrigin BindOrigin // What a binding created by this pass means.
 }
 
 func NewCompilerPass(name string, stage CompilerStage, op CompilerOp) *CompilerPass {
-	return &CompilerPass{name: name, stage: stage, op: op}
+	return &CompilerPass{
+		name:       name,
+		stage:      stage,
+		op:         op,
+		argOrigin:  ArgOriginCompilerPass,
+		bindOrigin: BindOriginCompilerPass,
+	}
 }
 
 func (p *CompilerPass) WithPriority(priority int) *CompilerPass {
 	p.priority = priority
 	return p
+}
+
+// withArgOrigin marks the arguments this pass fills as godi's own automation
+// rather than a third-party extension.
+//
+// It is unexported on purpose. A pass may read an origin. It may not claim one
+// of godi's.
+func (p *CompilerPass) withArgOrigin(origin ArgOrigin) *CompilerPass {
+	p.argOrigin = origin
+	return p
+}
+
+// withBindOrigin marks the bindings this pass creates as godi's own automation
+// rather than a third-party extension.
+func (p *CompilerPass) withBindOrigin(origin BindOrigin) *CompilerPass {
+	p.bindOrigin = origin
+	return p
+}
+
+// Name is what the pass is called. Names are neither unique nor stable, so print
+// it but never identify a pass by it.
+func (p *CompilerPass) Name() string {
+	return p.name
+}
+
+// Stage is when the pass runs.
+func (p *CompilerPass) Stage() CompilerStage {
+	return p.stage
+}
+
+// Priority orders the pass within its stage: the lower the number, the earlier
+// it runs.
+func (p *CompilerPass) Priority() int {
+	return p.priority
 }
 
 func (p *CompilerPass) Run(builder *ContainerBuilder) error {
@@ -55,6 +100,29 @@ const (
 	compilerPassStageCount
 )
 
+func (s CompilerStage) String() string {
+	switch s {
+	case PreAutomation:
+		return "pre-automation"
+	case Automation:
+		return "automation"
+	case PreValidation:
+		return "pre-validation"
+	case Validation:
+		return "validation"
+	case PreFinalization:
+		return "pre-finalization"
+	case Finalization:
+		return "finalization"
+	case PostFinalization:
+		return "post-finalization"
+	default:
+		// compilerPassStageCount lands here: it counts the stages rather than
+		// naming one, and there is nothing to call it.
+		return fmt.Sprintf("stage %d", uint8(s))
+	}
+}
+
 // Passes contains an ordered list of Compiler passes.
 // It is organised into stages and priorities. This makes it possible
 // to control when the pass is executed.
@@ -66,8 +134,8 @@ type Passes []*CompilerPass
 
 func BasePasses(skipCycleValidation bool) Passes {
 	passes := Passes{
-		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()),
-		NewCompilerPass("autowiring", Automation, NewAutowiringPass()),
+		NewCompilerPass("interface binding", Automation, NewInterfaceBindingPass()).withBindOrigin(BindOriginAutobinding),
+		NewCompilerPass("autowiring", Automation, NewAutowiringPass()).withArgOrigin(ArgOriginAutowiring),
 		NewCompilerPass("argument validation", Validation, NewArgValidationPass()),
 		NewCompilerPass("eager initialization", Finalization, NewEagerInitPass()),
 	}
@@ -77,16 +145,22 @@ func BasePasses(skipCycleValidation bool) Passes {
 	return passes
 }
 
+// sort orders the passes by stage, then priority, leaving passes tied on both in
+// the order they were added.
+//
+// That last part is the stability of the sort, and it holds only because a pass
+// enters the queue by being appended to it. Insert one anywhere else and it runs
+// at a place it never asked for.
 func (passes Passes) sort() {
-	slices.SortFunc(passes, func(a, b *CompilerPass) int {
-		if a.stage != b.stage {
-			return cmp.Compare(a.stage, b.stage)
-		}
-		if a.priority != b.priority {
-			return cmp.Compare(a.priority, b.priority)
-		}
-		return 0
-	})
+	slices.SortStableFunc(passes, (*CompilerPass).compare)
+}
+
+// compare is the whole of the order: the stage, then the priority.
+func (p *CompilerPass) compare(other *CompilerPass) int {
+	if c := cmp.Compare(p.stage, other.stage); c != 0 {
+		return c
+	}
+	return cmp.Compare(p.priority, other.priority)
 }
 
 // Compiler is responsible for configuration of the container after all user changes are done.
@@ -94,25 +168,183 @@ func (passes Passes) sort() {
 // it possible to create services dynamically and automatically.
 type Compiler struct {
 	passes Passes
+	// pending holds the passes a running pass registered. They join the queue
+	// once that pass returns.
+	pending Passes
+
+	// running is the pass in progress, done names the ones that have finished,
+	// and failed the one that stopped compilation.
+	//
+	// A graph taken mid-build reports all three. Without them it reads as a
+	// finished container with wiring missing.
+	running   *CompilerPass
+	done      []string
+	failed    string
+	autowired bool
 }
 
 func NewCompiler(conf CompilerConfig) *Compiler {
-	return &Compiler{passes: BasePasses(conf.SkipCycleValidation)}
+	c := &Compiler{}
+	for _, pass := range BasePasses(conf.SkipCycleValidation) {
+		c.AddPass(pass)
+	}
+	return c
 }
 
+// AddPass registers a pass.
+//
+// A pass may call this while it runs, to schedule work over what it found. The
+// new pass joins the queue as soon as the one adding it returns.
 func (c *Compiler) AddPass(pass *CompilerPass) {
+	if c.running != nil {
+		c.pending = append(c.pending, pass)
+		return
+	}
 	c.passes = append(c.passes, pass)
+}
+
+// Passes yields the passes registered so far, in the order they were added. The
+// compiler sorts them into running order when it runs, so a pass reading this
+// mid-run sees the queue as it stands, itself included.
+//
+// There is no way to remove a pass. Turn behaviour off per definition with
+// NotAutowired or Lazy, or per container with SkipCycleValidation.
+func (c *Compiler) Passes() iter.Seq[*CompilerPass] {
+	return func(yield func(*CompilerPass) bool) {
+		for _, pass := range c.passes {
+			if !yield(pass) {
+				return
+			}
+		}
+		for _, pass := range c.pending {
+			if !yield(pass) {
+				return
+			}
+		}
+	}
 }
 
 func (c *Compiler) Run(builder *ContainerBuilder) error {
 	c.passes.sort()
-	for _, pass := range c.passes {
+
+	// Whatever is already wired, the user wired: the passes have not run yet.
+	c.creditPendingWiring(builder.container, ArgOriginManual, BindOriginManual, "")
+
+	// By index, re-reading the length: a pass may add a pass, and range would
+	// take the slice header once.
+	for i := 0; i < len(c.passes); i++ {
+		pass := c.passes[i]
+
+		reported := builder.container.diagnosticCount()
+
+		c.running = pass
 		err := pass.Run(builder)
+		c.running = nil
+
+		// A pass that returned an error said something the graph should show too,
+		// even though it named nothing to attach it to.
 		if err != nil {
+			builder.Report(Diagnostic{Severity: SeverityError, Site: AtContainer(), Message: err.Error(), Err: err})
+		}
+		builder.container.creditDiagnosticsTo(reported, pass.name)
+
+		if err := builder.container.diagnosticErrors(reported); err != nil {
+			// Kept: the builder still stands, and its graph shows how far the
+			// container got.
+			c.failed = pass.name
 			return errorsx.Wrapf(err, "compiler pass (%s) returned an error", pass)
+		}
+		c.done = append(c.done, pass.name)
+		// Asked of the pass, not of its name. Nothing stops a user calling their
+		// own pass "autowiring".
+		c.autowired = c.autowired || pass.argOrigin == ArgOriginAutowiring
+		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
+
+		err = c.schedulePending(pass, i+1)
+		if err != nil {
+			c.failed = pass.name
+			builder.Report(Diagnostic{Severity: SeverityError, Site: AtContainer(), Message: err.Error(), Err: err, Pass: pass.name})
+			return err
 		}
 	}
 	return nil
+}
+
+// schedulePending puts the passes that pass registered into the queue, and keeps
+// the part of the queue that has not run in order. next is where that part
+// begins.
+//
+// A pass whose place is behind the one that added it is refused. Running it now
+// would run the stages out of order, and running it later is not the place it
+// asked for.
+func (c *Compiler) schedulePending(pass *CompilerPass, next int) error {
+	if len(c.pending) == 0 {
+		return nil
+	}
+
+	added := c.pending
+	c.pending = nil
+
+	for _, p := range added {
+		if p.compare(pass) < 0 {
+			return fmt.Errorf("compiler pass (%s) added pass (%s) before itself", pass, p)
+		}
+	}
+
+	c.passes = append(c.passes, added...)
+	c.passes[next:].sort()
+	return nil
+}
+
+// CompilerProgress says how far compilation has got.
+//
+// Anything reading a container mid-compilation needs it. Wiring that a later
+// pass would add is not there yet, and without this it reads as wiring that is
+// missing.
+type CompilerProgress struct {
+	// Stage in progress, and Pass within it. Both are empty outside a pass.
+	Stage string
+	Pass  string
+	// Failed names the pass that returned an error, when compilation stopped
+	// there.
+	Failed string
+	// Done names the passes that have finished, in the order they ran.
+	Done []string
+	// Autowired says godi's autowiring has run. After it, an argument still
+	// unwired is one nothing is going to wire.
+	Autowired bool
+}
+
+// Progress describes how far compilation has got, for anything reading the
+// container while it is still going on.
+func (c *Compiler) Progress() CompilerProgress {
+	p := CompilerProgress{
+		Failed:    c.failed,
+		Done:      slices.Clone(c.done),
+		Autowired: c.autowired,
+	}
+	if c.running != nil {
+		p.Stage, p.Pass = c.running.stage.String(), c.running.name
+	}
+	return p
+}
+
+// creditPendingWiring names whoever changed the wiring since the last call, and
+// only that wiring. Each pass is credited with its own work.
+//
+// It runs before the first pass and again after each one. That is what tells an
+// argument the user wired from one a pass wired.
+func (c *Compiler) creditPendingWiring(container *Container, args ArgOrigin, binds BindOrigin, pass string) {
+	for slot := range container.slotsSeq() {
+		if slot.dirty {
+			slot.creditTo(args, pass)
+		}
+	}
+	for binding := range container.bindingsSeq() {
+		if binding.dirty {
+			binding.creditTo(binds, pass)
+		}
+	}
 }
 
 type CompilerConfig struct {

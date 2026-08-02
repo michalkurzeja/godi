@@ -1,6 +1,7 @@
 package di
 
 import (
+	"errors"
 	"reflect"
 
 	"github.com/michalkurzeja/godi/v2/di"
@@ -52,8 +53,15 @@ func Ref(ref *SvcReference) *ArgBuilder {
 }
 
 // Val returns an argument builder for a literal value.
+//
+// The value may not be nil. Arguments are matched to parameters by type, and an
+// untyped nil has none - nor does a nil interface, which is the same nil once it
+// is passed as an any. A typed nil pointer, such as (*Logger)(nil), does.
 func Val(v any) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
+		if v == nil {
+			return nil, errors.New("a nil literal has no type, so nothing says which argument it fills: pass a typed nil, e.g. di.Val((*Logger)(nil))")
+		}
 		return di.NewLiteralArg(v), nil
 	}}
 }
@@ -79,6 +87,18 @@ func SliceOf[T any](label ...Label) *ArgBuilder {
 	}
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
 		return di.NewTypeArg(reflect.TypeFor[T](), true), nil
+	}}
+}
+
+// SpreadSlice returns an argument builder that hands a compound the elements of
+// a slice rather than the slice itself. It is only meaningful inside Compound.
+func SpreadSlice(builder *ArgBuilder) *ArgBuilder {
+	return &ArgBuilder{newArg: func() (di.Arg, error) {
+		arg, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+		return di.NewSpreadSliceArg(arg)
 	}}
 }
 

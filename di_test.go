@@ -85,7 +85,15 @@ func (i *TestIfaceImpl) TestIfaceMethod() {
 	i.MethodCalled = true
 }
 
-func TestGodi(t *testing.T) {
+// A named implementation, so that a binding collecting every service of one type
+// can be checked on what it collected and in which order.
+type TestNamedIfaceImpl struct {
+	Name string
+}
+
+func (i *TestNamedIfaceImpl) TestIfaceMethod() {}
+
+func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 	tests := []struct {
 		name           string
 		builderOpts    []di.BuilderOption
@@ -378,6 +386,104 @@ func TestGodi(t *testing.T) {
 			},
 		},
 		{
+			name: "can register a service with a compound arg in a slice slot",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("foo"),
+						di.Val("bar"),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with a compound arg in a variadic slot",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs, di.Compound[string](
+						di.Val("foo"),
+						di.Val("bar"),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			// The shape the README documents: a compound is worth having because
+			// its parts arrive by different means.
+			name: "can register a service with a compound arg combining a literal and a reference",
+			build: func(b *di.Builder, refs *Refs) {
+				str := refs.Svc.New("str")
+				b.Services(
+					di.SvcVal("service-str").Bind(str),
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("literal-str"),
+						di.Ref(str),
+					)),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"literal-str", "service-str"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a service with a compound arg spreading a slice",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcSliceArgs, di.Compound[string](
+						di.Val("foo"),
+						di.SpreadSlice(di.SliceOf[string]()),
+					)).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"foo", "bar"}, svc.Args)
+			},
+		},
+		{
+			// Only a compound has two ways to take a slice, so anywhere else the
+			// spread is the argument it wraps.
+			name: "a spread slice arg outside a compound is the argument it wraps",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.SvcVal("bar"),
+					di.Svc(NewTestSvcSliceArgs, di.SpreadSlice(di.SliceOf[string]())).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Equal(t, []any{"bar"}, svc.Args)
+			},
+		},
+		{
+			name: "can register a manual service with no variadic args",
+			build: func(b *di.Builder, refs *Refs) {
+				b.Services(
+					di.Svc(NewTestSvcVariadicArgs).NotAutowired(),
+				)
+			},
+			assert: func(t *testing.T, c di.Container, refs *Refs) {
+				svc, err := di.SvcByType[*TestSvc](c)
+				require.NoError(t, err)
+				require.Empty(t, svc.Args)
+			},
+		},
+		{
 			name: "can register a service with manual interface variadic arg (variadic-style)",
 			build: func(b *di.Builder, refs *Refs) {
 				b.Services(
@@ -543,14 +649,16 @@ func TestGodi(t *testing.T) {
 			},
 		},
 		{
-			name: "cannot register a manual service with empty variadic arg",
+			// A compound is a []string, so the slot it fits is a []string one.
+			// This used to slot cleanly and fail at instantiation.
+			name: "cannot register a service with a compound arg in a non-slice slot",
 			build: func(b *di.Builder, refs *Refs) {
 				b.Services(
-					di.Svc(NewTestSvcVariadicArgs).NotAutowired(),
+					di.Svc(NewTestSvcStrArg, di.Compound[string](di.Val("foo"))).NotAutowired(),
 				)
 			},
 			assertBuildErr: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, "compilation failed: compiler pass (argument validation) returned an error: invalid service github.com/michalkurzeja/godi/v2_test.(*TestSvc): invalid factory github.com/michalkurzeja/godi/v2_test.NewTestSvcVariadicArgs: argument 0 is not set")
+				require.ErrorContains(t, err, "invalid definition of github.com/michalkurzeja/godi/v2_test.(*TestSvc): failed to add factory args: argument []string cannot be slotted to function")
 			},
 		},
 		{
@@ -1188,9 +1296,9 @@ func TestGodi(t *testing.T) {
 			name:        "doesn't detect cycle when cycle detection is disabled",
 			builderOpts: []di.BuilderOption{di.SkipCycleValidation()},
 			build: func(b *di.Builder, refs *Refs) {
-				// This is a cycle, like in the test case above.
-				// The build will succeed, but we don't want to try
-				// and retrieve either of those services - it will cause stack overflow fatal error.
+				// This is a cycle, like in the test case above. The build
+				// succeeds; asking for one of the services then fails, which
+				// TestAFactoryCycleIsReportedWhenTheServiceIsAskedFor covers.
 				var aRef, bRef, cRef di.SvcReference
 				b.Services(
 					di.Svc(Echo[string], di.Ref(&bRef)).
@@ -1230,7 +1338,7 @@ func TestGodi(t *testing.T) {
 	}
 }
 
-func TestDI_Eager(t *testing.T) {
+func TestAnEagerServiceIsBuiltWithTheContainer(t *testing.T) {
 	var (
 		eagerCounter int
 		lazyCounter  int
@@ -1269,7 +1377,7 @@ func (r RefsMap[R]) Get(t *testing.T, k string) R {
 	return *ref
 }
 
-func TestGodi_Old(t *testing.T) {
+func TestTheContainerServesFunctionsAndValuesToo(t *testing.T) {
 	t.Run("can register and call a function by ref", func(t *testing.T) {
 		t.Parallel()
 
@@ -1672,6 +1780,326 @@ func TestGodi_Old(t *testing.T) {
 			).
 			Build()
 		require.ErrorContains(t, err, "compilation failed: compiler pass (cycle validation) returned an error: service string has a circular dependency on bool")
+	})
+}
+
+// A variadic parameter takes any number of arguments, none included, so a slot
+// nobody fills is an optional dependency rather than a gap in the wiring. An
+// autowired definition already behaves this way: autowiring fills the slot with
+// an argument allowed to match nothing.
+func TestAVariadicArgumentIsOptionalWithoutAutowiring(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a factory is called with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(di.Svc(NewTestSvcVariadicArgs).NotAutowired()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
+	})
+	t.Run("a method call is made with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.Svc(NewTestSvcNoArgs).
+					MethodCall((*TestSvc).AddArgsVariadic).
+					NotAutowired(),
+			).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
+	})
+	t.Run("a function is called with no variadic arguments", func(t *testing.T) {
+		t.Parallel()
+
+		var ref di.FuncReference
+		c, err := di.New().
+			Functions(
+				di.Func(func(args ...string) int { return len(args) }).
+					Bind(&ref).
+					NotAutowired(),
+			).
+			Build()
+		require.NoError(t, err)
+
+		res, err := di.ExecByRef(c, ref)
+		require.NoError(t, err)
+		require.Equal(t, []any{0}, res)
+	})
+	t.Run("a bound interface does not reach a variadic slot", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(new(TestIfaceImpl)),
+				di.Svc(NewTestSvcIfaceVariadicArgs).NotAutowired(),
+			).
+			Bindings(di.BindSlice[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Empty(t, svc.Args)
+	})
+}
+
+// BindSlice says an interface resolves to every service of one type. It used to
+// resolve to the *single* service of that type, so a second one made the build
+// fail with "multiple services found".
+func TestABoundSliceCollectsEveryServiceOfItsType(t *testing.T) {
+	t.Parallel()
+
+	c, err := di.New().
+		Services(
+			di.SvcVal(&TestNamedIfaceImpl{Name: "foo"}),
+			di.SvcVal(&TestNamedIfaceImpl{Name: "bar"}),
+			di.Svc(NewTestSvcIfaceSliceArgs),
+		).
+		Bindings(di.BindSlice[TestIface, *TestNamedIfaceImpl]()).
+		Build()
+	require.NoError(t, err)
+
+	svc, err := di.SvcByType[*TestSvc](c)
+	require.NoError(t, err)
+	require.Equal(t, []any{
+		TestIface(&TestNamedIfaceImpl{Name: "foo"}),
+		TestIface(&TestNamedIfaceImpl{Name: "bar"}),
+	}, svc.Args)
+}
+
+// A binding says what an interface resolves to, and the argument resolving
+// through it says whether it wants one of them or all of them. Handing the
+// binding's value straight over ignored the difference and panicked in reflect,
+// after a build that reported no problem.
+func TestABindingFitsTheArgumentThatResolvesThroughIt(t *testing.T) {
+	t.Parallel()
+
+	impl := &TestIfaceImpl{}
+
+	t.Run("a slice argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceSliceArgs),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a variadic argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceVariadicArgs),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a hand-written slice argument bound to one implementation gets a one-element slice", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceSliceArgs, di.SliceOf[TestIface]()).NotAutowired(),
+			).
+			Bindings(di.BindType[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*TestSvc](c)
+		require.NoError(t, err)
+		require.Equal(t, []any{TestIface(impl)}, svc.Args)
+	})
+	t.Run("a single argument cannot resolve through a binding to a slice", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().
+			Services(
+				di.SvcVal(impl),
+				di.Svc(NewTestSvcIfaceArg),
+			).
+			Bindings(di.BindSlice[TestIface, *TestIfaceImpl]()).
+			Build()
+		require.ErrorContains(t, err, "binding on github.com/michalkurzeja/godi/v2_test.TestIface resolves to []di_test.TestIface, which cannot fill an argument of type github.com/michalkurzeja/godi/v2_test.TestIface")
+	})
+}
+
+type NilIface interface{ NilIfaceMethod() }
+
+type NilIfaceImpl struct{}
+
+func (*NilIfaceImpl) NilIfaceMethod() {}
+
+func NewNilIface() NilIface { return nil }
+
+type NilIfaceUser struct {
+	One NilIface
+	All []NilIface
+}
+
+func NewNilIfaceUser(one NilIface) *NilIfaceUser        { return &NilIfaceUser{One: one} }
+func NewNilIfaceCollector(all []NilIface) *NilIfaceUser { return &NilIfaceUser{All: all} }
+
+type NilPtrUser struct {
+	Impl *NilIfaceImpl
+}
+
+func NewNilPtrUser(impl *NilIfaceImpl) *NilPtrUser { return &NilPtrUser{Impl: impl} }
+
+// A nil is a value like any other, and a factory returning one is ordinary Go.
+// It carries no type of its own, though, so reflect cannot pass it anywhere
+// until the argument it fills says what it means.
+func TestAServiceThatIsNilIsInjectedAsNil(t *testing.T) {
+	t.Parallel()
+
+	t.Run("into a single argument", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface),
+			di.Svc(NewNilIfaceUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	t.Run("into a slice argument", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface),
+			di.Svc(NewNilIfaceCollector),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Equal(t, []NilIface{nil}, svc.All)
+	})
+	t.Run("when registered as a value", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.SvcVal[NilIface](nil),
+			di.Svc(NewNilIfaceUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	t.Run("when found by label", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface).Labels("nil-one"),
+			di.Svc(NewNilIfaceUser, di.Type[NilIface]("nil-one")).NotAutowired(),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	t.Run("into a ref argument", func(t *testing.T) {
+		t.Parallel()
+
+		var nilRef di.SvcReference
+		c, err := di.New().Services(
+			di.Svc(NewNilIface).Bind(&nilRef),
+			di.Svc(NewNilIfaceUser, di.Ref(&nilRef)).NotAutowired(),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	// A typed nil carries its type, so it never had the problem. The two have to
+	// keep behaving the same way.
+	t.Run("as a typed nil pointer", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.SvcVal[*NilIfaceImpl](nil),
+			di.Svc(NewNilPtrUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilPtrUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.Impl)
+	})
+}
+
+// An untyped nil says nothing about which argument it fills, and arguments are
+// slotted by type. There is nothing to do with it but say so.
+func TestANilLiteralIsRejected(t *testing.T) {
+	t.Parallel()
+
+	const msg = "a nil literal has no type, so nothing says which argument it fills"
+
+	t.Run("passed to di.Val", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(nil)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	t.Run("pinned to a slot", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(nil).Slot(0)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	t.Run("passed positionally", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, nil).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	// The shape someone reaches for first, and the one that looks typed but is
+	// not: boxing a nil interface into an any leaves a plain nil.
+	t.Run("as a nil interface variable", func(t *testing.T) {
+		t.Parallel()
+
+		var iface NilIface
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(iface)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
 	})
 }
 

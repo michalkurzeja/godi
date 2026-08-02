@@ -1,18 +1,77 @@
 package di
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/samber/lo"
 
+	"github.com/michalkurzeja/godi/v2/internal/errorsx"
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
+// Arg is one argument of a factory, a method call or a function: what to pass,
+// and how to find it. Each kind of argument validates and resolves itself.
+//
+// Its methods are unexported, so only godi can add a kind. The compiler passes
+// and the dependency graph have to understand every one of them.
 type Arg interface {
 	fmt.Stringer
 	Type() reflect.Type
+
+	// validate reports whether this argument can be resolved in the scope.
+	validate(scope *Scope) error
+	// resolve produces the value to pass, as part of the given call into the
+	// container.
+	resolve(ic *instantiationContext, scope *Scope) (any, error)
+	// resolveIDs lists the definitions this argument resolves to. A literal
+	// names no service, so its list is empty.
+	resolveIDs(scope *Scope) []ID
+	// trace says how the argument resolved: what matched, and by which
+	// mechanism. See ArgTrace.
+	trace(scope *Scope, path tracePath) ArgTrace
+}
+
+// ValidateArg reports whether the argument can be resolved in the scope.
+func ValidateArg(scope *Scope, arg Arg) error {
+	if arg == nil {
+		return fmt.Errorf("unsupported arg type %T", arg)
+	}
+	return arg.validate(scope)
+}
+
+// ResolveArg produces the value the argument stands for. The services it builds
+// are fully configured by the time it returns.
+func ResolveArg(scope *Scope, arg Arg) (any, error) {
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
+		return resolveArg(ic, scope, arg)
+	})
+}
+
+func resolveArg(ic *instantiationContext, scope *Scope, arg Arg) (any, error) {
+	if arg == nil {
+		return reflect.Value{}, fmt.Errorf("unsupported arg type %T", arg)
+	}
+	return arg.resolve(ic, scope)
+}
+
+// ResolveArgIDs lists the definitions the argument resolves to. A literal names
+// no service, so its list is empty.
+func ResolveArgIDs(scope *Scope, arg Arg) []ID {
+	if arg == nil {
+		return nil
+	}
+	return arg.resolveIDs(scope)
+}
+
+// TraceArg describes how the argument resolves in the scope.
+func TraceArg(scope *Scope, arg Arg) ArgTrace {
+	if arg == nil {
+		return ArgTrace{}
+	}
+	return arg.trace(scope, tracePath{})
 }
 
 type literalArg struct {
@@ -35,6 +94,22 @@ func (a *literalArg) Type() reflect.Type {
 	return reflect.TypeOf(a.v)
 }
 
+func (a *literalArg) validate(_ *Scope) error {
+	return nil
+}
+
+func (a *literalArg) resolve(_ *instantiationContext, _ *Scope) (any, error) {
+	return a.v, nil
+}
+
+func (a *literalArg) resolveIDs(_ *Scope) []ID {
+	return nil
+}
+
+func (a *literalArg) trace(_ *Scope, path tracePath) ArgTrace {
+	return ArgTrace{Kind: ArgKindLiteral, Value: a.v, Bindings: path.hops}
+}
+
 type refArg struct {
 	def *ServiceDefinition
 }
@@ -52,6 +127,36 @@ func (a *refArg) String() string {
 
 func (a *refArg) Type() reflect.Type {
 	return a.def.Type()
+}
+
+func (a *refArg) validate(scope *Scope) error {
+	if !scope.HasServiceInChain(a.def.ID()) {
+		return fmt.Errorf("service %s not found", a.def.ID())
+	}
+	return nil
+}
+
+func (a *refArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	// validate already confirmed this ID exists somewhere in the chain, so a nil
+	// result here is the service's own value, not "not found".
+	v, err := scope.getServiceInChain(ic, a.def.ID())
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve ID arg")
+	}
+	return v, nil
+}
+
+func (a *refArg) resolveIDs(_ *Scope) []ID {
+	return []ID{a.def.ID()}
+}
+
+func (a *refArg) trace(_ *Scope, path tracePath) ArgTrace {
+	return ArgTrace{
+		Kind:     ArgKindRef,
+		Bindings: path.hops,
+		Matches:  []ID{a.def.ID()},
+		By:       ResolutionRef,
+	}
 }
 
 type typeArg struct {
@@ -72,6 +177,56 @@ func (a *typeArg) Type() reflect.Type {
 		return reflect.SliceOf(a.typ)
 	}
 	return a.typ
+}
+
+func (a *typeArg) validate(scope *Scope) error {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return validateBoundArg(scope, a.typ, boundTo, a.Type())
+	}
+	ids := scope.GetServicesIDsByTypeInChain(a.typ)
+	if len(ids) == 0 {
+		return fmt.Errorf("no services found for type %s", util.Signature(a.typ))
+	}
+	if !a.slice && len(ids) > 1 {
+		return fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
+	}
+	return nil
+}
+
+func (a *typeArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return resolveBoundArg(ic, scope, a.typ, boundTo, a.Type())
+	}
+	vals, err := scope.getServicesByTypeInChain(ic, a.typ)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve type arg")
+	}
+	if len(vals) == 0 {
+		return nil, fmt.Errorf("no services found for type %s", util.Signature(a.typ))
+	}
+	if a.slice {
+		return convertSlice(vals, a.typ)
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.typ))
+	}
+	return vals[0], nil
+}
+
+func (a *typeArg) resolveIDs(scope *Scope) []ID {
+	if boundTo, ok := scope.GetBoundArgInChain(a.typ); ok {
+		return boundTo.resolveIDs(scope)
+	}
+	return scope.GetServicesIDsByTypeInChain(a.typ)
+}
+
+func (a *typeArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindType, Bindings: path.hops}
+	// a.typ is the element type when the argument collects a slice, and that is
+	// what bindings and services are looked up by either way.
+	t.matchType(scope, a.typ, path, ResolutionByType)
+	return t
 }
 
 type labelArg struct {
@@ -95,6 +250,58 @@ func (a *labelArg) Type() reflect.Type {
 	return a.typ
 }
 
+func (a *labelArg) validate(scope *Scope) error {
+	ids := scope.GetServicesIDsByLabelInChain(a.label)
+	if len(ids) == 0 {
+		return fmt.Errorf("no services found with label %s", a.label)
+	}
+	if !a.slice && len(ids) > 1 {
+		return fmt.Errorf("multiple services found with label %s", a.label)
+	}
+	return nil
+}
+
+func (a *labelArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	vals, err := scope.getServicesByLabelInChain(ic, a.label)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve type arg")
+	}
+	if len(vals) == 0 {
+		return nil, fmt.Errorf("no services found with label %s", a.label)
+	}
+	if a.slice {
+		return convertSlice(vals, a.typ)
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for label %s", a.label)
+	}
+	// A nil has no type to check. The definition it came from does, and that is
+	// what the label found.
+	if argType := reflect.TypeOf(vals[0]); vals[0] != nil && argType != a.Type() {
+		return nil, fmt.Errorf("service labeled as %s should be of type %s, got %s", a.label, util.Signature(a.Type()), util.Signature(argType))
+	}
+	return vals[0], nil
+}
+
+func (a *labelArg) resolveIDs(scope *Scope) []ID {
+	return scope.GetServicesIDsByLabelInChain(a.label)
+}
+
+func (a *labelArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{
+		Kind:     ArgKindLabel,
+		Bindings: path.hops,
+		Label:    a.label,
+		Matches:  scope.GetServicesIDsByLabelInChain(a.label),
+		By:       ResolutionByLabel,
+	}
+	if len(t.Matches) == 0 {
+		t.Fault = ArgFault{Kind: ArgFaultNoServicesWithLabel, Label: a.label}
+	}
+	return t
+}
+
 type flexibleSliceArg struct {
 	elemType   reflect.Type
 	allowEmpty bool
@@ -112,19 +319,125 @@ func (a *flexibleSliceArg) Type() reflect.Type {
 	return reflect.SliceOf(a.elemType)
 }
 
+// The slice type wins over the element type: a service providing the whole
+// slice is taken over collecting the elements one by one. Only the element type
+// is checked against the bindings, since a binding is always keyed by an
+// interface and a slice type never is. The methods below try them in that order.
+
+func (a *flexibleSliceArg) validate(scope *Scope) error {
+	// First try to match by the slice type.
+	ids := scope.GetServicesIDsByTypeInChain(a.Type())
+	if len(ids) > 1 {
+		return fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
+	}
+	if len(ids) == 1 {
+		return nil // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return validateBoundArg(scope, a.elemType, boundTo, a.Type())
+	}
+	ids = scope.GetServicesIDsByTypeInChain(a.elemType)
+	if len(ids) > 0 {
+		return nil // Slice element type matched!
+	}
+	if a.allowEmpty {
+		return nil
+	}
+
+	return fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
+}
+
+func (a *flexibleSliceArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	// First try to match by the slice type.
+	vals, err := scope.getServicesByTypeInChain(ic, a.Type())
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg")
+	}
+	if len(vals) > 1 {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, fmt.Errorf("multiple services found for type %s", util.Signature(a.Type()))
+	}
+	if len(vals) == 1 {
+		return vals[0], nil // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return resolveBoundArg(ic, scope, a.elemType, boundTo, a.Type())
+	}
+	vals, err = scope.getServicesByTypeInChain(ic, a.elemType)
+	if err != nil {
+		return nil, errorsx.Wrap(err, "failed to resolve flexible slice arg element")
+	}
+	if len(vals) > 0 {
+		return convertSlice(vals, a.elemType) // Slice element type matched!
+	}
+	if a.allowEmpty {
+		return convertSlice(nil, a.elemType)
+	}
+
+	return nil, fmt.Errorf("no services found for type %s", util.Signature(a.Type()))
+}
+
+func (a *flexibleSliceArg) resolveIDs(scope *Scope) []ID {
+	// First try to match by the slice type.
+	ids := scope.GetServicesIDsByTypeInChain(a.Type())
+	if len(ids) > 0 {
+		return ids // Slice type matched!
+	}
+
+	// Now let's try to match by the element type.
+	if boundTo, ok := scope.GetBoundArgInChain(a.elemType); ok {
+		return boundTo.resolveIDs(scope)
+	}
+	return scope.GetServicesIDsByTypeInChain(a.elemType)
+}
+
+func (a *flexibleSliceArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindFlexibleSlice, Bindings: path.hops}
+
+	// First try to match by the slice type.
+	sliceTyp := a.Type()
+	if ids := scope.GetServicesIDsByTypeInChain(sliceTyp); len(ids) > 0 {
+		t.Matches, t.By = ids, ResolutionBySliceType
+		return t
+	}
+
+	// Now let's try to match by the element type.
+	if bindScope, binding, ok := scope.bindingInChain(a.elemType); ok {
+		t.follow(scope, a.elemType, bindScope, binding, path)
+		return t
+	}
+	t.Matches, t.By = scope.GetServicesIDsByTypeInChain(a.elemType), ResolutionByElemType
+	if len(t.Matches) == 0 && !a.allowEmpty {
+		t.Fault = ArgFault{Kind: ArgFaultNoServicesOfType, Type: sliceTyp}
+	}
+	return t
+}
+
 type compoundArg struct {
 	args []Arg
 	typ  reflect.Type
 }
 
+// NewCompoundArg returns an argument that assembles the given ones into a slice.
+// typ is the *element* type: the argument resolves to, and reports, a []typ.
 func NewCompoundArg(typ reflect.Type, args ...Arg) (Arg, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
 
 	for _, arg := range args {
-		if !arg.Type().AssignableTo(typ) {
-			return nil, fmt.Errorf("argument %s cannot be assigned to type %s", arg.Type(), typ)
+		if spread, ok := arg.(*spreadSliceArg); ok {
+			if !spread.elemType().AssignableTo(typ) {
+				return nil, fmt.Errorf("argument %s cannot be spread into a slice of %s", util.Signature(arg.Type()), util.Signature(typ))
+			}
+			continue
+		}
+		if arg.Type() == nil || !arg.Type().AssignableTo(typ) {
+			return nil, fmt.Errorf("argument %s cannot be assigned to type %s", util.Signature(arg.Type()), util.Signature(typ))
 		}
 	}
 
@@ -139,7 +452,116 @@ func (c *compoundArg) String() string {
 }
 
 func (c *compoundArg) Type() reflect.Type {
-	return c.typ
+	return reflect.SliceOf(c.typ)
+}
+
+func (c *compoundArg) validate(scope *Scope) error {
+	var joinedErr error
+	for i, arg := range c.args {
+		err := arg.validate(scope)
+		if err != nil {
+			joinedErr = errors.Join(joinedErr, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i))
+		}
+	}
+	return joinedErr
+}
+
+func (c *compoundArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	vals := make([]any, 0, len(c.args))
+	for i, arg := range c.args {
+		v, err := arg.resolve(ic, scope)
+		if err != nil {
+			return nil, errorsx.Wrapf(err, "failed to resolve compound sub-arg %d", i)
+		}
+		if spread, ok := arg.(*spreadSliceArg); ok {
+			vals = append(vals, spread.elements(v)...)
+			continue
+		}
+		vals = append(vals, v)
+	}
+	return convertSlice(vals, c.typ)
+}
+
+func (c *compoundArg) resolveIDs(scope *Scope) []ID {
+	return lo.FlatMap(c.args, func(arg Arg, _ int) []ID {
+		return arg.resolveIDs(scope)
+	})
+}
+
+func (c *compoundArg) trace(scope *Scope, path tracePath) ArgTrace {
+	t := ArgTrace{Kind: ArgKindCompound, Bindings: path.hops}
+	for _, arg := range c.args {
+		t.Parts = append(t.Parts, arg.trace(scope, path))
+	}
+	return t
+}
+
+// spreadSliceArg hands a compound the elements of a slice rather than the slice
+// itself. Everywhere else it is the argument it wraps.
+//
+// Which of the two a compound wants cannot be read off the types. An element
+// type that is an interface the slice itself satisfies - always so for any -
+// makes both readings legal, so the choice is made here rather than guessed.
+type spreadSliceArg struct {
+	arg Arg
+}
+
+// NewSpreadSliceArg wraps an argument that resolves to a slice so that a
+// compound takes its elements one by one.
+func NewSpreadSliceArg(arg Arg) (Arg, error) {
+	if arg == nil {
+		return nil, fmt.Errorf("unsupported arg type %T", arg)
+	}
+	if arg.Type().Kind() != reflect.Slice {
+		return nil, fmt.Errorf("argument %s cannot be spread: it is not a slice", util.Signature(arg.Type()))
+	}
+	return &spreadSliceArg{arg: arg}, nil
+}
+
+func (a *spreadSliceArg) String() string {
+	return a.arg.String()
+}
+
+func (a *spreadSliceArg) Type() reflect.Type {
+	return a.arg.Type()
+}
+
+func (a *spreadSliceArg) validate(scope *Scope) error {
+	return a.arg.validate(scope)
+}
+
+func (a *spreadSliceArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	return a.arg.resolve(ic, scope)
+}
+
+func (a *spreadSliceArg) resolveIDs(scope *Scope) []ID {
+	return a.arg.resolveIDs(scope)
+}
+
+// trace is the wrapped argument's own. A spread changes how a compound assembles
+// what it resolved, not what it resolved, so the graph has nothing to show.
+func (a *spreadSliceArg) trace(scope *Scope, path tracePath) ArgTrace {
+	return a.arg.trace(scope, path)
+}
+
+// elemType is the type of what a compound takes from this argument.
+func (a *spreadSliceArg) elemType() reflect.Type {
+	return a.arg.Type().Elem()
+}
+
+// elements splits a resolved slice into what a compound collects. A nil slice
+// contributes nothing, and only an argument disagreeing with its own Type can
+// get here with anything else.
+func (a *spreadSliceArg) elements(v any) []any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return nil
+	}
+	out := make([]any, rv.Len())
+	for i := range out {
+		out[i] = rv.Index(i).Interface()
+	}
+	return out
 }
 
 func NewSlottedArg(arg Arg, slot uint) *SlottedArg {
@@ -163,12 +585,34 @@ func (slots Slots) Args() []Arg {
 	})
 }
 
+// ArgOrigin tells who filled a Slot. A slot exists before anything fills it, so
+// the zero value is ArgOriginNone.
+//
+// We record origins to tell an argument wired by the user from one wired by godi
+// or by a third-party compiler pass. Once the container is built, the three look
+// the same.
+//
+// A pass cannot set an origin. The compiler credits each pass with whatever it
+// changed while it ran.
+type ArgOrigin uint8
+
+const (
+	ArgOriginNone         ArgOrigin = iota // Nothing has filled this slot.
+	ArgOriginManual                        // Filled by the user, at definition time.
+	ArgOriginAutowiring                    // Filled by the autowiring pass.
+	ArgOriginCompilerPass                  // Filled or replaced by a Compiler pass.
+)
+
 type Slot struct {
 	arg      Arg
 	args     []Arg
 	typ      reflect.Type
 	i        uint
 	variadic bool
+
+	origin     ArgOrigin
+	originPass string // Name of the pass, for ArgOriginAutowiring and ArgOriginCompilerPass.
+	dirty      bool   // Whether the slot was filled since the Compiler last looked.
 }
 
 func NewSlot(typ reflect.Type, i uint, variadic bool) *Slot {
@@ -198,15 +642,18 @@ func (s *Slot) FillableBy(arg Arg) bool {
 	return s.SettableBy(arg) || s.AppendableBy(arg)
 }
 
+// An argument with no type at all fits nothing: a nil literal is the one way to
+// make one, and there is no slot it can be said to belong in.
+
 func (s *Slot) SettableBy(arg Arg) bool {
-	return arg.Type().AssignableTo(s.Type())
+	return arg.Type() != nil && arg.Type().AssignableTo(s.Type())
 }
 
 func (s *Slot) AppendableBy(arg Arg) bool {
 	if !s.IsSlice() {
 		return false
 	}
-	return arg.Type().AssignableTo(s.ElemType())
+	return arg.Type() != nil && arg.Type().AssignableTo(s.ElemType())
 }
 
 func (s *Slot) Fill(arg Arg) error {
@@ -216,15 +663,16 @@ func (s *Slot) Fill(arg Arg) error {
 	if s.AppendableBy(arg) {
 		return s.Append(arg)
 	}
-	return fmt.Errorf("argument %s cannot fill slot %d", arg.Type(), s.i)
+	return fmt.Errorf("argument %s cannot fill slot %d", util.Signature(arg.Type()), s.i)
 }
 
 func (s *Slot) Set(arg Arg) error {
 	if !s.SettableBy(arg) {
-		return fmt.Errorf("argument %s cannot be assigned to slot %d", arg.Type(), s.i)
+		return fmt.Errorf("argument %s cannot be assigned to slot %d", util.Signature(arg.Type()), s.i)
 	}
 
 	s.arg = arg
+	s.markFilled()
 	return nil
 }
 
@@ -235,12 +683,31 @@ func (s *Slot) Append(args ...Arg) error {
 
 	for _, arg := range args {
 		if !s.AppendableBy(arg) {
-			return fmt.Errorf("argument %s cannot be added as slot %d element", arg.Type(), s.i)
+			return fmt.Errorf("argument %s cannot be added as slot %d element", util.Signature(arg.Type()), s.i)
 		}
 	}
 
 	s.args = append(s.args, args...)
+	s.markFilled()
 	return nil
+}
+
+// markFilled records that the slot was just filled. The Compiler credits it
+// later.
+//
+// Until then the fill counts as the user's own. A container that is never
+// compiled still reports its wiring correctly.
+func (s *Slot) markFilled() {
+	s.origin = ArgOriginManual
+	s.originPass = ""
+	s.dirty = true
+}
+
+// creditTo names whoever made the pending fill.
+func (s *Slot) creditTo(origin ArgOrigin, pass string) {
+	s.origin = origin
+	s.originPass = pass
+	s.dirty = false
 }
 
 func (s *Slot) Arg() Arg {
@@ -268,6 +735,11 @@ func (s *Slot) IsAppended() bool {
 
 func (s *Slot) Index() uint {
 	return s.i
+}
+
+// Origin says who filled this slot, and names the pass when one did.
+func (s *Slot) Origin() (ArgOrigin, string) {
+	return s.origin, s.originPass
 }
 
 type ArgList struct {
@@ -301,7 +773,7 @@ func (l *ArgList) Assign(arg Arg) error {
 		return slot.Fill(arg)
 	}
 
-	return fmt.Errorf("argument %s cannot be slotted to function", arg.Type())
+	return fmt.Errorf("argument %s cannot be slotted to function", util.Signature(arg.Type()))
 }
 
 func (l *ArgList) ValidateAndCollect() ([]Arg, error) {
@@ -361,4 +833,102 @@ func (l *ArgList) AppendSlot(arg *SlottedArg) error {
 		return fmt.Errorf("argument %s is assigned to slot %d, but function has only %d argument slots", util.Signature(arg.Type()), arg.Slot(), slotsCount)
 	}
 	return l.slots[arg.Slot()].Append(arg.Arg)
+}
+
+// Bindings
+//
+// A binding says what an interface resolves to, and the two ends need not agree
+// on shape: BindType names one implementation while BindSlice collects every
+// one, and the argument resolving through it asks for a single value or a slice
+// of them. The three below are where that is reconciled, for every argument kind
+// that follows a binding.
+
+// boundArgFits reports whether what a binding resolves to can fill an argument
+// of the wanted type, and whether it has to be wrapped in a one-element slice
+// first. A binding target either implements the interface or is a slice of it,
+// so there is nothing else to reconcile.
+func boundArgFits(bound, want reflect.Type) (wrap, ok bool) {
+	if bound.AssignableTo(want) {
+		return false, true
+	}
+	if want.Kind() == reflect.Slice && bound.AssignableTo(want.Elem()) {
+		return true, true
+	}
+	return false, false
+}
+
+func boundArgMismatch(iface, bound, want reflect.Type) error {
+	return fmt.Errorf("binding on %s resolves to %s, which cannot fill an argument of type %s",
+		util.Signature(iface), util.Signature(bound), util.Signature(want))
+}
+
+func validateBoundArg(scope *Scope, iface reflect.Type, boundTo Arg, want reflect.Type) error {
+	if err := boundTo.validate(scope); err != nil {
+		return err
+	}
+	if _, ok := boundArgFits(boundTo.Type(), want); !ok {
+		return boundArgMismatch(iface, boundTo.Type(), want)
+	}
+	return nil
+}
+
+func resolveBoundArg(ic *instantiationContext, scope *Scope, iface reflect.Type, boundTo Arg, want reflect.Type) (any, error) {
+	wrap, ok := boundArgFits(boundTo.Type(), want)
+	if !ok {
+		// This should never happen under normal circumstances - the built-in compiler passes verify args.
+		return nil, boundArgMismatch(iface, boundTo.Type(), want)
+	}
+
+	v, err := boundTo.resolve(ic, scope)
+	if err != nil {
+		return nil, err
+	}
+	if !wrap {
+		return v, nil
+	}
+	return convertSlice([]any{v}, want.Elem())
+}
+
+// Utils
+
+func convertSlice(vs []any, elemType reflect.Type) (any, error) {
+	sl := reflect.MakeSlice(reflect.SliceOf(elemType), 0, len(vs))
+	for _, v := range vs {
+		rv, err := valueOf(v, elemType)
+		if err != nil {
+			return nil, err
+		}
+		if !rv.Type().AssignableTo(elemType) {
+			return nil, fmt.Errorf("type %s is not assignable to %s", util.Signature(rv.Type()), util.Signature(elemType))
+		}
+		sl = reflect.Append(sl, rv)
+	}
+	return sl.Interface(), nil
+}
+
+// valueOf is the value to pass for something that resolved to v. A nil carries no
+// type of its own, and reflect answers it with the zero Value, which can be
+// neither passed to a function nor appended to a slice. The type it is going into
+// says what that nil means.
+//
+// A factory returning a nil interface is ordinary Go, so this is a value like any
+// other rather than an error. A type nothing can be nil in is one, though: a zero
+// there would be a number where the container found nothing.
+func valueOf(v any, want reflect.Type) (reflect.Value, error) {
+	if rv := reflect.ValueOf(v); rv.IsValid() {
+		return rv, nil
+	}
+	if !nilable(want) {
+		return reflect.Value{}, fmt.Errorf("nil is not a value of type %s", util.Signature(want))
+	}
+	return reflect.Zero(want), nil
+}
+
+func nilable(typ reflect.Type) bool {
+	switch typ.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return true
+	default:
+		return false
+	}
 }

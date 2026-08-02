@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -27,8 +26,9 @@ jobs:
         run: go mod verify
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
+          version: v2.12.2
           skip-cache: true
 
   tests:
@@ -37,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -50,3 +49,36 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      # The container is meant to be safe to share once built, and the tests
+      # that say so only mean anything under the race detector. The viewer
+      # regressions drive a browser rather than Go, and are slow enough under
+      # -race to hit the package timeout, so the job below runs those.
+      - name: Test with the race detector
+        run: go test -race ./... -skip TestViewerRegressions
+
+  viewer:
+    name: Viewer regressions
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The self-check: the runner image ships both, and the day it stops this
+      # line says so instead of the suite quietly skipping.
+      - name: Show what CI will drive
+        run: google-chrome --version && node --version
+
+      - name: Viewer regressions
+        env:
+          GODI_REQUIRE_VIEWER_TESTS: "1"
+        run: go test ./graph/html/... -run TestViewerRegressions -count=1 -v
