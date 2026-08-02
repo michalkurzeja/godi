@@ -55,6 +55,18 @@ func runWithStdin(t *testing.T, stdin io.Reader, args ...string) result {
 	return result{stdout: stdout.String(), stderr: stderr.String(), err: err}
 }
 
+// A script that forgets the format subcommand should see a non-zero exit and
+// nothing on stdout, not a page of help text standing in for a graph.
+func TestExportWithNoFormatIsAnError(t *testing.T) {
+	t.Parallel()
+
+	got := run(t, "export")
+
+	require.Error(t, got.err)
+	require.ErrorContains(t, got.err, "a format is required")
+	require.Empty(t, got.stdout, "help text must not stand in for the graph a script expected")
+}
+
 func TestExportText(t *testing.T) {
 	t.Parallel()
 

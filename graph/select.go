@@ -485,16 +485,30 @@ func (g *Graph) rebuild(sel *selection) *Graph {
 		}
 	}
 
+	// Elided counts neighbours, not edges: two params on the same node can both
+	// resolve to the one filtered-out neighbour, and that must not count twice.
+	elided := make(map[NodeID]map[NodeID]bool)
+	countElided := func(survivor *Node, neighbour NodeID) {
+		if elided[survivor.ID] == nil {
+			elided[survivor.ID] = make(map[NodeID]bool)
+		}
+		if elided[survivor.ID][neighbour] {
+			return
+		}
+		elided[survivor.ID][neighbour] = true
+		survivor.Elided++
+	}
+
 	for _, e := range g.Edges {
 		from, to := kept[e.From], kept[e.To]
 
 		// An edge whose other end went is not drawn, but it is the reason a
 		// surviving node can say the graph carries on past it.
 		if from != nil && sel.gone[e.To] {
-			from.Elided++
+			countElided(from, e.To)
 		}
 		if to != nil && sel.gone[e.From] {
-			to.Elided++
+			countElided(to, e.From)
 		}
 
 		if from == nil || to == nil || !sel.params[e.Param] {
@@ -509,9 +523,20 @@ func (g *Graph) rebuild(sel *selection) *Graph {
 	}
 
 	out.Scopes = g.keptScopes(kept)
-	out.Bindings = g.keptBindings(out.Edges, kept)
+	out.Bindings = g.keptBindings(out.Edges, kept, wantedScopeSet(out.Scopes))
 	out.ElidedDiagnostics = g.ElidedDiagnostics + len(g.AllDiagnostics()) - len(out.AllDiagnostics())
 	return out
+}
+
+// wantedScopeSet is the ids of the scopes kept, for a quick membership check
+// against a binding's own scope: a binding's Scope is the scope it applies to,
+// a different axis from its Targets, and can be dropped independently of them.
+func wantedScopeSet(scopes []*Scope) map[ScopeID]bool {
+	wanted := make(map[ScopeID]bool, len(scopes))
+	for _, s := range scopes {
+		wanted[s.ID] = true
+	}
+	return wanted
 }
 
 // keptScopes keeps the scopes that still hold a node, and the ancestors that
@@ -546,7 +571,7 @@ func (g *Graph) keptScopes(kept map[NodeID]*Node) []*Scope {
 // keptBindings drops the bindings of scopes that went, points the rest at the
 // targets that remain, and counts them against the edges still drawn. A binding
 // reported as unused in a narrowed graph is unused in that graph.
-func (g *Graph) keptBindings(edges []*Edge, kept map[NodeID]*Node) []*Binding {
+func (g *Graph) keptBindings(edges []*Edge, kept map[NodeID]*Node, wantedScopes map[ScopeID]bool) []*Binding {
 	type hop struct {
 		scope ScopeID
 		iface string
@@ -561,6 +586,10 @@ func (g *Graph) keptBindings(edges []*Edge, kept map[NodeID]*Node) []*Binding {
 
 	var out []*Binding
 	for _, b := range g.Bindings {
+		if !wantedScopes[b.Scope] {
+			continue
+		}
+
 		targets := make([]NodeID, 0, len(b.Targets))
 		for _, id := range b.Targets {
 			if kept[id] != nil {

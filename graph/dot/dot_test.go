@@ -365,6 +365,26 @@ func TestScopesBecomeNestedClusters(t *testing.T) {
 	require.Less(t, inner, conn, "the private service sits inside its owner's cluster")
 }
 
+// A negative depth cannot come from a built container, but nothing between a
+// hand-edited or corrupted graph file and this encoder validates it, so this
+// pins the clamp rather than a panic.
+func TestANegativeScopeDepthDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root", Depth: -1}},
+		Nodes: []*graph.Node{{
+			ID: "root/svc:app.(*Orphan)", Kind: graph.NodeService, Scope: "root",
+			Type: "github.com/acme/app.(*Orphan)",
+		}},
+	}
+
+	var out string
+	require.NotPanics(t, func() { out = encode(t, g) })
+	require.Contains(t, out, `subgraph "cluster_root"`)
+}
+
 func TestRootsAreDistinguishable(t *testing.T) {
 	t.Parallel()
 

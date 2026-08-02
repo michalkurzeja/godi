@@ -1,6 +1,7 @@
 package graph_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -200,6 +201,27 @@ func TestTheLookupsFindWhatIsThere(t *testing.T) {
 	require.Len(t, g.InEdges(graph.NodeID(config)), 2)
 	require.Len(t, g.ChildScopes("root"), 1)
 	require.Len(t, g.ScopeNodes(childScope), 1)
+}
+
+// A *Graph is handed to concurrent readers - graph.Static serves the same one
+// to every HTTP request - so the lookup indexes it builds on first use must not
+// race. Run with -race, as CI does, to be worth anything.
+func TestTheLookupsBuildTheirIndexSafelyUnderConcurrentUse(t *testing.T) {
+	t.Parallel()
+
+	g := model()
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			g.Node(graph.NodeID(server))
+			g.Param(graph.ParamID(server + "#f:0"))
+			g.Scope("root")
+			g.OutEdges(graph.NodeID(server))
+			g.InEdges(graph.NodeID(config))
+		})
+	}
+	wg.Wait()
 }
 
 // The qualified type is what the detail panel used to show, and a generic makes

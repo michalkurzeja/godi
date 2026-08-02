@@ -349,6 +349,36 @@ func TestHideMethodCallsDropsTheRowAndTheEdge(t *testing.T) {
 	}
 }
 
+// Elided is documented as neighbours, not edges: two params on one node can
+// both resolve to the one filtered-out neighbour, and that must count as one.
+// MaxNodes is what the report used, because Exclude does not set Elided at
+// all: dropping a neighbour a limit did not choose is not what it is for.
+func TestElidedCountsDistinctNeighboursNotEdges(t *testing.T) {
+	t.Parallel()
+
+	const a, b = "root/svc:app.(*A)", "root/svc:app.(*B)"
+	p0 := &graph.Param{ID: a + "#f:0", Node: a, Kind: graph.InjectFactoryArg, Type: "app.(*B)"}
+	p1 := &graph.Param{ID: a + "#f:1", Node: a, Kind: graph.InjectFactoryArg, Type: "app.(*B)"}
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{{ID: "root", Name: "root"}},
+		Nodes: []*graph.Node{
+			{ID: a, Kind: graph.NodeService, Scope: "root", Type: "app.(*A)", Params: []*graph.Param{p0, p1}, OutDegree: 2},
+			{ID: b, Kind: graph.NodeService, Scope: "root", Type: "app.(*B)", InDegree: 2},
+		},
+		Edges: []*graph.Edge{
+			{ID: graph.NewEdgeID(p0.ID, 0), From: a, To: b, Param: p0.ID, Kind: p0.Kind, ParamType: p0.Type},
+			{ID: graph.NewEdgeID(p1.ID, 0), From: a, To: b, Param: p1.ID, Kind: p1.Kind, ParamType: p1.Type},
+		},
+	}
+
+	got := g.Select(graph.MaxNodes(1))
+
+	require.Equal(t, []string{a}, ids(got))
+	require.Equal(t, 1, node(t, got, a).Elided, "B is one neighbour, reached by two params")
+}
+
 func TestMaxNodesKeepsTheMostConnected(t *testing.T) {
 	t.Parallel()
 
@@ -437,6 +467,39 @@ func TestBindingsFollowTheFilteredGraph(t *testing.T) {
 
 	dropped := model().Select(graph.ExcludeTypes("*ConsoleLogger"))
 	require.Empty(t, dropped.Bindings, "its only target went")
+}
+
+// A binding's Scope is where it applies, a different axis from its Targets:
+// a child scope can bind an interface to a service that lives in root. Only
+// the target surviving a filter is not enough to keep the binding, because its
+// own scope can go without it.
+func TestABindingWhoseOwnScopeWentDoesNotSurviveEvenIfItsTargetDid(t *testing.T) {
+	t.Parallel()
+
+	const childScope = graph.ScopeID("root/svc:app.(*Server)")
+
+	g := &graph.Graph{
+		Schema: graph.Schema,
+		Scopes: []*graph.Scope{
+			{ID: "root", Name: "root"},
+			{ID: childScope, Parent: "root", Depth: 1, Name: "uuid-1"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "root/svc:app.ConsoleLogger", Kind: graph.NodeService, Scope: "root", Type: "app.ConsoleLogger"},
+			{ID: "root/svc:app.(*Server)", Kind: graph.NodeService, Scope: childScope, Type: "app.(*Server)"},
+		},
+		Bindings: []*graph.Binding{{
+			Scope: childScope, Interface: "app.Logger", BoundTo: "app.ConsoleLogger",
+			Targets: []graph.NodeID{"root/svc:app.ConsoleLogger"},
+		}},
+	}
+
+	got := g.Select(graph.OnlyScope("root"))
+
+	require.NotContains(t, ids(got), "root/svc:app.(*Server)", "the child scope's own node should have gone")
+	require.Contains(t, ids(got), "root/svc:app.ConsoleLogger", "the binding's target should have survived")
+	require.Len(t, got.Scopes, 1, "the child scope has nothing left in it")
+	require.Empty(t, got.Bindings, "the binding's own scope went, even though its target did not")
 }
 
 func TestFilteringLeavesTheOriginalAlone(t *testing.T) {

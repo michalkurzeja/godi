@@ -1144,6 +1144,19 @@ await test('typing c in the search box does not clear it', async () => {
 	return eq(await ev(`godi.cy.nodes('.sel').length`), 1, 'the selection while typing');
 });
 
+await test('holding the modifier while pressing c leaves the shortcut alone', async () => {
+	await selectNode(SERVER);
+	await ev(`(() => {
+		document.dispatchEvent(new KeyboardEvent('keydown', {key: 'c', ${MOD}: true, bubbles: true}));
+		// The panning module's own keydown listener also sees this and arms pan
+		// mode, which suppresses every later tap-driven selection until it is
+		// released. A real keyup would do that; this one has to as well.
+		document.dispatchEvent(new KeyboardEvent('keyup', {key: 'c', bubbles: true}));
+		return true;
+	})()`);
+	return eq(await ev(`godi.cy.nodes('.sel').length`), 1, 'the selection after the modified key');
+});
+
 await test('the controls list names both keys', async () => {
 	await ev(`(() => { document.getElementById('help').click(); return true; })()`);
 	return eq(await ev(`(() => {
@@ -1273,6 +1286,31 @@ await test('and back to auto', async () => {
 	await ev(`(() => { const t = document.getElementById('theme'); t.value = 'auto'; t.dispatchEvent(new Event('change')); return true; })()`);
 	const s = await scheme();
 	return (s.cls === 'theme-auto' && s.label === 'auto') || JSON.stringify(s);
+});
+
+// The rules are images with the border colour baked in, drawn by the same call
+// that restyles the canvas. Reported: on "auto", the system flipping its own
+// scheme repainted the canvas but left the rules on the old colour.
+await test('the system scheme changing repaints the rules too', async () => {
+	const rules = () => ev(`godi.cy.getElementById(${JSON.stringify(SERVER)}).data('rules')`);
+
+	// The environment's own preference is not known ahead of time, so light is
+	// forced first: that guarantees the switch to dark below is a real change,
+	// however this machine's system scheme happens to be set.
+	await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+	await sleep(150);
+	const before = await rules();
+
+	await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+	await sleep(150);
+	const after = await rules();
+
+	// Leave no override behind for whatever runs next.
+	await send('Emulation.setEmulatedMedia', { features: [] });
+	await sleep(150);
+
+	return (before !== 'none' && before !== after)
+		|| `rules stayed ${JSON.stringify(before)} after the system switched to dark`;
 });
 
 await test('d hides and shows the detail panel', async () => {
@@ -1880,6 +1918,34 @@ await test('roots only hides everything else', async () => {
 		'root/svc:app.(*Repo)',
 		'root/svc:app.(*Server)',
 	], 'what survives the roots-only view');
+});
+
+// Server depends on Router, which roots-only hides. The panel's own link to it
+// comes from the unfiltered model, so it would otherwise still offer a way to
+// select a node with nothing on the canvas.
+await test('a dependency link in the panel does not select a node a filter has hidden', async () => {
+	await toggle('rootsOnly', true);
+	await selectNode(SERVER);
+
+	const disabled = await ev(`(() => {
+		const btn = [...document.querySelectorAll('#panel .param button.link')]
+			.find((b) => b.textContent.includes('Router'));
+		return btn ? btn.disabled : null;
+	})()`);
+	const clicked = await ev(`(() => {
+		const btn = [...document.querySelectorAll('#panel .param button.link')]
+			.find((b) => b.textContent.includes('Router'));
+		if (!btn) return false;
+		btn.click();
+		return true;
+	})()`);
+	await settle();
+	const focus = await ev(`godi.state.focus`);
+
+	await toggle('rootsOnly', false);
+
+	return (disabled === true && clicked === true && focus === SERVER)
+		|| `link disabled=${disabled}, clicked=${clicked}, focus ended up at ${focus}`;
 });
 
 await test('the count is in the status bar', async () =>

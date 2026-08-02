@@ -96,9 +96,12 @@ type palette struct {
 }
 
 func (p palette) clusterFill(depth int) string {
-	// Nested scopes get progressively more tint, so depth reads at a glance.
+	// Nested scopes get progressively more tint, so depth reads at a glance. A
+	// negative depth cannot come from a built container, but a hand-edited or
+	// corrupted graph file is not validated against, so it is clamped rather
+	// than trusted.
 	alphas := []string{"06", "0a", "10", "16"}
-	return p.clusterTint + alphas[min(depth, len(alphas)-1)]
+	return p.clusterTint + alphas[min(max(depth, 0), len(alphas)-1)]
 }
 
 func (n ThemeName) palette() palette {

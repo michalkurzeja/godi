@@ -68,6 +68,12 @@ func (x *extractor) buildBindings() {
 
 // markCycles flags the edges that close a cycle. Cycle validation can be turned
 // off, so the graph is not guaranteed acyclic.
+//
+// A method call runs after its receiver is built, so a loop closed only through
+// method-call edges is setter injection, not an instantiation-order cycle. The
+// engine's own cycle check (NewCycleValidationPass) walks factory arguments
+// only, for the same reason; this mirrors it so a legal wiring is not painted
+// as broken.
 func (x *extractor) markCycles() {
 	g := dbgraph.New(func(id graph.NodeID) graph.NodeID { return id }, dbgraph.Directed(), dbgraph.PreventCycles())
 
@@ -75,6 +81,9 @@ func (x *extractor) markCycles() {
 		_ = g.AddVertex(node.ID)
 	}
 	for _, edge := range x.out.Edges {
+		if edge.Kind == graph.InjectMethodArg || edge.Kind == graph.InjectMethodReceiver {
+			continue
+		}
 		err := g.AddEdge(edge.From, edge.To)
 		if errors.Is(err, dbgraph.ErrEdgeCreatesCycle) {
 			edge.Cycle = true

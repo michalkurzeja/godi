@@ -18,8 +18,9 @@ func (x *extractor) reportedDiagnostics() {
 	claimed := make(map[*graph.Param]bool)
 
 	for _, d := range x.container.Diagnostics() {
-		x.record(x.destination(d.Site, claimed), graph.Diagnostic{
-			Severity: x.severityOf(d.Severity),
+		severity := x.severityOf(d.Severity)
+		x.record(x.destination(d.Site, severity, claimed), graph.Diagnostic{
+			Severity: severity,
 			Message:  d.Message,
 			Pass:     d.Pass,
 			Location: x.registered(d.At),
@@ -31,14 +32,20 @@ func (x *extractor) reportedDiagnostics() {
 // definition, else the scope, else the graph. Each fallback is a step outwards to
 // something that does exist, so a diagnostic loses the element it named but never
 // the words.
-func (x *extractor) destination(site di.Site, claimed map[*graph.Param]bool) *[]graph.Diagnostic {
+func (x *extractor) destination(site di.Site, severity graph.Severity, claimed map[*graph.Param]bool) *[]graph.Diagnostic {
 	// A site naming an argument godi injects itself lands nowhere: the receiver
 	// slot of a method call produces no param of its own.
 	if p := x.slotParams[site.Slot()]; p != nil {
 		// The pass saw more than the trace could, and said it in the words the
-		// build failed with.
+		// build failed with — but only an error-severity diagnostic is a
+		// correction of that fault. An info or warning naming the same slot is
+		// additional context, not a replacement, so it must not erase the error
+		// extraction already recorded there.
 		if !claimed[p] {
-			p.Diagnostics, claimed[p] = nil, true
+			claimed[p] = true
+			if severity == graph.SeverityError {
+				p.Diagnostics = nil
+			}
 		}
 		return &p.Diagnostics
 	}

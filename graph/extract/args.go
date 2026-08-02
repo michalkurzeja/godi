@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/michalkurzeja/godi/v2/di"
@@ -81,12 +82,21 @@ func (x *extractor) param(node *graph.Node, scope *di.Scope, slot *di.Slot, kind
 	arg := slot.Arg() // Fabricates a fresh compound for appended slots: call it once.
 	trace := di.TraceArg(scope, arg)
 	p.Arg = x.argKindOf(trace.Kind)
-	x.walk(p, trace)
+	x.walk(p, trace, hasMatch(trace))
+}
+
+// hasMatch reports whether any part of a trace tree matched something. It is
+// computed once, over the whole argument, rather than read off EdgeCount
+// mid-walk: EdgeCount only reflects what has been appended so far, so reading
+// it before every part of a compound has been visited makes a label fault
+// depend on the order its sibling parts happen to be declared in.
+func hasMatch(t di.ArgTrace) bool {
+	return len(t.Matches) > 0 || slices.ContainsFunc(t.Parts, hasMatch)
 }
 
 // walk turns one argument's trace into edges. The argument decided how it resolved.
 // This only says what each part of that looks like in a graph.
-func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
+func (x *extractor) walk(p *graph.Param, t di.ArgTrace, anyMatch bool) {
 	switch t.Kind {
 	case di.ArgKindLiteral:
 		x.literal(p, t.Value)
@@ -100,10 +110,10 @@ func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
 		x.edge(p, x.byUUID[id], x.resolutionOf(t.By), hops)
 	}
 
-	x.fault(p, t.Fault)
+	x.fault(p, t.Fault, anyMatch)
 
 	for _, part := range t.Parts {
-		x.walk(p, part)
+		x.walk(p, part, anyMatch)
 	}
 }
 
@@ -111,13 +121,13 @@ func (x *extractor) walk(p *graph.Param, t di.ArgTrace) {
 //
 // A label that matched nothing is only a fault when the whole argument matched
 // nothing. Inside a compound that did resolve, it is not a problem.
-func (x *extractor) fault(p *graph.Param, f di.ArgFault) {
+func (x *extractor) fault(p *graph.Param, f di.ArgFault, anyMatch bool) {
 	switch f.Kind {
 	case di.ArgFaultNone:
 	case di.ArgFaultNoServicesOfType:
 		x.unresolved(p, fmt.Sprintf("no services of type %s", util.Signature(f.Type)))
 	case di.ArgFaultNoServicesWithLabel:
-		if p.EdgeCount == 0 {
+		if !anyMatch {
 			x.unresolved(p, fmt.Sprintf("no services labelled %q", f.Label))
 		}
 	case di.ArgFaultCircularBinding:

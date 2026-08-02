@@ -137,12 +137,11 @@ func (a *refArg) validate(scope *Scope) error {
 }
 
 func (a *refArg) resolve(ic *instantiationContext, scope *Scope) (any, error) {
+	// validate already confirmed this ID exists somewhere in the chain, so a nil
+	// result here is the service's own value, not "not found".
 	v, err := scope.getServiceInChain(ic, a.def.ID())
 	if err != nil {
 		return nil, errorsx.Wrap(err, "failed to resolve ID arg")
-	}
-	if v == nil {
-		return nil, fmt.Errorf("service %s not found", a.def.ID())
 	}
 	return v, nil
 }

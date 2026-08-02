@@ -97,6 +97,13 @@ func Ellipsis(s string, maxRunes int) string {
 		return s // Fits as it is, ellipsis included.
 	}
 
+	// maxRunes-1 would ask Truncate for zero, which it takes to mean no limit,
+	// handing back the whole string for the ellipsis to grow onto instead of cut.
+	// maxRunes <= 0 already returned above, so this is exactly maxRunes == 1.
+	if maxRunes == 1 {
+		return "…"
+	}
+
 	// Leave room for the ellipsis, so the result still fits the limit.
 	clipped, _ := util.Truncate(s, maxRunes-1)
 	return clipped + "…"

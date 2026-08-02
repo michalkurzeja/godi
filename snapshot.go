@@ -1,6 +1,7 @@
 package di
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,10 +121,19 @@ func (w snapshotWriter) createFile() (*os.File, error) {
 		path = os.TempDir()
 	}
 
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil && info.IsDir():
 		return os.CreateTemp(path, "godi-graph-*.json")
+	case err == nil, errors.Is(err, os.ErrNotExist):
+		// Either a file already there, or nothing yet: there is no other signal
+		// for directory intent, so this keeps treating the path as a file.
+		return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	default:
+		// A permission error or a bad path component: guessing "must be a file"
+		// here only fails a second time, more confusingly, at OpenFile.
+		return nil, err
 	}
-	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 }
 
 func (w snapshotWriter) warnNoSnapshot(err error) {

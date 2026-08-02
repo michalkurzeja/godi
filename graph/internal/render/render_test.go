@@ -61,6 +61,7 @@ func TestEllipsis(t *testing.T) {
 		{"over the limit, ellipsis included in the budget", "hello world", 5, "hell…"},
 		{"no limit", "hello world", 0, "hello world"},
 		{"cuts on rune boundaries", "wysoką jakość", 7, "wysoką…"},
+		{"no room for content, only the mark", "hello", 1, "…"},
 	}
 
 	for _, tt := range tests {

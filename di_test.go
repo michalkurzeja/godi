@@ -2028,6 +2028,20 @@ func TestAServiceThatIsNilIsInjectedAsNil(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, svc.One)
 	})
+	t.Run("into a ref argument", func(t *testing.T) {
+		t.Parallel()
+
+		var nilRef di.SvcReference
+		c, err := di.New().Services(
+			di.Svc(NewNilIface).Bind(&nilRef),
+			di.Svc(NewNilIfaceUser, di.Ref(&nilRef)).NotAutowired(),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
 	// A typed nil carries its type, so it never had the problem. The two have to
 	// keep behaving the same way.
 	t.Run("as a typed nil pointer", func(t *testing.T) {

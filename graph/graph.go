@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/michalkurzeja/godi/v2/graph/internal/render"
 	"github.com/michalkurzeja/godi/v2/internal/errorsx"
@@ -67,12 +68,15 @@ type Graph struct {
 	// machines. Joining it back onto a path returns the original.
 	SourceRoot string `json:"sourceRoot,omitzero"`
 
-	// Lookup indexes, built on first use.
-	nodes  map[NodeID]*Node
-	params map[ParamID]*Param
-	scopes map[ScopeID]*Scope
-	out    map[NodeID][]*Edge
-	in     map[NodeID][]*Edge
+	// Lookup indexes, built on first use. A Graph is handed to concurrent
+	// readers (graph.Static serves the same *Graph to every HTTP request), so
+	// building them is guarded rather than left to a bare nil check.
+	indexOnce sync.Once
+	nodes     map[NodeID]*Node
+	params    map[ParamID]*Param
+	scopes    map[ScopeID]*Scope
+	out       map[NodeID][]*Edge
+	in        map[NodeID][]*Edge
 }
 
 // Scope is a group of definitions. Child scopes hold services private to the
@@ -827,27 +831,25 @@ func (g *Graph) Encode(w io.Writer, enc Encoder) error {
 }
 
 func (g *Graph) index() {
-	if g.nodes != nil {
-		return
-	}
+	g.indexOnce.Do(func() {
+		g.nodes = make(map[NodeID]*Node, len(g.Nodes))
+		g.params = make(map[ParamID]*Param)
+		g.scopes = make(map[ScopeID]*Scope, len(g.Scopes))
+		g.out = make(map[NodeID][]*Edge)
+		g.in = make(map[NodeID][]*Edge)
 
-	g.nodes = make(map[NodeID]*Node, len(g.Nodes))
-	g.params = make(map[ParamID]*Param)
-	g.scopes = make(map[ScopeID]*Scope, len(g.Scopes))
-	g.out = make(map[NodeID][]*Edge)
-	g.in = make(map[NodeID][]*Edge)
-
-	for _, s := range g.Scopes {
-		g.scopes[s.ID] = s
-	}
-	for _, n := range g.Nodes {
-		g.nodes[n.ID] = n
-		for _, p := range n.Params {
-			g.params[p.ID] = p
+		for _, s := range g.Scopes {
+			g.scopes[s.ID] = s
 		}
-	}
-	for _, e := range g.Edges {
-		g.out[e.From] = append(g.out[e.From], e)
-		g.in[e.To] = append(g.in[e.To], e)
-	}
+		for _, n := range g.Nodes {
+			g.nodes[n.ID] = n
+			for _, p := range n.Params {
+				g.params[p.ID] = p
+			}
+		}
+		for _, e := range g.Edges {
+			g.out[e.From] = append(g.out[e.From], e)
+			g.in[e.To] = append(g.in[e.To], e)
+		}
+	})
 }

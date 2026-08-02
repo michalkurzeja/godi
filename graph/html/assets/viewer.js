@@ -939,11 +939,20 @@ const make = (tag, cls, text) => {
 	return el;
 };
 
+// A node a filter has taken away cannot be shown: select() on it would set
+// state.focus to something with nothing on the canvas. nodeLink, the go-to
+// dialog and the search-Enter jump all point at the same unfiltered model
+// data, so this one guard covers all three.
+function isSelectable(id) {
+	return nodes.has(id) && cy.getElementById(id).visible();
+}
+
 function nodeLink(id) {
 	const n = nodes.get(id);
 	const btn = make('button', 'link', n ? n.title : id);
 	btn.type = 'button';
-	btn.addEventListener('click', () => select(id, true));
+	if (!isSelectable(id)) btn.disabled = true;
+	btn.addEventListener('click', () => { if (isSelectable(id)) select(id, true); });
 	return btn;
 }
 
@@ -1502,25 +1511,33 @@ function installPanning() {
 	//
 	// The press is captured on the way down and stopped there, so Cytoscape never
 	// sees it. If it panned as well, the graph would move twice as far.
+	//
+	// Pointer capture, not a window mouseup, ends the gesture: releasing the
+	// button outside the window still delivers the pointerup here, where a plain
+	// window listener can miss it and leave the graph panning under the cursor.
 	let from = null;
-	canvasEl().addEventListener('mousedown', (ev) => {
+	canvasEl().addEventListener('pointerdown', (ev) => {
 		if (ev.button !== 1 && !(ev.button === 0 && ev[MOD])) return;
 		ev.preventDefault();
 		ev.stopPropagation();
+		canvasEl().setPointerCapture(ev.pointerId);
 		from = { x: ev.clientX, y: ev.clientY };
 		canvasEl().classList.add('panning');
 	}, { capture: true });
 
-	window.addEventListener('mousemove', (ev) => {
-		if (!from) return;
+	canvasEl().addEventListener('pointermove', (ev) => {
+		if (!from || !canvasEl().hasPointerCapture(ev.pointerId)) return;
 		cy.panBy({ x: ev.clientX - from.x, y: ev.clientY - from.y });
 		from = { x: ev.clientX, y: ev.clientY };
 	});
-	window.addEventListener('mouseup', () => {
+	const stopPanning = (ev) => {
 		if (!from) return;
+		if (canvasEl().hasPointerCapture(ev.pointerId)) canvasEl().releasePointerCapture(ev.pointerId);
 		from = null;
 		canvasEl().classList.remove('panning');
-	});
+	};
+	canvasEl().addEventListener('pointerup', stopPanning);
+	canvasEl().addEventListener('pointercancel', stopPanning);
 
 	// Otherwise the middle button scrolls, or pastes.
 	canvasEl().addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
@@ -1730,7 +1747,7 @@ function installGoto() {
 
 		// A node a filter has taken away cannot be shown. Saying nothing would
 		// look like the id was wrong.
-		if (!cy.getElementById(id).visible()) {
+		if (!isSelectable(id)) {
 			say('That node is filtered out of the picture at the moment.', true);
 			return;
 		}
@@ -1856,7 +1873,7 @@ function installTheme() {
 	// Following the system setting means restyling when it changes, but only
 	// while that is what the reader asked for.
 	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-		if (currentTheme() === 'auto') cy.style(stylesheet());
+		if (currentTheme() === 'auto') { cy.style(stylesheet()); paintRules(); }
 	});
 
 	$('theme').addEventListener('change', () => setTheme($('theme').value));
@@ -1919,7 +1936,8 @@ function installControls() {
 	search.addEventListener('keydown', (ev) => {
 		if (ev.key !== 'Enter') return;
 		const hits = found();
-		if (hits && hits.size) select([...hits][0], true);
+		const id = hits && [...hits].find(isSelectable);
+		if (id) select(id, true);
 	});
 
 	// The last stop on the slider is "everything the selection reaches". That is
@@ -2018,6 +2036,10 @@ function installControls() {
 	});
 
 	document.addEventListener('keydown', (ev) => {
+		// A modified key is a browser or OS shortcut (copy, find, reload, ...),
+		// not one of ours. Letting it through here would otherwise fire our
+		// single-letter shortcuts and eat the native action.
+		if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
 		if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') {
 			if (ev.key === 'Escape') ev.target.blur();
 			return;
