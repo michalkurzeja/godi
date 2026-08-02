@@ -4,12 +4,12 @@
 // That is what lets the same handler serve a file read from disk and a container
 // that is still running:
 //
-//	srv, err := serve.Listen("127.0.0.1:0", extract.Live(c))
+//	srv, err := serve.Listen("127.0.0.1:0", di.LiveGraph(c))
 //	fmt.Println(srv.URL())
 //	err = srv.Serve()
 //
-// extract.Live reads the container again on every call, so watching one change as
-// it is wired needs nothing from this package beyond a page that asks again.
+// A live source reads the container again on every call, so watching one change
+// as it is wired needs nothing from this package beyond a page that asks again.
 //
 // It lives apart from graph because it draws the graph to answer a request, and
 // drawing means graph/html. No godi binary should carry that unless it asked for

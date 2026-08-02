@@ -347,12 +347,11 @@ indistinguishable.
 
 ```go
 import (
-	engine "github.com/michalkurzeja/godi/v2/di"
-	"github.com/michalkurzeja/godi/v2/graph/extract"
+	di "github.com/michalkurzeja/godi/v2"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
 
-g, err := extract.From(c.(*engine.Container))   // Build returns the interface; extraction reads the container
+g, err := di.Graph(c)                     // di.LiveGraph(c) for a graph.Source, re-read on every call
 err = g.Encode(os.Stdout, text.New())
 ```
 
@@ -388,7 +387,7 @@ Filters work on the model, so every format gets them. Reach for them on any real
 past a hundred nodes a whole-graph picture is unreadable.
 
 ```go
-g, err := extract.From(c.(*engine.Container))
+g, err := di.Graph(c)
 
 g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
@@ -397,7 +396,7 @@ g = g.Select(
 )
 ```
 
-`From` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`,
+`Graph` takes extraction `Option`s (`WithLiteralValues`, `WithRedactor`, `WithoutLiterals`,
 and `WithDiagnosticMarks`/`WithoutDiagnostics`/`WithDiagnosticRedactor` for the same care over
 diagnostic text — a message from a factory carries whatever that factory put in its error);
 `Select` takes `Filter`s. They are different types on purpose - neither compiles in the
@@ -454,13 +453,13 @@ godi export dot graph.json | dot -Tsvg -o graph.svg
 ```
 
 `graph/serve` is the handler behind `godi view`, and takes a `graph.Source`, so it serves a
-live container as readily as a file: `serve.Listen("127.0.0.1:0", container)`.
+live container as readily as a file: `serve.Listen("127.0.0.1:0", di.LiveGraph(c))`.
 
 A **root** is a node nothing injects — an entry point, or wiring nothing uses. godi does not
 guess which: a service fetched at runtime with `SvcByType` leaves no trace in the container.
 
 `Container.Print(w)` and `di.Print(scope, w)` still work but are deprecated: they write a plain
-outline of their own, so that no godi binary links an encoder for them. Prefer `extract.From`
+outline of their own, so that no godi binary links an encoder for them. Prefer `di.Graph`
 with `graph/text` in new code.
 
 ## Concurrency

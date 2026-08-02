@@ -46,7 +46,6 @@ import (
 	"github.com/michalkurzeja/godi/v2/extras"
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/dot"
-	"github.com/michalkurzeja/godi/v2/graph/extract"
 	"github.com/michalkurzeja/godi/v2/graph/html"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
@@ -257,7 +256,7 @@ func extractGraph(snapshot bool, opts []graph.Option) (*graph.Graph, error) {
 	if err != nil {
 		return nil, err
 	}
-	return extract.From(c.(*dicore.Container), opts...)
+	return di.Graph(c, opts...)
 }
 
 // openGraph is a variable so a test can watch what it is handed: -open used to

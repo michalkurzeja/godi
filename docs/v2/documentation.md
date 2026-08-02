@@ -309,7 +309,7 @@ service is built, resolving it takes a read lock and nothing else, so the warm p
 where the traffic is — runs fully in parallel.
 
 Graph extraction never waits for a factory. The lock that construction holds across user code is
-not the one guarding instances, so `extract.Live` and `Scope.Instantiated` are unaffected by a
+not the one guarding instances, so `di.LiveGraph` and `Scope.Instantiated` are unaffected by a
 build in progress.
 
 **A factory, method call or function must not resolve from the container that is building it** — it
@@ -481,11 +481,17 @@ extras.CaptureGraph(di.PreValidation, capture, opts...)   // the graph, partway 
 ### 5.1 Getting one
 
 ```go
-g, err := extract.From(c.(*engine.Container))     // a built container
-g, err := extract.FromBuilder(b)                  // inside a pass, or after a failed build
-src := extract.Live(c)                            // a graph.Source, re-read on every call
+g, err := di.Graph(c)                             // a built container
+src := di.LiveGraph(c)                            // a graph.Source, re-read on every call
 src := graph.Static(g)                            // a graph you already have
+
+g, err := extract.From(container)                 // the container itself, for extensions
+g, err := extract.FromBuilder(b)                  // inside a pass, or after a failed build
 ```
+
+`Build` hands back the `Container` interface and extraction reads the container underneath, so
+`di.Graph` and `di.LiveGraph` find it for you. A container of your own standing in front of one
+godi built keeps working if it implements `di.Unwrapper` — one method, `Unwrap() Container`.
 
 `graph.Source` is an interface with one method, `Graph(Config) (*Graph, error)`; wrap a plain
 function in `graph.SourceFunc`. `graph/serve` takes a Source, which is how the same handler serves

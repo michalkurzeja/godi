@@ -26,7 +26,7 @@ type Container interface {
 
 	// Deprecated: use the graph package with the text encoder:
 	//
-	//	g, err := extract.From(c)
+	//	g, err := di.Graph(c)
 	//	err = g.Encode(w, text.New())
 	Print(w io.Writer)
 }

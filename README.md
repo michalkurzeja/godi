@@ -948,16 +948,15 @@ one substituted by a compiler pass all look identical at runtime. The graph tell
 
 ```go
 import (
-	engine "github.com/michalkurzeja/godi/v2/di"
-	"github.com/michalkurzeja/godi/v2/graph/extract"
+	di "github.com/michalkurzeja/godi/v2"
 	"github.com/michalkurzeja/godi/v2/graph/text"
 )
 
-g, err := extract.From(c.(*engine.Container))
+g, err := di.Graph(c)
 err = g.Encode(os.Stdout, text.New())
 ```
 
-Reading a container is `graph/extract`'s job. `graph` itself is only the model — plain data, with no
+Reading a container is `graph/extract`'s job, and `di.Graph` is the way in to it. `graph` itself is only the model — plain data, with no
 dependency on the container — so a program that reads a graph, the CLI above all, carries none of the
 container engine. Each format lives in its own package too, so a binary compiles the ones it asks for and
 nothing else:
@@ -975,7 +974,7 @@ Past a hundred or so services no layout engine produces a picture worth looking 
 instead. Filters work on the model, which means every format gets them:
 
 ```go
-g, err := extract.From(c.(*engine.Container))
+g, err := di.Graph(c)
 
 g = g.Select(
 	graph.Focus(graph.ByType("*app.(*Server)"), graph.Dependencies(3)),
@@ -1152,7 +1151,7 @@ To serve a graph from your own program, including one still being wired, `graph/
 `godi view`:
 
 ```go
-srv, err := serve.Listen("127.0.0.1:0", extract.Live(c))  // read again on every request
+srv, err := serve.Listen("127.0.0.1:0", di.LiveGraph(c))  // read again on every request
 fmt.Println(srv.URL())
 err = srv.Serve()
 ```

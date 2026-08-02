@@ -5,12 +5,12 @@
 //
 //	c, err := di.New().Services(...).Build()
 //
-//	g, err := extract.From(c.(*di.Container))
+//	g, err := di.Graph(c)
 //	err = g.Encode(os.Stdout, dot.New())
 //
 // Reading a container is graph/extract's job, not this package's. The model is a
 // leaf and stays one, so an encoder or a tool that only reads a graph carries none
-// of the container engine.
+// of the container engine. di.Graph is the facade's way in to it.
 //
 // Encoders live in their own packages, so a program compiles only the formats it
 // asks for. The model is plain data, so a third party can add a format by

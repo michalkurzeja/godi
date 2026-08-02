@@ -4,10 +4,12 @@
 // writes. That is why it is a package of its own. The model stays free of the
 // container engine, so anything that only reads a graph links none of it.
 //
-//	c, err := di.New().Services(...).Build()
-//
-//	g, err := extract.From(c.(*di.Container))
+//	g, err := extract.From(container)
 //	err = g.Encode(os.Stdout, dot.New())
+//
+// This is the low-level way in, for code that holds the container itself. What
+// Build hands back is the Container interface, and di.Graph reads a graph out of
+// that.
 package extract
 
 import (

@@ -14,6 +14,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/extras"
 	"github.com/michalkurzeja/godi/v2/graph"
 	"github.com/michalkurzeja/godi/v2/graph/extract"
+	"github.com/michalkurzeja/godi/v2/mocks"
 )
 
 // The wiring fixtures. Kept deliberately small: each test builds the container
@@ -51,15 +52,11 @@ type Collector struct{ greeters []Greeter }
 
 func NewCollector(greeters ...Greeter) *Collector { return &Collector{greeters: greeters} }
 
-// graphOf extracts the graph of a built container. Build returns the Container
-// interface, and extraction reads the concrete container, so it is asserted here.
+// graphOf extracts the graph of a built container.
 func graphOf(t *testing.T, c godi.Container, opts ...graph.Option) *graph.Graph {
 	t.Helper()
 
-	container, ok := c.(*di.Container)
-	require.True(t, ok, "a container godi built is a *di.Container")
-
-	g, err := extract.From(container, opts...)
+	g, err := godi.Graph(c, opts...)
 	require.NoError(t, err)
 	return g
 }
@@ -878,6 +875,93 @@ func TestExtractRejectsASourceWithNoGraph(t *testing.T) {
 
 	_, err := graph.Extract(graph.SourceFunc(func(graph.Config) (*graph.Graph, error) { return nil, nil }))
 	require.ErrorContains(t, err, "produced no graph")
+}
+
+// --- getting a graph out of the Container interface -------------------------
+
+// wrappedContainer stands in front of another container, the way a decorator
+// adding logging or metrics would.
+type wrappedContainer struct {
+	godi.Container
+	inner godi.Container
+}
+
+func (c wrappedContainer) Unwrap() godi.Container { return c.inner }
+
+// Build hands back the Container interface, and extraction reads the container
+// godi built. Asking for the graph should not make that the caller's problem.
+func TestAGraphComesOutOfTheContainerInterface(t *testing.T) {
+	t.Parallel()
+
+	c, err := godi.New().Services(
+		godi.Svc(NewServer, "localhost:8080"),
+		godi.Svc(NewEnGreeter),
+		godi.Svc(NewStore),
+	).Build()
+	require.NoError(t, err)
+
+	g, err := godi.Graph(c)
+	require.NoError(t, err)
+
+	want, err := extract.From(c.(*di.Container))
+	require.NoError(t, err)
+	require.Equal(t, want, g)
+}
+
+// A container that wraps another is still a container godi built, one step
+// further down.
+func TestAContainerCanStandInFrontOfTheOneGodiBuilt(t *testing.T) {
+	t.Parallel()
+
+	c, err := godi.New().Services(godi.Svc(NewEnGreeter)).Build()
+	require.NoError(t, err)
+
+	g, err := godi.Graph(wrappedContainer{Container: c, inner: c})
+	require.NoError(t, err)
+	require.Len(t, g.Nodes, 1)
+}
+
+func TestAContainerGodiDidNotBuildHasNoGraph(t *testing.T) {
+	t.Parallel()
+
+	_, err := godi.Graph(mocks.NewContainer(t))
+	require.ErrorContains(t, err, "godi did not build it")
+}
+
+func TestThereIsNoGraphWithoutAContainer(t *testing.T) {
+	t.Parallel()
+
+	_, err := godi.Graph(nil)
+	require.ErrorContains(t, err, "no container")
+
+	_, err = godi.Graph((*di.Container)(nil))
+	require.ErrorContains(t, err, "no container")
+}
+
+// A live source is what serves a graph over HTTP, and the wiring can change
+// under it: each call reads the container again.
+func TestALiveGraphIsReadAgainOnEveryCall(t *testing.T) {
+	t.Parallel()
+
+	c, err := godi.New().Services(godi.Svc(NewEnGreeter)).Build()
+	require.NoError(t, err)
+
+	src := godi.LiveGraph(c)
+
+	first, err := graph.Extract(src)
+	require.NoError(t, err)
+	second, err := graph.Extract(src)
+	require.NoError(t, err)
+
+	require.NotSame(t, first, second)
+	require.Equal(t, first, second)
+}
+
+func TestALiveGraphReportsAContainerGodiDidNotBuild(t *testing.T) {
+	t.Parallel()
+
+	_, err := graph.Extract(godi.LiveGraph(mocks.NewContainer(t)))
+	require.ErrorContains(t, err, "godi did not build it")
 }
 
 // --- source locations -------------------------------------------------------

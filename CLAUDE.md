@@ -83,6 +83,15 @@ leaf so that anything consuming the *format* is free of the engine: `godi view g
 container in it and must not link the DI engine (nor `dominikbraun/graph`, `uuid`, `orderedmap`,
 `lo`) merely to render a file. Third-party encoders get the same deal.
 
+The facade's way in is `di.Graph(c)` and `di.LiveGraph(c)` (`graph.go` at the root). `Build` hands
+back the `Container` interface and `extract.From` reads the container itself, so without them every
+user writes the assertion. They are at the root because the root is the only place that sees both
+sides: `extract` cannot take the facade interface — the root imports `extract` for `snapshot.go`,
+so that is a cycle — and the engine cannot grow a `Graph` method, which is the coupling this split
+removed. A `Container` of the user's own standing in front of one godi built implements
+`di.Unwrapper`, and `engineContainer` follows it down. That loop is unbounded: an `Unwrap` that
+never gets closer to the container is the implementer's mistake to avoid, not godi's to police.
+
 `deps_test.go` enforces three rules, and they are worth reading before moving anything:
 
 - the library links no renderer — a godi binary carries no Graphviz plumbing or viewer assets;
@@ -216,8 +225,9 @@ Three consequences worth knowing before touching this area:
 - Saying that an argument is unwired (`markUnwired`) is gated on `Snapshot.Autowired`. Before
   autowiring runs every slot is empty, so marking them says nothing. What a pass objected to is
   not gated: a build that stopped in the Automation stage is exactly when that is all there is.
-- There is no route from the facade `Builder` to a graph. Adding one means an accessor that
-  prepares as it hands over, or the graph misses everything registered since.
+- There is no route from the facade `Builder` to a graph, and `di.Graph` is not one: it takes a
+  built container, where nothing is pending. Adding one means an accessor that prepares as it
+  hands over, or the graph misses everything registered since.
 
 `Builder.prepare()` is memoised with per-slice cursors, not a single "done" flag, and it is where
 compiler passes are registered too: "prepared" means everything the facade knows is in the engine.
