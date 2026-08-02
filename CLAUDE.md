@@ -137,13 +137,43 @@ would make construction depend on which service was asked for first, which is wh
 `Factory/Method/Func.Execute` and `ResolveArg` keep their signatures and open a context of their
 own.
 
-`Scope.instances` is guarded by `Scope.mu`, which covers the map and nothing else — no factory or
-method call runs under it. That is what makes `extract.Live` safe against a container building a
-lazy service, and it is the whole of the concurrency story: two goroutines that both miss the map
-still both build, and a service is published before its method calls run, so one goroutine can be
-handed what another built but has not configured yet. Do not write a test that asserts more than
-the map is safe — closing that gap needs per-definition in-flight entries with `built`/`ready`
-signals, which nobody has built.
+### Concurrency: two locks, and one call builds at a time
+
+A built container is safe to share. Two locks on `Container` carry that, and they have opposite
+rules — the difference is the whole design:
+
+- `buildMu` serialises construction: one call builds at a time, the rest wait. It **is** held
+  across user code. That is what makes `shared` mean one construction, and it is why there is no
+  in-flight bookkeeping, no cross-goroutine cycle detection and no wait-for graph to get right.
+- `mu` guards every scope's `instances` map. It is **never** held across user code, so
+  `extract.Live` and `Instantiated` never wait behind a running factory. That was stage 2's whole
+  point and it still holds.
+
+Lock order is always `buildMu → mu`.
+
+A call `stage`s what it builds and `commit`s it once its method calls have run. Nothing outside a
+call can see a service that is built but not yet configured —
+`TestAServiceIsNotVisibleUntilItsMethodCallsHaveRun` pins that, and it fails if `instantiate`
+publishes early as it used to.
+
+`withInstantiationContext` defers `ic.release()`. Without it a panicking factory keeps `buildMu`
+and every later call blocks forever; `TestAPanickingFactoryLeavesTheContainerUsable` is what
+catches that. Anything staged and unpublished is dropped, so a failed or panicking factory leaves
+the container as it found it and the next call retries.
+
+**A factory, method call or function must not resolve from the container building it.** It would
+block on the lock its own frame holds. `insideUserCode` (`di/reentrancy.go`) catches the
+same-goroutine case by looking for the `callUserCode` frame on the stack — legitimate, since
+`runtime.Callers` describes the calling goroutine and needs no goroutine identity. Keep
+`callUserCode` the only route into user code, or the check goes blind.
+
+A factory that starts a goroutine to resolve and waits for it makes the same mistake and hangs.
+That goroutine has a stack of its own with no `callUserCode` frame on it, so the check cannot see
+it, and no check that avoids goroutine identity could. It is forbidden all the same.
+
+The cost, measured: a warm resolve is ~14ns slower, a *parallel* warm resolve is ~16% faster than
+the old exclusive mutex, and two goroutines building two different services for the first time go
+one after the other. `BenchmarkResolve`/`BenchmarkResolveParallel` exist to keep that honest.
 
 ### Provenance: who wired what
 
@@ -217,6 +247,8 @@ Resolve against `def.EffectiveScope()`, never `def.Scope()`.
   are sentences: `TestAPassCanAddAPass`, not `TestDI_Passes`.
 - `Container.Print` and `di.Print` are deprecated and frozen. New output work goes in the encoders.
 - User-facing behaviour is documented in three places that must stay in step: `README.md`,
-  `docs/v2/documentation.md`, and `plugins/godi/skills/godi-v2/SKILL.md`. Changing the skill also
-  means bumping `version` in `plugins/godi/.claude-plugin/plugin.json`, or installed consumers
-  never receive the update.
+  `docs/v2/documentation.md`, and `plugins/godi/skills/godi-v2/SKILL.md`.
+- `version` in `plugins/godi/.claude-plugin/plugin.json` is bumped **once per release**, not once
+  per change: it is what tells an installed consumer to update, and nobody installs a branch. On a
+  branch, raise it one step above what `main` has and leave it there however many times the skill
+  changes before the merge.

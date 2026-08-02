@@ -316,6 +316,27 @@ There's an important rule that those functions follow:
 - If you use a "single" variant of a function, then it will return an error if there is not **exactly** 1 entity. This is useful when you expect only one entity of a given type or label.
 - If you use a "multiple" variant of a function, then it will return all entities of a given type or label and **will not** return any errors even if no services are found.
 
+### Concurrency
+
+A built container is safe to share across goroutines. A shared service is built once however many
+goroutines ask for it at the same time, and nobody is handed a service before its method calls
+have run.
+
+Construction serialises: one call builds at a time and the rest wait, so two goroutines each
+building a different service for the first time go one after the other. Retrieving a service that
+is already built does not serialise.
+
+Registration is a build-time activity. Once `Build()` returns, treat the container as read-only
+apart from the services it builds for you.
+
+> ⚠️ A factory, method call or function must **not** ask the container for anything while it is
+> running: it would block on a lock its own caller holds. Declare the dependency as an argument
+> instead.
+>
+> Calling the container directly returns an error. Starting a goroutine to do it and waiting for
+> that goroutine hangs instead — the new goroutine looks like any other caller, so godi cannot
+> tell it apart.
+
 ### Container behaviour
 
 You can configure some aspects of how the container treats services and functions.

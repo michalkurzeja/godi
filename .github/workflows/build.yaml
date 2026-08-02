@@ -50,6 +50,13 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # The container is meant to be safe to share once built, and the tests
+      # that say so only mean anything under the race detector. The viewer
+      # regressions drive a browser rather than Go, and are slow enough under
+      # -race to hit the package timeout, so the job below runs those.
+      - name: Test with the race detector
+        run: go test -race ./... -skip TestViewerRegressions
+
   viewer:
     name: Viewer regressions
 

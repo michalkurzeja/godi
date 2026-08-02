@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,7 +346,7 @@ func TestOrListReadsAsASentence(t *testing.T) {
 func TestViewServesUntilItIsStopped(t *testing.T) {
 	t.Parallel()
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -374,9 +375,30 @@ func TestViewServesUntilItIsStopped(t *testing.T) {
 	require.NoError(t, <-done, "a server told to stop has not failed")
 }
 
+// syncBuffer is a buffer the test can read while the command writes to it from
+// its own goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
 // awaitURL waits for view to report where it bound. The buffer is written from
 // the command's goroutine, so this polls rather than reading once.
-func awaitURL(t *testing.T, stderr *bytes.Buffer) string {
+func awaitURL(t *testing.T, stderr *syncBuffer) string {
 	t.Helper()
 
 	deadline := time.Now().Add(10 * time.Second)

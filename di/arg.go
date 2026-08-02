@@ -45,7 +45,7 @@ func ValidateArg(scope *Scope, arg Arg) error {
 // ResolveArg produces the value the argument stands for. The services it builds
 // are fully configured by the time it returns.
 func ResolveArg(scope *Scope, arg Arg) (any, error) {
-	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
 		return resolveArg(ic, scope, arg)
 	})
 }

@@ -48,7 +48,7 @@ func NewFactory(fn any, args ...Arg) (*Factory, error) {
 // Execute builds the service. As during a build, the dependencies it is handed
 // have not had their method calls run yet.
 func (f *Factory) Execute(scope *Scope) (any, error) {
-	return withInstantiationContext(func(ic *instantiationContext) (any, error) {
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
 		return f.execute(ic, scope)
 	})
 }
@@ -130,13 +130,10 @@ func NewMethod(fn any, receiver Arg, args ...Arg) (*Method, error) {
 // Execute resolves the receiver along with the rest of the arguments and calls
 // the method on it.
 func (m *Method) Execute(scope *Scope) error {
-	ic := newInstantiationContext()
-
-	err := m.execute(ic, scope, nil)
-	if err != nil {
-		return err
-	}
-	return ic.executeAllMethodCalls()
+	_, err := withInstantiationContext(scope.container, func(ic *instantiationContext) (any, error) {
+		return nil, m.execute(ic, scope, nil)
+	})
+	return err
 }
 
 // execute calls the method. A non-nil recv is the receiver to call it on; nil
@@ -206,12 +203,12 @@ func NewFunc(fn reflect.Value, args ...Arg) (*Func, error) {
 // Execute resolves the arguments and calls the function. The services it is
 // handed are fully configured by the time it runs.
 func (f *Func) Execute(scope *Scope) ([]reflect.Value, error) {
-	return withInstantiationContext(func(ic *instantiationContext) ([]reflect.Value, error) {
+	return withInstantiationContext(scope.container, func(ic *instantiationContext) ([]reflect.Value, error) {
 		args, err := f.resolveArgs(ic, scope, nil)
 		if err != nil {
 			return nil, err
 		}
-		if err := ic.executeAllMethodCalls(); err != nil {
+		if err := ic.commit(); err != nil {
 			return nil, err
 		}
 		return f.call(args), nil
@@ -245,10 +242,7 @@ func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]
 }
 
 func (f *Func) call(args []reflect.Value) []reflect.Value {
-	if f.args.IsVariadic() {
-		return f.fn.CallSlice(args)
-	}
-	return f.fn.Call(args)
+	return callUserCode(f.fn, args, f.args.IsVariadic())
 }
 
 func (f *Func) Args() *ArgList {

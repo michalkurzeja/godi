@@ -5,6 +5,7 @@ import (
 	"io"
 	"iter"
 	"reflect"
+	"sync"
 
 	"github.com/elliotchance/orderedmap/v2"
 
@@ -16,6 +17,18 @@ const RootScope = "root"
 type Container struct {
 	root   *Scope
 	scopes *orderedmap.OrderedMap[string, *Scope]
+
+	// buildMu serialises construction: one call into the container builds at a
+	// time and the rest wait. A factory runs while it is held, which is why a
+	// factory must not resolve from the container. See insideUserCode.
+	buildMu sync.Mutex
+
+	// mu guards the instances map of every scope. Nothing holds it across user
+	// code, so reading a graph out of a live container does not wait for a
+	// factory.
+	//
+	// Take buildMu before mu, never the other way round.
+	mu sync.RWMutex
 }
 
 func NewContainer() *Container {

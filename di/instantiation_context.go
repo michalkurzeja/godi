@@ -9,19 +9,105 @@ import (
 )
 
 // instantiationContext is one call into the container: the factories it
-// currently has running, and the method calls it owes.
+// currently has running, the method calls it owes, and what it has built so far.
 //
 // Every factory of a call runs before any of its method calls does. A method
-// call therefore never sees a service that is still being built, so wiring that
-// loops back through one gives the same instance whichever end is asked for
-// first.
+// call therefore never sees a service that is still being built.
+//
+// A call that builds anything holds the container's build lock until it ends, so
+// only one call constructs at a time. What it builds is private to it until
+// commit has run the method calls and published the instances.
 type instantiationContext struct {
+	container *Container
+
 	svcDefStack      []*ServiceDefinition // Factories currently running, outermost first.
-	methodCallsQueue []pendingCall        // Method calls owed, in the order their services were built.
+	methodCallsQueue []pendingMethodCall  // Method calls owed, in the order their services were built.
+
+	staged     map[ID]stagedInstance // Built by this call, not yet visible to any other.
+	holdsBuild bool                  // Whether this call has taken the build lock.
 }
 
-func newInstantiationContext() *instantiationContext {
-	return new(instantiationContext)
+// stagedInstance is a shared service this call has built, and the scope that
+// will hold it once it is published.
+type stagedInstance struct {
+	scope *Scope
+	svc   any
+}
+
+func newInstantiationContext(container *Container) *instantiationContext {
+	return &instantiationContext{container: container}
+}
+
+// beginBuild takes the build lock, so that one call constructs at a time. A call
+// that builds a whole chain takes it once and keeps it until release.
+//
+// A caller already inside a factory is refused. It holds the lock itself, so
+// waiting for it would never end.
+func (ic *instantiationContext) beginBuild() error {
+	if ic.holdsBuild {
+		return nil
+	}
+	if insideUserCode() {
+		return errResolveFromUserCode
+	}
+
+	ic.container.buildMu.Lock()
+	ic.holdsBuild = true
+
+	return nil
+}
+
+// release ends the call. Anything staged but never published is dropped, so a
+// factory that failed or panicked leaves the container as it found it.
+func (ic *instantiationContext) release() {
+	clear(ic.staged)
+
+	if ic.holdsBuild {
+		ic.container.buildMu.Unlock()
+		ic.holdsBuild = false
+	}
+}
+
+// stage records a service this call has built. Only this call can see it until
+// commit publishes it.
+func (ic *instantiationContext) stage(scope *Scope, def *ServiceDefinition, svc any) {
+	if ic.staged == nil {
+		ic.staged = make(map[ID]stagedInstance)
+	}
+	ic.staged[def.ID()] = stagedInstance{scope: scope, svc: svc}
+}
+
+func (ic *instantiationContext) stagedInstance(id ID) (any, bool) {
+	staged, ok := ic.staged[id]
+	return staged.svc, ok
+}
+
+// commit runs the method calls this call owes, then publishes what it built.
+// Nothing it built is visible anywhere else until this returns, so no other
+// call can be handed a service whose method calls have not run.
+func (ic *instantiationContext) commit() error {
+	err := ic.executeAllMethodCalls()
+	if err != nil {
+		return err
+	}
+
+	ic.publish()
+
+	return nil
+}
+
+func (ic *instantiationContext) publish() {
+	if len(ic.staged) == 0 {
+		return
+	}
+
+	ic.container.mu.Lock()
+	defer ic.container.mu.Unlock()
+
+	for id, staged := range ic.staged {
+		staged.scope.instances[id] = staged.svc
+	}
+	clear(ic.staged)
 }
 
 // pushDefinition records that the definition's factory is about to run. It
@@ -51,7 +137,7 @@ func (ic *instantiationContext) cycle(from int, def *ServiceDefinition) string {
 // the back of the queue.
 func (ic *instantiationContext) enqueueMethodCalls(def *ServiceDefinition, svc any, scope *Scope) {
 	for _, call := range def.MethodCalls() {
-		ic.methodCallsQueue = append(ic.methodCallsQueue, pendingCall{def: def, svc: svc, call: call, scope: scope})
+		ic.methodCallsQueue = append(ic.methodCallsQueue, pendingMethodCall{def: def, svc: svc, call: call, scope: scope})
 	}
 }
 
@@ -71,8 +157,8 @@ func (ic *instantiationContext) executeAllMethodCalls() error {
 	return nil
 }
 
-// pendingCall is a method call waiting for the factory chain to finish.
-type pendingCall struct {
+// pendingMethodCall is a method call waiting for the factory chain to finish.
+type pendingMethodCall struct {
 	def   *ServiceDefinition
 	svc   any // The instance built, not the definition: a service that is not shared has several.
 	call  *Method
@@ -80,16 +166,18 @@ type pendingCall struct {
 }
 
 // withInstantiationContext runs fn as one call into the container: everything
-// fn builds is constructed first, then the method calls it queued run.
-func withInstantiationContext[T any](fn func(ic *instantiationContext) (T, error)) (T, error) {
-	ic := newInstantiationContext()
+// fn builds is constructed first, then the method calls it queued run, then what
+// it built becomes visible.
+func withInstantiationContext[T any](container *Container, fn func(ic *instantiationContext) (T, error)) (T, error) {
+	ic := newInstantiationContext(container)
+	defer ic.release()
 
 	v, err := fn(ic)
 	if err != nil {
 		return v, err
 	}
 
-	err = ic.executeAllMethodCalls()
+	err = ic.commit()
 	if err != nil {
 		var zero T
 		return zero, err

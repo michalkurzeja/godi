@@ -262,27 +262,27 @@ func NewCycleValidationPass() CompilerOp {
 // same way a later request for one would.
 func NewEagerInitPass() CompilerOp {
 	return CompilerOpFunc(func(builder *ContainerBuilder) error {
-		ic := newInstantiationContext()
-
-		for scope, def := range builder.ServiceDefinitionsSeq() {
-			if def.IsLazy() {
-				continue
+		_, err := withInstantiationContext(builder.Container(), func(ic *instantiationContext) (any, error) {
+			for scope, def := range builder.ServiceDefinitionsSeq() {
+				if def.IsLazy() {
+					continue
+				}
+				_, err := scope.getService(ic, def.ID())
+				if err != nil {
+					return nil, errorsx.Wrapf(err, "failed to initialise eager service %s", def)
+				}
 			}
-			_, err := scope.getService(ic, def.ID())
-			if err != nil {
-				return errorsx.Wrapf(err, "failed to initialise eager service %s", def)
+			for scope, def := range builder.FunctionDefinitionsSeq() {
+				if def.IsLazy() {
+					continue
+				}
+				_, err := scope.executeFunction(ic, def)
+				if err != nil {
+					return nil, errorsx.Wrapf(err, "failed to execute eager function %s", def)
+				}
 			}
-		}
-		for scope, def := range builder.FunctionDefinitionsSeq() {
-			if def.IsLazy() {
-				continue
-			}
-			_, err := scope.executeFunction(ic, def)
-			if err != nil {
-				return errorsx.Wrapf(err, "failed to execute eager function %s", def)
-			}
-		}
-
-		return ic.executeAllMethodCalls()
+			return nil, nil
+		})
+		return err
 	})
 }

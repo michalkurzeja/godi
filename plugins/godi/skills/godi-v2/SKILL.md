@@ -430,6 +430,20 @@ guess which: a service fetched at runtime with `SvcByType` leaves no trace in th
 outline of their own, so that no godi binary links an encoder for them. Prefer `extract.From`
 with `graph/text` in new code.
 
+## Concurrency
+
+A built container is safe to share across goroutines. A shared service is built once no matter
+how many goroutines ask at once, and none of them sees it before its method calls have run.
+Construction serialises (one call builds at a time); resolving an already-built service does not.
+Registration is build-time only — treat a built container as read-only.
+
+⚠️ A factory, method call or function must **never** resolve from the container that is building
+it: it blocks on a lock its own caller holds. Declare the dependency as an argument.
+
+Calling the container directly returns an error. Starting a goroutine to call it and waiting for
+that goroutine hangs instead — the new goroutine looks like any other caller, so godi cannot tell
+it apart.
+
 ## Common pitfalls
 
 - **Ambiguous autowiring.** Two services of the same type (or two interface implementers)
@@ -443,6 +457,8 @@ with `graph/text` in new code.
 - **Changing global defaults after defining services** has no effect on those definitions.
 - **Circular factory deps** are rejected. Break the cycle with a method call.
 - **Using a dependency inside a factory** sees it before its method calls have run.
+- **Resolving from the container inside a factory** errors, or hangs if done from a goroutine the
+  factory waits on. Pass the dependency in instead.
 - **`di.Type[T](l1, l2)` only uses the last label** — passing multiple is silently ignored.
 
 ## Deep reference

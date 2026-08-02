@@ -286,15 +286,29 @@ A factory whose argument resolves to a definition already being built is a genui
 context reports it as one instead of overflowing the stack. Compile-time cycle validation normally
 catches this first; `SkipCycleValidation` is what leaves it to runtime.
 
-`Scope.instances` is guarded by a mutex, so extracting a graph from a live container does not race
-one building a lazy service. The lock covers the map alone — no factory or method call runs under
-it.
+**A built container is safe to share across goroutines.** `shared` means one construction, however
+many goroutines ask at once, and a caller is never handed a service whose method calls have not
+run: a call stages what it builds and publishes it only once it has configured it.
 
-**Construction is not otherwise synchronised.** Two goroutines that both miss the map both build:
-`shared` means one instance per container, not one construction under concurrency. And a service is
-published before its method calls run, so a second goroutine can be handed one that is built but
-not yet configured. Build your container, then share it; do not race the first request for a
-service against another.
+**Construction serialises; retrieval does not.** One call builds at a time and the rest wait, so
+two goroutines each building a different service for the first time go one after the other. Once a
+service is built, resolving it takes a read lock and nothing else, so the warm path — which is
+where the traffic is — runs fully in parallel.
+
+Graph extraction never waits for a factory. The lock that construction holds across user code is
+not the one guarding instances, so `extract.Live` and `Scope.Instantiated` are unaffected by a
+build in progress.
+
+**A factory, method call or function must not resolve from the container that is building it** — it
+would block on a lock its own caller holds. Declare the dependency as an argument.
+
+Calling `GetService` directly returns an error: godi finds the factory's own frame on the stack.
+Starting a goroutine to call it and waiting for that goroutine hangs instead. The new goroutine has
+a stack of its own, carrying no sign of the factory, so godi cannot tell it from an unrelated
+caller.
+
+`ContainerBuilder.Build` itself is single-threaded (below), and a built container is read-only
+apart from the instances it builds: registration is a build-time activity.
 
 ### 4.3 Definitions
 
@@ -514,9 +528,8 @@ godi export dot graph.json | dot -Tsvg -o graph.svg
 fills the slot, and resolution follows the binding. With autowiring off, nothing fills it.
 
 **Cycle detection covers factory arguments only.** Method calls are the documented way out of a
-circular dependency, so they are not checked. A factory cycle that reaches runtime — with
-`SkipCycleValidation`, or through a factory that resolves via the container itself — is reported
-as an error naming the chain.
+circular dependency, so they are not checked. A factory cycle that reaches runtime — which needs
+`SkipCycleValidation` — is reported as an error naming the chain.
 
 **Method calls run after every factory the call needed.** So a factory is handed dependencies whose
 method calls have not run. Store them; do not use them while constructing. See [4.2](#42-scopes).
