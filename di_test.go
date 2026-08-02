@@ -1948,6 +1948,147 @@ func TestABindingFitsTheArgumentThatResolvesThroughIt(t *testing.T) {
 	})
 }
 
+type NilIface interface{ NilIfaceMethod() }
+
+type NilIfaceImpl struct{}
+
+func (*NilIfaceImpl) NilIfaceMethod() {}
+
+func NewNilIface() NilIface { return nil }
+
+type NilIfaceUser struct {
+	One NilIface
+	All []NilIface
+}
+
+func NewNilIfaceUser(one NilIface) *NilIfaceUser        { return &NilIfaceUser{One: one} }
+func NewNilIfaceCollector(all []NilIface) *NilIfaceUser { return &NilIfaceUser{All: all} }
+
+type NilPtrUser struct {
+	Impl *NilIfaceImpl
+}
+
+func NewNilPtrUser(impl *NilIfaceImpl) *NilPtrUser { return &NilPtrUser{Impl: impl} }
+
+// A nil is a value like any other, and a factory returning one is ordinary Go.
+// It carries no type of its own, though, so reflect cannot pass it anywhere
+// until the argument it fills says what it means.
+func TestAServiceThatIsNilIsInjectedAsNil(t *testing.T) {
+	t.Parallel()
+
+	t.Run("into a single argument", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface),
+			di.Svc(NewNilIfaceUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	t.Run("into a slice argument", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface),
+			di.Svc(NewNilIfaceCollector),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Equal(t, []NilIface{nil}, svc.All)
+	})
+	t.Run("when registered as a value", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.SvcVal[NilIface](nil),
+			di.Svc(NewNilIfaceUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	t.Run("when found by label", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.Svc(NewNilIface).Labels("nil-one"),
+			di.Svc(NewNilIfaceUser, di.Type[NilIface]("nil-one")).NotAutowired(),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilIfaceUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.One)
+	})
+	// A typed nil carries its type, so it never had the problem. The two have to
+	// keep behaving the same way.
+	t.Run("as a typed nil pointer", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := di.New().Services(
+			di.SvcVal[*NilIfaceImpl](nil),
+			di.Svc(NewNilPtrUser),
+		).Build()
+		require.NoError(t, err)
+
+		svc, err := di.SvcByType[*NilPtrUser](c)
+		require.NoError(t, err)
+		require.Nil(t, svc.Impl)
+	})
+}
+
+// An untyped nil says nothing about which argument it fills, and arguments are
+// slotted by type. There is nothing to do with it but say so.
+func TestANilLiteralIsRejected(t *testing.T) {
+	t.Parallel()
+
+	const msg = "a nil literal has no type, so nothing says which argument it fills"
+
+	t.Run("passed to di.Val", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(nil)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	t.Run("pinned to a slot", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(nil).Slot(0)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	t.Run("passed positionally", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, nil).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+	// The shape someone reaches for first, and the one that looks typed but is
+	// not: boxing a nil interface into an any leaves a plain nil.
+	t.Run("as a nil interface variable", func(t *testing.T) {
+		t.Parallel()
+
+		var iface NilIface
+		_, err := di.New().Services(
+			di.Svc(NewNilIfaceUser, di.Val(iface)).NotAutowired(),
+		).Build()
+		require.ErrorContains(t, err, msg)
+	})
+}
+
 func Echo[T any](v T) T            { return v }
 func EchoMany[T any](vs []T) []T   { return vs }
 func EchoManyV[T any](vs ...T) []T { return vs }

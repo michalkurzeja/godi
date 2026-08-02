@@ -129,7 +129,7 @@ Use these when autowiring can't (or shouldn't) decide. Pass them positionally to
 
 | Builder | Resolves to |
 |---|---|
-| `di.Val(v)` | the literal value `v` (a bare non-reference value is shorthand for this) |
+| `di.Val(v)` | the literal value `v` (a bare non-reference value is shorthand for this); `v` may not be `nil` |
 | `di.Ref(&ref)` | the service bound to `ref` (a bare `&ref` is shorthand for this) |
 | `di.Type[T]()` | the single service of type `T` (error if not exactly one) |
 | `di.Type[T]("label")` | the single service of type `T` carrying that label |
@@ -137,6 +137,10 @@ Use these when autowiring can't (or shouldn't) decide. Pass them positionally to
 | `di.SliceOf[T]("label")` | all services of type `T` with that label |
 | `di.Compound[T](args...)` | combines several args into one `[]T` — niche, mostly for generic/extension code |
 | `di.SpreadSlice(arg)` | inside `di.Compound[T]`, takes the elements of the `[]T` that `arg` resolves to instead of the slice itself |
+
+`di.Val(nil)` is an error — an untyped nil (and a nil interface, which is the same once boxed in an
+`any`) has no type to be slotted by. Write `di.Val((*Logger)(nil))`. A service that *is* nil is
+fine and is injected as nil.
 
 Shorthands: a plain value → `di.Val`; a `*di.SvcReference` → `di.Ref`. So these are equal:
 

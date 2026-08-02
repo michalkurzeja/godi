@@ -277,8 +277,9 @@ func (a *labelArg) resolve(ic *instantiationContext, scope *Scope) (any, error) 
 		// This should never happen under normal circumstances - the built-in compiler passes verify args.
 		return nil, fmt.Errorf("multiple services found for label %s", a.label)
 	}
-	argType := reflect.TypeOf(vals[0])
-	if argType != a.Type() {
+	// A nil has no type to check. The definition it came from does, and that is
+	// what the label found.
+	if argType := reflect.TypeOf(vals[0]); vals[0] != nil && argType != a.Type() {
 		return nil, fmt.Errorf("service labeled as %s should be of type %s, got %s", a.label, util.Signature(a.Type()), util.Signature(argType))
 	}
 	return vals[0], nil
@@ -432,12 +433,12 @@ func NewCompoundArg(typ reflect.Type, args ...Arg) (Arg, error) {
 	for _, arg := range args {
 		if spread, ok := arg.(*spreadSliceArg); ok {
 			if !spread.elemType().AssignableTo(typ) {
-				return nil, fmt.Errorf("argument %s cannot be spread into a slice of %s", arg.Type(), typ)
+				return nil, fmt.Errorf("argument %s cannot be spread into a slice of %s", util.Signature(arg.Type()), util.Signature(typ))
 			}
 			continue
 		}
-		if !arg.Type().AssignableTo(typ) {
-			return nil, fmt.Errorf("argument %s cannot be assigned to type %s", arg.Type(), typ)
+		if arg.Type() == nil || !arg.Type().AssignableTo(typ) {
+			return nil, fmt.Errorf("argument %s cannot be assigned to type %s", util.Signature(arg.Type()), util.Signature(typ))
 		}
 	}
 
@@ -549,9 +550,14 @@ func (a *spreadSliceArg) elemType() reflect.Type {
 	return a.arg.Type().Elem()
 }
 
-// elements splits a resolved slice into what a compound collects.
+// elements splits a resolved slice into what a compound collects. A nil slice
+// contributes nothing, and only an argument disagreeing with its own Type can
+// get here with anything else.
 func (a *spreadSliceArg) elements(v any) []any {
 	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return nil
+	}
 	out := make([]any, rv.Len())
 	for i := range out {
 		out[i] = rv.Index(i).Interface()
@@ -637,15 +643,18 @@ func (s *Slot) FillableBy(arg Arg) bool {
 	return s.SettableBy(arg) || s.AppendableBy(arg)
 }
 
+// An argument with no type at all fits nothing: a nil literal is the one way to
+// make one, and there is no slot it can be said to belong in.
+
 func (s *Slot) SettableBy(arg Arg) bool {
-	return arg.Type().AssignableTo(s.Type())
+	return arg.Type() != nil && arg.Type().AssignableTo(s.Type())
 }
 
 func (s *Slot) AppendableBy(arg Arg) bool {
 	if !s.IsSlice() {
 		return false
 	}
-	return arg.Type().AssignableTo(s.ElemType())
+	return arg.Type() != nil && arg.Type().AssignableTo(s.ElemType())
 }
 
 func (s *Slot) Fill(arg Arg) error {
@@ -655,12 +664,12 @@ func (s *Slot) Fill(arg Arg) error {
 	if s.AppendableBy(arg) {
 		return s.Append(arg)
 	}
-	return fmt.Errorf("argument %s cannot fill slot %d", arg.Type(), s.i)
+	return fmt.Errorf("argument %s cannot fill slot %d", util.Signature(arg.Type()), s.i)
 }
 
 func (s *Slot) Set(arg Arg) error {
 	if !s.SettableBy(arg) {
-		return fmt.Errorf("argument %s cannot be assigned to slot %d", arg.Type(), s.i)
+		return fmt.Errorf("argument %s cannot be assigned to slot %d", util.Signature(arg.Type()), s.i)
 	}
 
 	s.arg = arg
@@ -675,7 +684,7 @@ func (s *Slot) Append(args ...Arg) error {
 
 	for _, arg := range args {
 		if !s.AppendableBy(arg) {
-			return fmt.Errorf("argument %s cannot be added as slot %d element", arg.Type(), s.i)
+			return fmt.Errorf("argument %s cannot be added as slot %d element", util.Signature(arg.Type()), s.i)
 		}
 	}
 
@@ -765,7 +774,7 @@ func (l *ArgList) Assign(arg Arg) error {
 		return slot.Fill(arg)
 	}
 
-	return fmt.Errorf("argument %s cannot be slotted to function", arg.Type())
+	return fmt.Errorf("argument %s cannot be slotted to function", util.Signature(arg.Type()))
 }
 
 func (l *ArgList) ValidateAndCollect() ([]Arg, error) {
@@ -886,11 +895,41 @@ func resolveBoundArg(ic *instantiationContext, scope *Scope, iface reflect.Type,
 func convertSlice(vs []any, elemType reflect.Type) (any, error) {
 	sl := reflect.MakeSlice(reflect.SliceOf(elemType), 0, len(vs))
 	for _, v := range vs {
-		rv := reflect.ValueOf(v)
+		rv, err := valueOf(v, elemType)
+		if err != nil {
+			return nil, err
+		}
 		if !rv.Type().AssignableTo(elemType) {
 			return nil, fmt.Errorf("type %s is not assignable to %s", util.Signature(rv.Type()), util.Signature(elemType))
 		}
 		sl = reflect.Append(sl, rv)
 	}
 	return sl.Interface(), nil
+}
+
+// valueOf is the value to pass for something that resolved to v. A nil carries no
+// type of its own, and reflect answers it with the zero Value, which can be
+// neither passed to a function nor appended to a slice. The type it is going into
+// says what that nil means.
+//
+// A factory returning a nil interface is ordinary Go, so this is a value like any
+// other rather than an error. A type nothing can be nil in is one, though: a zero
+// there would be a number where the container found nothing.
+func valueOf(v any, want reflect.Type) (reflect.Value, error) {
+	if rv := reflect.ValueOf(v); rv.IsValid() {
+		return rv, nil
+	}
+	if !nilable(want) {
+		return reflect.Value{}, fmt.Errorf("nil is not a value of type %s", util.Signature(want))
+	}
+	return reflect.Zero(want), nil
+}
+
+func nilable(typ reflect.Type) bool {
+	switch typ.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return true
+	default:
+		return false
+	}
 }

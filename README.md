@@ -722,6 +722,11 @@ func main() {
 
 Both examples above will cause the string `"literal-arg"` to be passed to the `NewService` function.
 
+The value may not be `nil`. Arguments are matched to parameters by type, and an untyped `nil` has
+none - nor does a nil interface, which becomes the same `nil` once it's passed as an `any`. Write a
+typed nil instead, e.g. `di.Val((*Logger)(nil))`. A service that *is* nil is fine, and injected as
+nil.
+
 ##### di.Ref
 
 This argument resolves to the service that the reference points to.

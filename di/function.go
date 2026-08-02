@@ -226,16 +226,20 @@ func (f *Func) resolveArgs(ic *instantiationContext, scope *Scope, recv any) ([]
 
 	resolvedArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		if i == 0 && recv != nil {
-			resolvedArgs[i] = reflect.ValueOf(recv)
-			continue
+		val := recv
+		if i > 0 || recv == nil {
+			val, err = resolveArg(ic, scope, arg)
+			if err != nil {
+				return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
+			}
 		}
 
-		val, err := resolveArg(ic, scope, arg)
+		// The parameter type says what a nil means. Nothing else here knows: a
+		// resolved nil is untyped, and reflect will not pass it as it stands.
+		resolvedArgs[i], err = valueOf(val, f.fn.Type().In(i))
 		if err != nil {
 			return nil, errorsx.Wrapf(err, "failed to resolve argument %d", i)
 		}
-		resolvedArgs[i] = reflect.ValueOf(val)
 	}
 
 	return resolvedArgs, nil

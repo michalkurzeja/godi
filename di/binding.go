@@ -40,6 +40,9 @@ func NewInterfaceBinding(iface reflect.Type, boundTo Arg) (*InterfaceBinding, er
 // interface. A slice of the interface counts: that is what BindSlice binds, and
 // what a slice argument resolving through the binding expects to receive.
 func bindableTo(typ, iface reflect.Type) bool {
+	if typ == nil {
+		return false // A nil literal has no type, so it stands for nothing.
+	}
 	if typ.Implements(iface) {
 		return true
 	}

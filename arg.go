@@ -1,6 +1,7 @@
 package di
 
 import (
+	"errors"
 	"reflect"
 
 	"github.com/michalkurzeja/godi/v2/di"
@@ -52,8 +53,15 @@ func Ref(ref *SvcReference) *ArgBuilder {
 }
 
 // Val returns an argument builder for a literal value.
+//
+// The value may not be nil. Arguments are matched to parameters by type, and an
+// untyped nil has none - nor does a nil interface, which is the same nil once it
+// is passed as an any. A typed nil pointer, such as (*Logger)(nil), does.
 func Val(v any) *ArgBuilder {
 	return &ArgBuilder{newArg: func() (di.Arg, error) {
+		if v == nil {
+			return nil, errors.New("a nil literal has no type, so nothing says which argument it fills: pass a typed nil, e.g. di.Val((*Logger)(nil))")
+		}
 		return di.NewLiteralArg(v), nil
 	}}
 }

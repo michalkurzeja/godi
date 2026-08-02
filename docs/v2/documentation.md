@@ -147,7 +147,7 @@ right. Anything that is not an `*ArgBuilder` or a `*SvcReference` is taken as a 
 
 | Builder | Argument |
 |---|---|
-| `Val(v)` | A literal value. |
+| `Val(v)` | A literal value. Not `nil`: an untyped nil has no type to be slotted by. |
 | `Ref(&ref)` | Whatever the reference is bound to. |
 | `Type[T]()` | The service of type `T`. `Type[T](label)` narrows to a label. |
 | `SliceOf[T]()` | Every service of type `T`, as `[]T`. `SliceOf[T](label)` narrows to a label. |
@@ -157,6 +157,12 @@ right. Anything that is not an `*ArgBuilder` or a `*SvcReference` is taken as a 
 | `.Slot(n)` | Pins an argument to slot `n` rather than the next free one. |
 
 `Type[T](label ...Label)` uses the **last** label given and silently ignores the rest.
+
+**A nil literal is refused; a nil service is not.** `Val(nil)` — and `Val(iface)` where `iface` is
+a nil interface, which is the same `nil` once boxed in an `any` — carries no type, so nothing says
+which slot it fills. Write a typed nil, `Val((*Logger)(nil))`. A factory *returning* nil is
+ordinary Go and is injected as nil: the parameter type says what the nil means, since the value
+itself no longer carries one.
 
 Every slot must be filled, by you or by autowiring, and validation reports "argument N is not
 set" otherwise. A variadic slot is the exception: no arguments is a valid call, so leaving it out
