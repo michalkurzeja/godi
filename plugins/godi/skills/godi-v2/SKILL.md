@@ -381,6 +381,11 @@ An edge feeding an argument that will not resolve is drawn as wrong, and so is o
 closes a cycle. The HTML page glows it red behind the line, keeping the line's own colour for
 who chose it; Graphviz has no second layer, so there the edge turns red outright.
 
+An argument a compiler pass gave up on has no wiring to draw, because the build stops before
+anything fills the slot. The implementations it could not choose between are drawn instead,
+each as a `Candidate` edge. An ambiguous interface argument is two red edges out of an argument
+that resolved to neither.
+
 **A diagnostic is stored on the element it is about.** `Graph`, `Scope`, `Node` and `Param`
 each carry their own `Diagnostics`, and the graph itself takes what fits nothing narrower.
 `AllDiagnostics()` walks them and is what the encoders print; `Node.Faulty()` and
@@ -436,9 +441,10 @@ b.Report(di.Diagnostic{Severity: di.SeverityWarning, Site: di.AtService(def), Me
 ```
 
 The sites are `AtContainer()`, `AtScope(scope)`, `AtService(def)`, `AtFunction(def)`,
-`AtServiceArg(def, slot)` and `AtFunctionArg(def, slot)`. An error-severity diagnostic fails
-the build once the pass returns, so report it and return `nil`; a warning does not, and stays
-on the container the build produced.
+`AtServiceArg(def, slot)` and `AtFunctionArg(def, slot)`. A fault about several elements names
+the rest in `Related`, as sites of their own. The graph draws a candidate edge from the argument
+to each of them. An error-severity diagnostic fails the build once the pass returns, so report it
+and return `nil`; a warning does not, and stays on the container the build produced.
 
 No code is needed for the common case. Set `GODI_SNAPSHOT_ON_BUILD_ERR=true` and a failed
 `Build` writes its graph as JSON, printing the path and the command to run on stderr;

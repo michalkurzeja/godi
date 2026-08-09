@@ -196,3 +196,99 @@ func TestAMethodCallLoopIsNotMarkedAsACycle(t *testing.T) {
 		require.False(t, e.Cycle, "edge %s -> %s (%s) must not be marked as a cycle", e.From, e.To, e.Kind)
 	}
 }
+
+// The candidates a pass reported are drawn against the argument that could not
+// choose between them. A related site that names nothing the graph has draws
+// nothing: the container itself is not a node, and an edge to nowhere is worse
+// than no edge.
+func TestCandidatesAreDrawnAgainstTheArgumentThatCouldNotChoose(t *testing.T) {
+	t.Parallel()
+
+	b := di.NewContainerBuilder(di.NewConfig())
+
+	storeFactory, err := di.NewFactory(NewStore)
+	require.NoError(t, err)
+	store := di.NewServiceDefinition(storeFactory).SetScope(b.RootScope())
+
+	// The pass below stops the build before autowiring, so this argument stays
+	// empty and has nothing to trace — the case the interface binding pass leaves
+	// behind when it gives up.
+	serverFactory, err := di.NewFactory(NewServer)
+	require.NoError(t, err)
+	server := di.NewServiceDefinition(serverFactory).SetScope(b.RootScope())
+
+	b.RootScope().AddServiceDefinitions(store, server)
+
+	b.Compiler().AddPass(di.NewCompilerPass("picky", di.PreAutomation, di.CompilerOpFunc(func(cb *di.ContainerBuilder) error {
+		slot := server.Factory().Args().Slots()[0]
+		cb.Report(di.Diagnostic{
+			Severity: di.SeverityError,
+			Site:     di.AtServiceArg(server, slot),
+			Message:  "could not choose",
+			Related:  []di.Site{di.AtService(store), di.AtContainer()},
+		})
+		return nil
+	})))
+
+	_, err = b.Build()
+	require.Error(t, err)
+
+	g, err := extract.FromBuilder(b)
+	require.NoError(t, err)
+
+	require.Len(t, g.Edges, 1, "the container is not a node, so it is worth no edge")
+	edge := g.Edges[0]
+	require.True(t, edge.Candidate)
+	require.Equal(t, nodeOf(t, g, "extract_test.(*Store)").ID, edge.To)
+	require.True(t, g.EdgeFaulty(edge), "what a pass could not choose between is not wiring that works")
+}
+
+// An argument that resolved has said what it depends on. A pass naming those
+// same services is saying it again, and drawing them a second time would double
+// every dependency it mentions.
+func TestCandidatesAreNotDrawnOnAnArgumentThatResolved(t *testing.T) {
+	t.Parallel()
+
+	pass := di.NewCompilerPass("picky", di.PreFinalization, di.CompilerOpFunc(func(cb *di.ContainerBuilder) error {
+		for _, def := range cb.ServiceDefinitionsSeq() {
+			if def.Type() != reflect.TypeFor[*Server]() {
+				continue
+			}
+			slot := def.Factory().Args().Slots()[0]
+			cb.Report(di.Diagnostic{
+				Severity: di.SeverityWarning,
+				Site:     di.AtServiceArg(def, slot),
+				Message:  "worth a second look",
+				Related:  []di.Site{di.AtService(def)},
+			})
+		}
+		return nil
+	}))
+
+	c, err := godi.New().
+		Services(godi.Svc(NewServer), godi.Svc(NewStore)).
+		CompilerPasses(pass).
+		Build()
+	require.NoError(t, err)
+
+	container, ok := c.(*di.Container)
+	require.True(t, ok)
+
+	g, err := extract.From(container)
+	require.NoError(t, err)
+
+	require.Len(t, g.Edges, 1, "the argument had already said what it resolved to")
+	require.False(t, g.Edges[0].Candidate)
+}
+
+func nodeOf(t *testing.T, g *graph.Graph, typeShort string) *graph.Node {
+	t.Helper()
+
+	for _, n := range g.Nodes {
+		if n.TypeShort() == typeShort {
+			return n
+		}
+	}
+	t.Fatalf("no node of type %s in graph", typeShort)
+	return nil
+}

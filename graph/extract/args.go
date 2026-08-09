@@ -215,13 +215,16 @@ var (
 	errorType    = reflect.TypeFor[error]()
 )
 
-func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, hops []graph.BindingHop) {
+// edge records one dependency injected into one argument, and returns it so that
+// a caller drawing something other than a resolved dependency can say so. It is
+// nil when there was nothing to point at.
+func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, hops []graph.BindingHop) *graph.Edge {
 	if to == "" {
 		x.unresolved(p, "dependency is not registered in this container")
-		return
+		return nil
 	}
 
-	x.out.Edges = append(x.out.Edges, &graph.Edge{
+	edge := &graph.Edge{
 		ID:         graph.NewEdgeID(p.ID, p.EdgeCount),
 		From:       p.Node,
 		To:         to,
@@ -233,8 +236,10 @@ func (x *extractor) edge(p *graph.Param, to graph.NodeID, res graph.Resolution, 
 		Bindings:   hops,
 		ParamType:  cmp.Or(p.ElemType, p.Type),
 		Ordinal:    p.EdgeCount,
-	})
+	}
+	x.out.Edges = append(x.out.Edges, edge)
 	p.EdgeCount++
+	return edge
 }
 
 // unresolved records what an argument failed to find. It is extraction's own

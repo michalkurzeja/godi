@@ -170,6 +170,9 @@ type viewEdge struct {
 	Ordinal int    `json:"ordinal"`
 	OfMany  bool   `json:"ofMany,omitzero"`
 	Cycle   bool   `json:"cycle,omitzero"`
+	// Candidate is a dependency the container could have used and did not: one of
+	// several an argument could not choose between. It is not wiring.
+	Candidate bool `json:"candidate,omitzero"`
 	// Faulty is what the red glow behind the line is drawn from: the argument
 	// this feeds will not resolve. The line keeps its own colour, so a broken
 	// edge still says who chose it.
@@ -314,6 +317,7 @@ func newViewEdge(g *graph.Graph, edge *graph.Edge) viewEdge {
 		Ordinal:    edge.Ordinal,
 		OfMany:     edge.OfMany,
 		Cycle:      edge.Cycle,
+		Candidate:  edge.Candidate,
 		Faulty:     g.EdgeFaulty(edge),
 		Pass:       edge.PassCredit(),
 	}

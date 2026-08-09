@@ -1087,6 +1087,20 @@ notices:
   error: main.(*User) argument 0: binding on main.Iface resolves to []main.Iface, which cannot fill an argument of type main.Iface
 ```
 
+Two services implementing one interface stop the build before anything is wired. Nothing fills the
+argument that takes it, so the implementations are drawn as candidates. Both are spelled the same, and
+the fault says where each was registered:
+
+```
+      args:
+        0 <- main.Logger  [none]
+          -> main.(*ConsoleLogger)  [by-type, candidate]
+          -> main.(*ConsoleLogger)  [by-type, candidate]
+          ! error: multiple implementations of interface main.Logger found:
+              main.(*ConsoleLogger) registered at /home/me/app/main.go:41
+              main.(*ConsoleLogger) registered at /home/me/app/main.go:52
+```
+
 A message carries whatever the code that failed put in its error — a factory that could not reach its
 database puts its connection string in yours — and the graph goes into a file and over HTTP. Hold it back
 with `graph.WithDiagnosticMarks()`, `graph.WithoutDiagnostics()` or `graph.WithDiagnosticRedactor(fn)` where

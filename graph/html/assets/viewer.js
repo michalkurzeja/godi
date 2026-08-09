@@ -332,6 +332,7 @@ function buildElements() {
 				id: e.id, source: e.from, target: e.to,
 				origin: e.origin, decidedBy: e.decidedBy, kind: e.kind,
 				bound: !!e.bindInterface, cycle: !!e.cycle, faulty: !!e.faulty,
+				candidate: !!e.candidate,
 				// A pass is named however it was responsible. It may have wired
 				// the argument, or created the binding the argument resolved
 				// through. The colour says a pass decided, and this says which.
@@ -1344,6 +1345,7 @@ function resolutionText(e) {
 	const bits = [e.resolution];
 	if (e.bindInterface) bits.push('binding on ' + e.bindInterface + ' (' + boundBy(e) + ')');
 	if (e.cycle) bits.push('cycle');
+	if (e.candidate) bits.push('candidate');
 	return bits.join(' · ');
 }
 

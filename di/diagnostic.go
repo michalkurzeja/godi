@@ -100,6 +100,13 @@ type Diagnostic struct {
 	// does not fail the build, and an error-severity diagnostic without one is
 	// reported as its message.
 	Err error
+	// Related is what else this diagnostic is about, where its site names one
+	// place and the fault is about several: the implementations a pass could not
+	// choose between, named against the argument that could not choose. The
+	// dependency graph draws one candidate edge per related definition.
+	//
+	// A related site that names no definition draws nothing.
+	Related []Site
 	// At is where in the source this is about, for a diagnostic whose site cannot
 	// say. A definition that would not parse never became a node with a location
 	// of its own, and the file and line are then all a reader has to go on.

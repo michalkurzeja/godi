@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/dominikbraun/graph"
 	"github.com/samber/lo"
@@ -23,7 +24,7 @@ func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
 		for i, slot := range def.Factory().Args().Slots() {
 			err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 			if err != nil {
-				builder.ReportError(AtServiceArg(def, slot), err, "could not bind argument %d of service %s", i, def)
+				p.report(builder, AtServiceArg(def, slot), err, "could not bind argument %d of service %s", i, def)
 			}
 		}
 
@@ -31,7 +32,7 @@ func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
 			for i, slot := range method.Args().Slots() {
 				err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 				if err != nil {
-					builder.ReportError(AtServiceArg(def, slot), err, "could not bind argument %d of method %s", i, method)
+					p.report(builder, AtServiceArg(def, slot), err, "could not bind argument %d of method %s", i, method)
 				}
 			}
 		}
@@ -40,12 +41,27 @@ func (p *InterfaceBindingPass) Run(builder *ContainerBuilder) error {
 		for i, slot := range def.Func().Args().Slots() {
 			err := p.checkAndBind(def.EffectiveScope(), def.ID(), slot)
 			if err != nil {
-				builder.ReportError(AtFunctionArg(def, slot), err, "could not bind argument %d of function %s", i, def)
+				p.report(builder, AtFunctionArg(def, slot), err, "could not bind argument %d of function %s", i, def)
 			}
 		}
 	}
 
 	return nil
+}
+
+// report says what the pass objected to, and names the implementations where it
+// could not choose between them. The graph draws those against the argument, and
+// it is the only account of them there is: the build stops here, so nothing fills
+// the slot and there is no argument to trace.
+func (p *InterfaceBindingPass) report(builder *ContainerBuilder, site Site, err error, wrapFormat string, a ...any) {
+	d := newDiagnosticError(site, err, wrapFormat, a...)
+
+	var ambiguous *ambiguousInterfaceError
+	if errors.As(err, &ambiguous) {
+		d.Related = ambiguous.sites()
+	}
+
+	builder.Report(d)
 }
 
 func (p *InterfaceBindingPass) checkAndBind(scope *Scope, parentID ID, slot *Slot) error {
@@ -80,7 +96,7 @@ func (p *InterfaceBindingPass) checkAndBind(scope *Scope, parentID ID, slot *Slo
 		bindTo, _ = NewCompoundArg(iface, args...) // No error possible - we know that impls implement iface.
 	} else {
 		if len(impls) > 1 {
-			return fmt.Errorf("multiple implementations of interface %s found: %s", util.Signature(iface), impls)
+			return &ambiguousInterfaceError{iface: iface, impls: impls}
 		}
 		bindTo, _ = NewRefArg(impls[0])
 	}
@@ -103,6 +119,39 @@ func (p *InterfaceBindingPass) findImplementations(scope *Scope, parentID ID, if
 		}
 	}
 	return impls
+}
+
+// ambiguousInterfaceError is more than one service implementing the interface an
+// argument asks for, where the argument takes one.
+//
+// It holds the implementations rather than only naming them, so that the pass can
+// report each of them against the argument as well as list them in the message.
+type ambiguousInterfaceError struct {
+	iface reflect.Type
+	impls []*ServiceDefinition
+}
+
+// Error lists the implementations one per line, each with where it was
+// registered. Two services of the same type are spelled the same, and the
+// registration is then all that tells them apart.
+func (e *ambiguousInterfaceError) Error() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "multiple implementations of interface %s found:", util.Signature(e.iface))
+	for _, impl := range e.impls {
+		sb.WriteString("\n  " + impl.String())
+		if at := impl.RegisteredAt(); !at.IsZero() {
+			sb.WriteString(" registered at " + at.String())
+		}
+	}
+	return sb.String()
+}
+
+func (e *ambiguousInterfaceError) sites() []Site {
+	sites := make([]Site, len(e.impls))
+	for i, impl := range e.impls {
+		sites[i] = AtService(impl)
+	}
+	return sites
 }
 
 // AutowiringPass fills in the arguments nobody wrote, by type. It is exported as
