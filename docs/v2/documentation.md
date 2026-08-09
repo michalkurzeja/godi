@@ -452,6 +452,9 @@ Reading it is open — an override pass that replaces only what autowiring chose
 Declaring it is not: what a pass's edits mean is godi's own, so a pass is credited with its work
 rather than claiming godi's.
 
+A pass is credited with what it wired even when it also reported an error. The graph of a build that
+stopped is where the difference matters most, and the wiring the failing pass did is still its own.
+
 **Never identify a pass by name.** Names are neither unique nor stable, and a third-party pass may
 be called "autowiring".
 
