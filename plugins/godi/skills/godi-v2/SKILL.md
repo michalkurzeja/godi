@@ -293,7 +293,8 @@ Three settings, configurable per definition or per container:
   left out and is then called with none. `Autowired()`/`NotAutowired()`;
   `di.DefaultAutowired()`/`di.DefaultNotAutowired()`.
 
-What a definition asks for wins; the container's default fills in the rest.
+What a definition asks for wins; the container's default fills in the rest, as the definition
+is registered. That includes a definition a compiler pass registers.
 
 ⚠️ The `di.SetDefault*` functions set the same three for **every container in the process**.
 They still work and are deprecated — a test that flips one leaks into the next, and they are
@@ -337,6 +338,9 @@ pass := di.NewCompilerPass("my pass", di.PreAutomation, di.CompilerOpFunc(
     },
 ))
 ```
+
+A definition a pass registers with `svcBuilder.ParseAndBuild(b.RootScope())` takes the
+container's defaults for the properties it did not set itself. `b.Defaults()` reads them.
 
 ## Seeing how a container is wired
 

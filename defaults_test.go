@@ -5,7 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	di "github.com/michalkurzeja/godi/v2"
+	godi "github.com/michalkurzeja/godi/v2"
+	"github.com/michalkurzeja/godi/v2/di"
 )
 
 type eagerly struct{}
@@ -23,14 +24,14 @@ func TestDefaultsBelongToTheContainerTheyWereGivenTo(t *testing.T) {
 
 	var eager, lazy bool
 
-	_, err := di.New(di.DefaultEager()).
-		Services(di.Svc(newEagerly, &eager)).
+	_, err := godi.New(godi.DefaultEager()).
+		Services(godi.Svc(newEagerly, &eager)).
 		Build()
 	require.NoError(t, err)
 	require.True(t, eager, "the container was told to build everything as it was built")
 
-	_, err = di.New().
-		Services(di.Svc(newEagerly, &lazy)).
+	_, err = godi.New().
+		Services(godi.Svc(newEagerly, &lazy)).
 		Build()
 	require.NoError(t, err)
 	require.False(t, lazy, "and the next container was told nothing of the sort")
@@ -43,8 +44,8 @@ func TestARegistrationOutranksTheDefault(t *testing.T) {
 
 	var built bool
 
-	_, err := di.New(di.DefaultEager()).
-		Services(di.Svc(newEagerly, &built).Lazy()).
+	_, err := godi.New(godi.DefaultEager()).
+		Services(godi.Svc(newEagerly, &built).Lazy()).
 		Build()
 	require.NoError(t, err)
 	require.False(t, built, "this one asked to wait")
@@ -55,10 +56,81 @@ func TestDefaultsReachAChildDefinition(t *testing.T) {
 
 	var parent, child bool
 
-	_, err := di.New(di.DefaultEager()).
-		Services(di.Svc(newEagerly, &parent).Children(di.Svc(newEagerly, &child))).
+	_, err := godi.New(godi.DefaultEager()).
+		Services(godi.Svc(newEagerly, &parent).Children(godi.Svc(newEagerly, &child))).
 		Build()
 	require.NoError(t, err)
 	require.True(t, parent)
 	require.True(t, child, "a child is registered by the same call and takes the same defaults")
+}
+
+// A definition a compiler pass registers takes the container's defaults, the
+// same as one registered up front.
+func TestDefaultsReachADefinitionBuiltByACompilerPass(t *testing.T) {
+	t.Parallel()
+
+	var built bool
+
+	pass := di.NewCompilerPass("install", di.PreAutomation, di.CompilerOpFunc(
+		func(b *di.ContainerBuilder) error {
+			return godi.Svc(newEagerly, &built).ParseAndBuild(b.RootScope())
+		},
+	))
+
+	_, err := godi.New(godi.DefaultEager()).CompilerPasses(pass).Build()
+	require.NoError(t, err)
+	require.True(t, built, "the container was told to build everything as it was built")
+}
+
+func TestARegistrationInACompilerPassOutranksTheDefault(t *testing.T) {
+	t.Parallel()
+
+	var built bool
+
+	pass := di.NewCompilerPass("install", di.PreAutomation, di.CompilerOpFunc(
+		func(b *di.ContainerBuilder) error {
+			return godi.Svc(newEagerly, &built).Lazy().ParseAndBuild(b.RootScope())
+		},
+	))
+
+	_, err := godi.New(godi.DefaultEager()).CompilerPasses(pass).Build()
+	require.NoError(t, err)
+	require.False(t, built, "this one asked to wait")
+}
+
+// DefaultNotAutowired reaches a pass-built definition too, so godi does not fill
+// an argument the registration left for the caller.
+func TestDefaultNotAutowiredReachesADefinitionBuiltByACompilerPass(t *testing.T) {
+	t.Parallel()
+
+	var built bool
+
+	pass := di.NewCompilerPass("install", di.PreAutomation, di.CompilerOpFunc(
+		func(b *di.ContainerBuilder) error {
+			return godi.Svc(newEagerly).ParseAndBuild(b.RootScope())
+		},
+	))
+
+	_, err := godi.New(godi.DefaultNotAutowired()).
+		Services(godi.Svc(func() *bool { return &built })).
+		CompilerPasses(pass).
+		Build()
+	require.ErrorContains(t, err, "argument 0 is not set")
+}
+
+func TestAPassCanReadTheContainersDefaults(t *testing.T) {
+	t.Parallel()
+
+	var defaults di.Defaults
+
+	pass := di.NewCompilerPass("read", di.PreAutomation, di.CompilerOpFunc(
+		func(b *di.ContainerBuilder) error {
+			defaults = b.Defaults()
+			return nil
+		},
+	))
+
+	_, err := godi.New(godi.DefaultEager(), godi.DefaultNotShared()).CompilerPasses(pass).Build()
+	require.NoError(t, err)
+	require.Equal(t, di.Defaults{Lazy: false, Shared: false, Autowired: true}, defaults)
 }

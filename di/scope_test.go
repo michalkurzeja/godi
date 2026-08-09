@@ -83,7 +83,7 @@ func TestAChildScopeCanExecuteAFunctionOfItsParent(t *testing.T) {
 	fn, err := di.NewFunc(reflect.ValueOf(func() { called = true }))
 	require.NoError(t, err)
 
-	c := di.NewContainer()
+	c := di.NewContainer(di.NewDefaults())
 	root := c.Root()
 	def := di.NewFunctionDefinition(fn).SetScope(root)
 	root.AddFunctionDefinitions(def)
@@ -99,7 +99,7 @@ func TestAChildScopeCanExecuteAFunctionOfItsParent(t *testing.T) {
 func TestExecutingAFunctionNoScopeInTheChainHasFails(t *testing.T) {
 	t.Parallel()
 
-	c := di.NewContainer()
+	c := di.NewContainer(di.NewDefaults())
 	child := c.Root().NewChild("child")
 
 	_, err := child.ExecuteFunctionInChain(di.NewID())

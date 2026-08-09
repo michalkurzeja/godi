@@ -184,6 +184,23 @@ The cost, measured: a warm resolve is ~14ns slower, a *parallel* warm resolve is
 the old exclusive mutex, and two goroutines building two different services for the first time go
 one after the other. `BenchmarkResolve`/`BenchmarkResolveParallel` exist to keep that honest.
 
+### Defaults are applied at registration
+
+`Scope.AddServiceDefinitions` and `AddFunctionDefinitions` fill in the properties a definition's
+registration did not choose, from the container's `Defaults`. Every route in goes through them — the
+facade builders, `ParseAndBuild`, a pass reaching in via `builder.RootScope()` — so a compiler pass
+needs to know nothing about defaults to get them right. `ContainerBuilder.Defaults()` is for reading
+them, not for applying them.
+
+The definition remembers whether its registration chose each property (`property`,
+`di/definition_base.go`). That bookkeeping used to sit on the facade's `ServiceDefinitionBuilder`,
+which is why `di.New(di.DefaultEager())` did nothing for a definition built inside a pass. Do not
+move it back.
+
+The deprecated process-wide `SetDefault*` globals have one reader left, `NewDefaults`. A definition
+gets its properties from the container it is registered in, never from the process. Do not seed them
+in a constructor.
+
 ### Provenance: who wired what
 
 The whole point of the graph is telling apart an argument you wrote, one godi autowired, and one

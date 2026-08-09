@@ -22,8 +22,8 @@ type Defaults struct {
 	Autowired bool
 }
 
-// NewDefaults returns godi's defaults, as the process-wide SetDefault functions
-// leave them.
+// NewDefaults returns what a container starts with: lazy, shared and autowired.
+// The deprecated SetDefault functions move them.
 func NewDefaults() Defaults {
 	return Defaults{Lazy: defaultLazy, Shared: defaultShared, Autowired: defaultAutowired}
 }

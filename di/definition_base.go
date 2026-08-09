@@ -22,8 +22,25 @@ type definition[T any] struct {
 	childScope *Scope
 
 	// Properties
-	lazy      bool
-	autowired bool
+	lazy      property
+	autowired property
+}
+
+// property is a definition's lazy, shared or autowired setting. One the
+// registration did not choose takes the container's default at registration.
+type property struct {
+	val    bool
+	chosen bool
+}
+
+func (p *property) set(val bool) {
+	p.val, p.chosen = val, true
+}
+
+func (p *property) fillDefault(val bool) {
+	if !p.chosen {
+		p.val = val
+	}
 }
 
 // init fills in what every definition starts with. The constructor captures the
@@ -33,8 +50,6 @@ func (d *definition[T]) init(self T, src source) {
 	d.self = self
 	d.id = NewID()
 	d.source = src
-	d.lazy = defaultLazy
-	d.autowired = defaultAutowired
 }
 
 func (d *definition[T]) ID() ID {
@@ -100,21 +115,26 @@ func (d *definition[T]) RemoveLabels(labels ...Label) T {
 }
 
 func (d *definition[T]) IsLazy() bool {
-	return d.lazy
+	return d.lazy.val
 }
 
 func (d *definition[T]) SetLazy(lazy bool) T {
-	d.lazy = lazy
+	d.lazy.set(lazy)
 	return d.self
 }
 
 func (d *definition[T]) IsAutowired() bool {
-	return d.autowired
+	return d.autowired.val
 }
 
 func (d *definition[T]) SetAutowired(autowired bool) T {
-	d.autowired = autowired
+	d.autowired.set(autowired)
 	return d.self
+}
+
+func (d *definition[T]) applyDefaults(defaults Defaults) {
+	d.lazy.fillDefault(defaults.Lazy)
+	d.autowired.fillDefault(defaults.Autowired)
 }
 
 // RegisteredAt is where this definition was declared: the first frame outside

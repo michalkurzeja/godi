@@ -353,6 +353,7 @@ c, err := di.New(di.DefaultEager()).
 
 The defaults belong to the container they are given to, so two containers in one process can disagree and a
 library cannot change its host's.
+They are applied when a definition is registered, so a definition a compiler pass registers takes them too.
 
 > ⚠️ The `di.SetDefault*` functions set the same three for every container in the process.
 > They still work and are deprecated: a package-level default means a test that flips one leaks into the next,
