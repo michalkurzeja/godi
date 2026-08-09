@@ -427,7 +427,7 @@ func (s *Scope) instantiate(ic *instantiationContext, def *ServiceDefinition) (a
 		return nil, errorsx.Wrapf(err, "failed to execute factory for service %s", def)
 	}
 
-	if def.shared {
+	if def.IsShared() {
 		ic.stage(s, def, svc)
 	}
 	ic.enqueueMethodCalls(def, svc, def.EffectiveScope())
@@ -520,7 +520,12 @@ func (s *Scope) GetServiceDefinitionInChain(id ID) (*ServiceDefinition, bool) {
 	return nil, false
 }
 
+// AddServiceDefinitions registers the definitions in this scope. Each takes the
+// container's defaults for the properties it did not set itself.
 func (s *Scope) AddServiceDefinitions(definitions ...*ServiceDefinition) *Scope {
+	for _, def := range definitions {
+		def.applyDefaults(s.container.defaults)
+	}
 	s.svcs.Add(definitions...)
 	return s
 }
@@ -596,7 +601,12 @@ func (s *Scope) GetFunctionDefinitionInChain(id ID) (*FunctionDefinition, bool) 
 	return nil, false
 }
 
+// AddFunctionDefinitions registers the functions in this scope. See
+// AddServiceDefinitions.
 func (s *Scope) AddFunctionDefinitions(functions ...*FunctionDefinition) *Scope {
+	for _, def := range functions {
+		def.applyDefaults(s.container.defaults)
+	}
 	s.funs.Add(functions...)
 	return s
 }

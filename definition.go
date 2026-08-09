@@ -70,10 +70,6 @@ type ServiceDefinitionBuilder struct {
 	methods  []*funcBuilder
 	children []*ServiceDefinitionBuilder
 
-	// True where the caller set the property themselves. The container's
-	// defaults fill in the rest.
-	lazyOverridden, sharedOverridden, autowiredOverridden bool
-
 	factoryParsed bool
 }
 
@@ -114,62 +110,37 @@ func (b *ServiceDefinitionBuilder) Labels(labels ...Label) *ServiceDefinitionBui
 
 func (b *ServiceDefinitionBuilder) Lazy() *ServiceDefinitionBuilder {
 	b.def.SetLazy(true)
-	b.lazyOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Eager() *ServiceDefinitionBuilder {
 	b.def.SetLazy(false)
-	b.lazyOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Shared() *ServiceDefinitionBuilder {
 	b.def.SetShared(true)
-	b.sharedOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) NotShared() *ServiceDefinitionBuilder {
 	b.def.SetShared(false)
-	b.sharedOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Autowired() *ServiceDefinitionBuilder {
 	b.def.SetAutowired(true)
-	b.autowiredOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) NotAutowired() *ServiceDefinitionBuilder {
 	b.def.SetAutowired(false)
-	b.autowiredOverridden = true
 	return b
 }
 
 func (b *ServiceDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *ServiceDefinitionBuilder {
 	b.children = append(b.children, services...)
 	return b
-}
-
-// applyDefaults fills in the properties the caller did not set themselves.
-//
-// It runs when the definition is registered, not when it is created. That is what
-// lets the defaults belong to a container rather than to the process.
-func (b *ServiceDefinitionBuilder) applyDefaults(defaults di.Defaults) {
-	if !b.lazyOverridden {
-		b.def.SetLazy(defaults.Lazy)
-	}
-	if !b.sharedOverridden {
-		b.def.SetShared(defaults.Shared)
-	}
-	if !b.autowiredOverridden {
-		b.def.SetAutowired(defaults.Autowired)
-	}
-	for _, child := range b.children {
-		child.applyDefaults(defaults)
-	}
 }
 
 func (b *ServiceDefinitionBuilder) ParseAndBuild(scope *di.Scope) error {
@@ -266,10 +237,6 @@ type FunctionDefinitionBuilder struct {
 	def      *di.FunctionDefinition
 	setFunc  func() error
 	children []*ServiceDefinitionBuilder
-
-	// True where the caller set the property themselves. The container's
-	// defaults fill in the rest.
-	lazyOverridden, autowiredOverridden bool
 }
 
 // Func creates a new FunctionDefinitionBuilder.
@@ -304,45 +271,27 @@ func (b *FunctionDefinitionBuilder) Labels(labels ...Label) *FunctionDefinitionB
 
 func (b *FunctionDefinitionBuilder) Lazy() *FunctionDefinitionBuilder {
 	b.def.SetLazy(true)
-	b.lazyOverridden = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Eager() *FunctionDefinitionBuilder {
 	b.def.SetLazy(false)
-	b.lazyOverridden = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Autowired() *FunctionDefinitionBuilder {
 	b.def.SetAutowired(true)
-	b.autowiredOverridden = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) NotAutowired() *FunctionDefinitionBuilder {
 	b.def.SetAutowired(false)
-	b.autowiredOverridden = true
 	return b
 }
 
 func (b *FunctionDefinitionBuilder) Children(services ...*ServiceDefinitionBuilder) *FunctionDefinitionBuilder {
 	b.children = append(b.children, services...)
 	return b
-}
-
-// applyDefaults fills in the properties the caller did not set themselves. See
-// ServiceDefinitionBuilder.applyDefaults.
-func (b *FunctionDefinitionBuilder) applyDefaults(defaults di.Defaults) {
-	if !b.lazyOverridden {
-		b.def.SetLazy(defaults.Lazy)
-	}
-	if !b.autowiredOverridden {
-		b.def.SetAutowired(defaults.Autowired)
-	}
-	for _, child := range b.children {
-		child.applyDefaults(defaults)
-	}
 }
 
 func (b *FunctionDefinitionBuilder) Build(scope *di.Scope) (joinedErrs error) {

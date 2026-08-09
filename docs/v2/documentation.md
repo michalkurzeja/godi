@@ -219,7 +219,7 @@ Three settings, each per definition or per container:
 | Autowired / not | autowired | `.Autowired()` / `.NotAutowired()` | `DefaultAutowired()` / `DefaultNotAutowired()` |
 
 What a definition asks for wins; the container's default fills in the rest, as the definition is
-registered.
+registered. A definition a compiler pass registers takes the default the same way.
 
 `SetDefaultLazy`, `SetDefaultEager`, `SetDefaultShared`, `SetDefaultNotShared`,
 `SetDefaultAutowired` and `SetDefaultNotAutowired` set the same three for **every container in the
@@ -257,7 +257,11 @@ c, err := b.Build()
 ```
 
 `ContainerBuilder`: `RootScope()`, `Scope(name)`, `Scopes()`, `ServiceDefinitionsSeq()`,
-`FunctionDefinitionsSeq()`, `Container()`, `Compiler()`, `Build()`.
+`FunctionDefinitionsSeq()`, `Container()`, `Compiler()`, `Defaults()`, `Build()`.
+
+`AddServiceDefinitions` and `AddFunctionDefinitions` are where the container's defaults land. A
+definition takes them for the properties it did not set itself, whether a pass registered it or the
+facade did. `Defaults()` reads them. It does not apply them.
 
 `Container()` is the container being built, and nil once `Build` has handed it over. A failed
 `Build` keeps it.

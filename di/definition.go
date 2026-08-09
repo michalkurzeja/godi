@@ -12,8 +12,7 @@ import (
 	"github.com/michalkurzeja/godi/v2/internal/util"
 )
 
-// Defaults for Definition properties, for a definition built without a Config
-// to take them from. These are what NewDefaults returns.
+// The values NewDefaults returns. Nothing else reads them.
 var (
 	defaultLazy      = true
 	defaultShared    = true
@@ -72,14 +71,13 @@ type ServiceDefinition struct {
 	val     reflect.Value
 	fromVal bool
 
-	shared bool
+	shared property
 }
 
 func NewServiceDefinition(factory *Factory) *ServiceDefinition {
 	d := &ServiceDefinition{
 		factory:     factory,
 		methodCalls: make(map[string]*Method),
-		shared:      defaultShared,
 	}
 	d.init(d, captureSource())
 	return d
@@ -124,12 +122,17 @@ func (d *ServiceDefinition) RemoveMethodCalls(names ...string) *ServiceDefinitio
 }
 
 func (d *ServiceDefinition) IsShared() bool {
-	return d.shared
+	return d.shared.val
 }
 
 func (d *ServiceDefinition) SetShared(shared bool) *ServiceDefinition {
-	d.shared = shared
+	d.shared.set(shared)
 	return d
+}
+
+func (d *ServiceDefinition) applyDefaults(defaults Defaults) {
+	d.definition.applyDefaults(defaults)
+	d.shared.fillDefault(defaults.Shared)
 }
 
 // SetVal records that this definition serves a value it was handed, rather than

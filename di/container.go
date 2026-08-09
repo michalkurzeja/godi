@@ -20,6 +20,8 @@ type Container struct {
 	root   *Scope
 	scopes *orderedmap.OrderedMap[string, *Scope]
 
+	defaults Defaults
+
 	// diagnostics is what the compiler passes had to say about this container.
 	// They live here rather than on the builder so that they outlast a build,
 	// whether it succeeded or not.
@@ -38,10 +40,17 @@ type Container struct {
 	mu sync.RWMutex
 }
 
-func NewContainer() *Container {
-	c := &Container{scopes: orderedmap.NewOrderedMap[string, *Scope]()}
+func NewContainer(defaults Defaults) *Container {
+	c := &Container{
+		scopes:   orderedmap.NewOrderedMap[string, *Scope](),
+		defaults: defaults,
+	}
 	c.root = NewScope(RootScope, c, nil)
 	return c
+}
+
+func (c *Container) Defaults() Defaults {
+	return c.defaults
 }
 
 // Diagnostics is what the compiler passes had to say about this container, in

@@ -21,7 +21,7 @@ type ContainerBuilder struct {
 
 func NewContainerBuilder(conf Config) *ContainerBuilder {
 	return &ContainerBuilder{
-		container: NewContainer(),
+		container: NewContainer(conf.Defaults),
 		compiler:  NewCompiler(conf.CompilerConfig),
 	}
 }
@@ -95,6 +95,10 @@ func (b *ContainerBuilder) Container() *Container {
 
 func (b *ContainerBuilder) Compiler() *Compiler {
 	return b.compiler
+}
+
+func (b *ContainerBuilder) Defaults() Defaults {
+	return b.container.Defaults()
 }
 
 func (b *ContainerBuilder) Build() (*Container, error) {
