@@ -207,6 +207,30 @@ func TestAFailedBuildShowsWhatTheCompilerObjectedTo(t *testing.T) {
 	}
 }
 
+// A pass is credited with what it wired even when it also objected to something.
+// The failure snapshot is the main reader of a partial graph, and this is where the
+// difference matters most: the interface binding pass could not choose between two
+// implementations, but it had already bound every other interface it handles, and
+// none of that is wiring the user did.
+func TestAFailingPassStillOwnsTheWiringItDid(t *testing.T) {
+	g := graphOfFailedBuild(t, godi.New().Services(
+		// Two Reporters, so the pass objects to the argument that takes one.
+		godi.Svc(NewFileReporter), godi.Svc(NewJSONReporter), godi.Svc(NewAudit),
+		// One Greeter, which the same pass binds before it gives up.
+		godi.Svc(NewEnGreeter), godi.Svc(NewGreeterHolder),
+	))
+
+	require.Equal(t, "interface binding", g.Snapshot.Failed)
+	require.NotContains(t, g.Snapshot.Done, "interface binding")
+	require.False(t, g.Snapshot.Autowired, "the build stopped before autowiring")
+
+	require.Len(t, g.Bindings, 1, "the pass bound the interface it could")
+	binding := bindingOf(t, g, "github.com/michalkurzeja/godi/v2_test.Greeter")
+	require.Equal(t, graph.BindOriginAutobinding, binding.Origin,
+		"a failing pass's own binding must not read as one the user declared")
+	require.Equal(t, "interface binding", binding.OriginPass)
+}
+
 // A definition that will not parse never becomes a node, so there is nothing
 // narrower than the container to say it on. Without this the snapshot leaves the
 // service out and says nothing at all.

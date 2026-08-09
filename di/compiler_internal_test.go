@@ -1,6 +1,7 @@
 package di
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -133,4 +134,40 @@ func TestSlotOriginCreditsThirdPartyPassByName(t *testing.T) {
 	// The autowired slot is untouched by the override pass.
 	require.Equal(t, ArgOriginAutowiring, slots[0].origin)
 	require.Equal(t, "autowiring", slots[0].originPass)
+}
+
+// A pass that objects to one argument still wired everything else it handles, and
+// the graph of a build that stopped is where that difference matters most. Leaving
+// its work unattributed reads as wiring the user did.
+func TestAFailingPassIsStillCreditedWithWhatItWired(t *testing.T) {
+	t.Parallel()
+
+	factory, err := NewFactory(newTestConsumer, NewLiteralArg("hello"))
+	require.NoError(t, err)
+	impl, err := NewFactory(newTestImpl)
+	require.NoError(t, err)
+
+	// Replaces the literal, then objects to the argument beside it.
+	failing := NewCompilerPass("my override", PreValidation, CompilerOpFunc(func(b *ContainerBuilder) error {
+		if err := factory.Args().SetSlot(NewSlottedArg(NewLiteralArg("overridden"), 1)); err != nil {
+			return err
+		}
+		for _, def := range b.ServiceDefinitionsSeq() {
+			if def.Type() == reflect.TypeFor[*testConsumer]() {
+				b.ReportError(AtServiceArg(def, def.Factory().Args().Slots()[0]), errors.New("not good enough"), "")
+			}
+		}
+		return nil
+	}))
+
+	builder, err := buildAttributed(t, []*CompilerPass{failing}, NewServiceDefinition(factory), NewServiceDefinition(impl))
+	require.ErrorContains(t, err, "not good enough")
+
+	slots := factory.Args().Slots()
+	require.Equal(t, ArgOriginCompilerPass, slots[1].origin)
+	require.Equal(t, "my override", slots[1].originPass)
+
+	progress := builder.Compiler().Progress()
+	require.Equal(t, "my override", progress.Failed)
+	require.NotContains(t, progress.Done, "my override", "a pass that stopped the build has not finished")
 }

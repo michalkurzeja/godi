@@ -124,6 +124,18 @@ func paramOf(t *testing.T, g *graph.Graph, nodeType string, index int) *graph.Pa
 	return nil
 }
 
+func bindingOf(t *testing.T, g *graph.Graph, iface string) *graph.Binding {
+	t.Helper()
+
+	for _, b := range g.Bindings {
+		if b.Interface == iface {
+			return b
+		}
+	}
+	t.Fatalf("no binding of %s in graph", iface)
+	return nil
+}
+
 func nodeOf(t *testing.T, g *graph.Graph, typeShort string) *graph.Node {
 	t.Helper()
 

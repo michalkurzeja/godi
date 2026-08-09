@@ -248,6 +248,10 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		}
 		builder.container.creditDiagnosticsTo(reported, pass.name)
 
+		// Before the check below: the pass ran and did the work, and that it also
+		// objected to something does not make its edits the user's.
+		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
+
 		if err := builder.container.diagnosticErrors(reported); err != nil {
 			// Kept: the builder still stands, and its graph shows how far the
 			// container got.
@@ -258,7 +262,6 @@ func (c *Compiler) Run(builder *ContainerBuilder) error {
 		// Asked of the pass, not of its name. Nothing stops a user calling their
 		// own pass "autowiring".
 		c.autowired = c.autowired || pass.argOrigin == ArgOriginAutowiring
-		c.creditPendingWiring(builder.container, pass.argOrigin, pass.bindOrigin, pass.name)
 
 		err = c.schedulePending(pass, i+1)
 		if err != nil {
@@ -332,8 +335,9 @@ func (c *Compiler) Progress() CompilerProgress {
 // creditPendingWiring names whoever changed the wiring since the last call, and
 // only that wiring. Each pass is credited with its own work.
 //
-// It runs before the first pass and again after each one. That is what tells an
-// argument the user wired from one a pass wired.
+// It runs before the first pass and again after each one, whether or not the pass
+// objected to something. That is what tells an argument the user wired from one a
+// pass wired.
 func (c *Compiler) creditPendingWiring(container *Container, args ArgOrigin, binds BindOrigin, pass string) {
 	for slot := range container.slotsSeq() {
 		if slot.dirty {
