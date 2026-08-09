@@ -419,6 +419,9 @@ func (p *printer) edgeLabel(edge *graph.Edge) string {
 	if edge.Cycle {
 		parts = append(parts, "cycle")
 	}
+	if edge.Candidate {
+		parts = append(parts, "candidate")
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -433,6 +436,9 @@ func (p *printer) edgeClasses(edge *graph.Edge) string {
 	if edge.Cycle {
 		classes = append(classes, "cycle")
 	}
+	if edge.Candidate {
+		classes = append(classes, "candidate")
+	}
 	return strings.Join(classes, " ")
 }
 
@@ -446,6 +452,9 @@ func (p *printer) edgeTooltip(edge *graph.Edge) string {
 	}
 	sb.WriteString("\nresolved: ")
 	sb.WriteString(string(edge.Resolution))
+	if edge.Candidate {
+		sb.WriteString("\ncandidate: the container could not choose")
+	}
 	for _, hop := range edge.Bindings {
 		sb.WriteString("\nvia binding ")
 		sb.WriteString(render.Short(hop.Interface))

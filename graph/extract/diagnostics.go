@@ -25,6 +25,34 @@ func (x *extractor) reportedDiagnostics() {
 			Pass:     d.Pass,
 			Location: x.registered(d.At),
 		})
+		x.candidateEdges(d)
+	}
+}
+
+// candidateEdges draws what a pass could not choose between, against the argument
+// that could not choose.
+//
+// It is the second route to an edge, and the only one open to an argument that
+// resolved to nothing: a pass that stops the build leaves every slot after it
+// empty, and an empty slot has no argument to trace. What was on offer is then
+// the pass's own account or nothing.
+//
+// An argument that already produced edges keeps them. A pass naming what the
+// wiring found is saying it again, not adding to it.
+func (x *extractor) candidateEdges(d di.Diagnostic) {
+	p := x.slotParams[d.Site.Slot()]
+	if p == nil || p.EdgeCount > 0 {
+		return
+	}
+
+	for _, related := range d.Related {
+		node := x.siteNode(related)
+		if node == nil {
+			continue
+		}
+		if edge := x.edge(p, node.ID, graph.ResolutionByType, nil); edge != nil {
+			edge.Candidate = true
+		}
 	}
 }
 

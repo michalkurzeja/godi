@@ -364,6 +364,9 @@ func (p *printer) resolution(e *graph.Edge) []string {
 	if e.Cycle {
 		out = append(out, "cycle")
 	}
+	if e.Candidate {
+		out = append(out, "candidate")
+	}
 	return out
 }
 

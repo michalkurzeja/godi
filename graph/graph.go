@@ -497,6 +497,10 @@ type Edge struct {
 	Ordinal   int    `json:"ordinal"`   // Position among the param's edges, i.e. in the injected slice.
 	OfMany    bool   `json:"ofMany"`
 	Cycle     bool   `json:"cycle,omitzero"`
+	// Candidate reports that this is not wiring: it is one of the dependencies
+	// that could have satisfied the argument, which is why the argument is
+	// faulty. The container chose none of them.
+	Candidate bool `json:"candidate,omitzero"`
 }
 
 // PassCredit names the compiler pass responsible for this edge, and is empty when

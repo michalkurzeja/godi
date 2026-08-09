@@ -1135,7 +1135,8 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 				)
 			},
 			assertBuildErr: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `could not bind argument 0 of service github.com/michalkurzeja/godi/v2_test.(*TestSvc): multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+				require.ErrorContains(t, err, `could not bind argument 0 of service github.com/michalkurzeja/godi/v2_test.(*TestSvc): multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found:`)
+				requireImplsListed(t, err)
 			},
 		},
 		// Interface binding - method calls
@@ -1197,7 +1198,8 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 				)
 			},
 			assertBuildErr: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `could not bind argument 1 of method github.com/michalkurzeja/godi/v2_test.(*TestSvc).AddArgIface: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+				require.ErrorContains(t, err, `could not bind argument 1 of method github.com/michalkurzeja/godi/v2_test.(*TestSvc).AddArgIface: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found:`)
+				requireImplsListed(t, err)
 			},
 		},
 		// Interface binding - functions
@@ -1268,7 +1270,8 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 				)
 			},
 			assertBuildErr: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `could not bind argument 0 of function github.com/michalkurzeja/godi/v2_test.NewTestSvcIfaceArg: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found: [github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl) github.com/michalkurzeja/godi/v2_test.(*TestIfaceImpl)]`)
+				require.ErrorContains(t, err, `could not bind argument 0 of function github.com/michalkurzeja/godi/v2_test.NewTestSvcIfaceArg: multiple implementations of interface github.com/michalkurzeja/godi/v2_test.TestIface found:`)
+				requireImplsListed(t, err)
 			},
 		},
 		// Cycle
@@ -1336,6 +1339,18 @@ func TestTheContainerWiresWhatItIsGiven(t *testing.T) {
 			}
 		})
 	}
+}
+
+// requireImplsListed checks that the ambiguity names each implementation with
+// where it was registered. Both are of the same type and spelled the same, so
+// the registration is the only thing telling the reader which two services the
+// container means. The lines are matched rather than spelled out because they
+// carry this file's own line numbers.
+func requireImplsListed(t *testing.T, err error) {
+	t.Helper()
+
+	impl := `\n  github\.com/michalkurzeja/godi/v2_test\.\(\*TestIfaceImpl\) registered at \S+/di_test\.go:\d+`
+	require.Regexp(t, impl+impl, err.Error())
 }
 
 func TestAnEagerServiceIsBuiltWithTheContainer(t *testing.T) {
@@ -1534,7 +1549,8 @@ func TestTheContainerServesFunctionsAndValuesToo(t *testing.T) {
 				di.Svc(func(a any) string { return fmt.Sprint(a) }),
 			).
 			Build()
-		require.ErrorContains(t, err, "compilation failed: compiler pass (interface binding) returned an error: could not bind argument 0 of service string: multiple implementations of interface interface {} found: [int bool]")
+		require.ErrorContains(t, err, "compilation failed: compiler pass (interface binding) returned an error: could not bind argument 0 of service string: multiple implementations of interface interface {} found:")
+		require.Regexp(t, `\n  int registered at \S+/di_test\.go:\d+\n  bool registered at \S+/di_test\.go:\d+`, err.Error())
 	})
 
 	t.Run("autowire matches a single arg", func(t *testing.T) {

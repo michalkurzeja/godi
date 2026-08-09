@@ -420,6 +420,21 @@ b.Report(di.Diagnostic{Severity: di.SeverityWarning, Site: di.AtService(def), Me
 | `AtService(def)` / `AtFunction(def)` | The node. |
 | `AtServiceArg(def, slot)` / `AtFunctionArg(def, slot)` | The argument. Factory and method arguments alike. |
 
+A fault about several elements names the rest in `Related`, as sites of their own:
+
+```go
+b.Report(di.Diagnostic{
+	Severity: di.SeverityError,
+	Site:     di.AtServiceArg(def, slot),
+	Message:  "could not choose between the implementations",
+	Related:  []di.Site{di.AtService(one), di.AtService(other)},
+})
+```
+
+The graph draws one candidate edge from the argument to each of them. That is the only account
+of an argument a pass gave up on, since the build stops before anything fills the slot. A related
+site that names no definition draws nothing.
+
 An error-severity diagnostic stops compilation once the reporting pass returns, and `Build` fails
 with its `Err`; a pass that reports one should return `nil` rather than the same error twice. A
 warning or an info note never fails a build, and stays on the container it produced.
@@ -578,6 +593,11 @@ Every format draws an edge feeding an argument that will not resolve, and one th
 cycle, as wrong. How it says so differs, because only one of them has room for both facts: the
 HTML page puts a red glow behind the line, so the line still says who chose the dependency,
 while Graphviz gives an edge one colour and no second layer, so there it turns red outright.
+
+An argument a compiler pass gave up on has no wiring to draw. The build stops there, so the slot
+stays empty. The implementations the pass could not choose between are drawn instead, each as a
+`Candidate` edge, which is what keeps them from reading as dependencies the container chose. An
+ambiguous interface argument is two red edges out of an argument that resolved to neither.
 
 ### 5.6 Formats and the CLI
 

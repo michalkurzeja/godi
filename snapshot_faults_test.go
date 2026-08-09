@@ -231,6 +231,38 @@ func TestAFailingPassStillOwnsTheWiringItDid(t *testing.T) {
 	require.Equal(t, "interface binding", binding.OriginPass)
 }
 
+// An argument the interface binding pass gave up on has no wiring of its own to
+// draw: the build stops there, so nothing ever fills the slot and there is no
+// argument to trace. Without the implementations the pass reported, the picture
+// is a container of roots with no dependency in it at all, and the ambiguity is
+// the one thing the reader came to see.
+func TestAnArgumentThatCouldNotChooseShowsTheCandidates(t *testing.T) {
+	g := graphOfFailedBuild(t, godi.New().Services(
+		godi.Svc(NewFileReporter), godi.Svc(NewJSONReporter), godi.Svc(NewAudit),
+	))
+
+	param := paramOf(t, g, "v2_test.(*Audit)", 0)
+	require.True(t, param.Unwired(), "the build stopped before anything filled it")
+
+	edges := edgesOf(g, param)
+	require.Len(t, edges, 2, "both implementations are worth looking at")
+
+	targets := make([]graph.NodeID, 0, len(edges))
+	for _, e := range edges {
+		require.True(t, e.Candidate, "the container chose neither of them")
+		require.True(t, g.EdgeFaulty(e), "an argument that cannot choose resolves to neither")
+		targets = append(targets, e.To)
+	}
+	require.ElementsMatch(t, []graph.NodeID{
+		nodeOf(t, g, "v2_test.(*FileReporter)").ID,
+		nodeOf(t, g, "v2_test.(*JSONReporter)").ID,
+	}, targets)
+
+	require.Equal(t, 2, nodeOf(t, g, "v2_test.(*Audit)").OutDegree)
+	require.False(t, nodeOf(t, g, "v2_test.(*FileReporter)").Root,
+		"an implementation something could have taken is not the top of a tree")
+}
+
 // A definition that will not parse never becomes a node, so there is nothing
 // narrower than the container to say it on. Without this the snapshot leaves the
 // service out and says nothing at all.
